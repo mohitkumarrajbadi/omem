@@ -153,9 +153,9 @@ def format_memory_summary(memories: List[Any]) -> str:
 @mcp.tool()
 def remember(
     content: str,
-    importance: float | None = None,
+    importance: Optional[float] = None,
     is_global: bool = False,
-    metadata: dict | None = None,
+    metadata: Optional[Dict[str, Any]] = None,
 ):
     """Store knowledge in OMem.
 
@@ -176,8 +176,8 @@ def remember(
 def recall(
     query: str,
     k: int = 5,
-    context_type: str | None = None,
-    time_range: str | None = None,
+    context_type: Optional[str] = None,
+    time_range: Optional[str] = None,
     project_only: bool = False,
 ):
     """Search for relevant memories using semantic RAG.
@@ -255,9 +255,9 @@ def resolve_conflict(query: str):
 def remember_action(
     goal: str,
     tool: str,
-    steps: list[str],
+    steps: List[str],
     target_url: str = "",
-    args: dict[str, str] | None = None,
+    args: Optional[Dict[str, str]] = None,
     importance: float = 0.85,
     is_global: bool = False,
 ):
