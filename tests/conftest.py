@@ -10,11 +10,14 @@ def isolated_omem_db(monkeypatch):
     """Ensure every test gets a fresh, isolated database if it uses default SQLite."""
     temp_dir = tempfile.mkdtemp()
     db_path = os.path.join(temp_dir, "brain.db")
+    audit_path = os.path.join(temp_dir, "audit.db")
 
     original_expanduser = os.path.expanduser
     def mock_expanduser(path):
         if path == "~/.omem/brain.db":
             return db_path
+        if path == "~/.omem/audit.db":
+            return audit_path
         return original_expanduser(path)
 
     monkeypatch.setattr(os.path, "expanduser", mock_expanduser)

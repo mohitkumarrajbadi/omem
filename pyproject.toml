@@ -57,7 +57,7 @@ embeddings = ["sentence-transformers>=2.2.0"]
 # PostgreSQL distributed backend
 postgres = ["psycopg2-binary>=2.9.0"]
 # MCP server for Claude Desktop / Cursor integration
-mcp = ["mcp>=1.0.0"]
+mcp = ["mcp>=1.0.0; python_version >= '3.10'"]
 # AES-256-GCM field-level encryption at rest
 secure = ["cryptography>=41.0.0"]
 # LangChain retriever / memory adapter
@@ -76,7 +76,7 @@ all = [
     "numba>=0.58.0",
     "sentence-transformers>=2.2.0",
     "psycopg2-binary>=2.9.0",
-    "mcp>=1.0.0",
+    "mcp>=1.0.0; python_version >= '3.10'",
     "langchain>=0.1.0",
     "openai>=1.0.0",
     "cryptography>=41.0.0",
