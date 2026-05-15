@@ -1,0 +1,155 @@
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # Binary wheels (with Rust extension)
+  # Covers: Linux x86_64 + aarch64 (glibc & musl), macOS x86_64 + arm64 +
+  #         universal2, Windows x86_64 + arm64  — for CPython 3.9–3.13.
+  # ──────────────────────────────────────────────────────────────────────────
+  build_wheels:
+    name: Build wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    env:
+      RELEASE_VERSION: ""
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract release version
+        shell: bash
+        run: echo "RELEASE_VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+
+      # QEMU lets cibuildwheel emulate aarch64 / arm64 on the Linux runner
+      - name: Set up QEMU
+        if: runner.os == 'Linux'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add macOS cross-compilation targets
+        if: runner.os == 'macOS'
+        run: |
+          rustup target add x86_64-apple-darwin
+          rustup target add aarch64-apple-darwin
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.17.0
+        env:
+          CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-*"
+
+          # Linux: glibc x86_64 + aarch64 AND musl (Alpine) x86_64 + aarch64
+          CIBW_ARCHS_LINUX: "x86_64 aarch64"
+
+          # macOS: native x86_64 + arm64 + universal2 fat binary
+          # universal2 ensures Python.org installer and Homebrew users both
+          # get a pre-built wheel instead of falling back to the sdist.
+          CIBW_ARCHS_MACOS: "x86_64 arm64 universal2"
+
+          # Windows: standard x86_64 + ARM64 (Surface Pro X, Snapdragon laptops)
+          CIBW_ARCHS_WINDOWS: "AMD64 ARM64"
+
+          # Install Rust inside the manylinux container before building
+          CIBW_BEFORE_ALL_LINUX: >
+            curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain stable -y &&
+            . "$HOME/.cargo/env"
+
+          # setuptools-rust is NOT in [build-system.requires] so we install it
+          # explicitly before each wheel build
+          CIBW_BEFORE_BUILD: "pip install setuptools-rust>=1.8.0"
+
+          CIBW_ENVIRONMENT: >-
+            PATH="$PATH:$HOME/.cargo/bin"
+            SETUPTOOLS_SCM_PRETEND_VERSION=${{ env.RELEASE_VERSION }}
+
+          CIBW_ENVIRONMENT_MACOS: >-
+            PATH="$PATH:$HOME/.cargo/bin"
+            SETUPTOOLS_SCM_PRETEND_VERSION=${{ env.RELEASE_VERSION }}
+            MACOSX_DEPLOYMENT_TARGET="10.13"
+
+          CIBW_ENVIRONMENT_WINDOWS: >-
+            SETUPTOOLS_SCM_PRETEND_VERSION=${{ env.RELEASE_VERSION }}
+
+          # PyPy is not supported (Rust/PyO3 targets CPython ABI only)
+          CIBW_SKIP: "pp*"
+
+          CIBW_BUILD_VERBOSITY: 1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
+          path: ./wheelhouse/*.whl
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Source distribution (pure-Python fallback, no Rust required)
+  # This is what pip falls back to on any platform not covered by a wheel.
+  # The sdist build intentionally does NOT install setuptools-rust so that
+  # the resulting sdist compiles cleanly everywhere.
+  # ──────────────────────────────────────────────────────────────────────────
+  build_sdist:
+    name: Build source distribution
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_VERSION: ""
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract release version
+        shell: bash
+        run: echo "RELEASE_VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build sdist (pure Python — no Rust toolchain needed)
+        run: pipx run build --sdist
+        env:
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ env.RELEASE_VERSION }}
+
+      - name: Smoke-test sdist installs cleanly
+        run: |
+          pip install dist/*.tar.gz
+          python -c "import omem; print('sdist install OK, version:', omem.__version__)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cibw-sdist
+          path: dist/*.tar.gz
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Publish everything to PyPI once both jobs succeed
+  # ──────────────────────────────────────────────────────────────────────────
+  release:
+    name: Publish to PyPI
+    needs: [build_wheels, build_sdist]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cibw-*
+          path: dist
+          merge-multiple: true
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip_existing: true

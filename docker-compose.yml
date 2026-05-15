@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  omem:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: omem:1.0.0
+    container_name: omem-server
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - omem-data:/data
+      - ./logs:/app/logs
+    environment:
+      - OMEM_DB_PATH=/data/brain.db
+      - OMEM_LOG_LEVEL=INFO
+      - OMEM_CACHE_SIZE=128000
+      - OMEM_POOL_SIZE=5
+      - OMEM_MCP_HOST=0.0.0.0
+      - OMEM_MCP_PORT=3000
+    healthcheck:
+      test: ["CMD", "omem", "health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - omem-network
+
+  omem-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: omem:1.0.0-dev
+    container_name: omem-dev
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    volumes:
+      - omem-dev-data:/data
+      - ./omem:/app/omem
+      - ./tests:/app/tests
+      - ./benchmarks:/app/benchmarks
+    environment:
+      - OMEM_DB_PATH=/data/brain.db
+      - OMEM_LOG_LEVEL=DEBUG
+      - OMEM_CACHE_SIZE=64000
+      - OMEM_POOL_SIZE=3
+      - OMEM_MCP_HOST=0.0.0.0
+      - OMEM_MCP_PORT=3000
+    command: ["tail", "-f", "/dev/null"]
+    networks:
+      - omem-network
+
+volumes:
+  omem-data:
+    driver: local
+  omem-dev-data:
+    driver: local
+
+networks:
+  omem-network:
+    driver: bridge

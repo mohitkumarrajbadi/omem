@@ -1,0 +1,111 @@
+[build-system]
+# setuptools-rust is intentionally NOT listed here.
+# setup.py already does:  try: from setuptools_rust import ...  except ImportError: pass
+# so the Rust extension is compiled only when rustc is available.
+# Pre-built wheels on PyPI include the Rust extension; the sdist falls back to
+# pure Python silently on any platform that doesn't have the Rust toolchain.
+requires = ["setuptools>=68.0", "wheel", "setuptools-scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["omem*"]
+
+[project]
+name = "omem-os"
+dynamic = ["version"]
+description = "AI Memory Operating System — Graph-RAG, temporal truth maintenance, actionable schemas, selective encryption, sub-200ms hybrid retrieval."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+authors = [
+    {name = "Mohit Kumar Rajbadi", email = "mohitkumarrajbadi@gmail.com"}
+]
+keywords = [
+    "ai", "memory", "rag", "vector-search", "embeddings", "llm", "agents",
+    "memory-os", "compression", "reflection", "importance", "multi-agent",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+# numpy: no upper bound — works with 1.x and 2.x
+# xxhash: small, pure-C wheel available for all platforms; hashlib fallback is
+#         already in code so the package also works without it if needed
+dependencies = [
+    "numpy>=1.24.0",
+    "click>=8.0.0",
+    "xxhash>=3.0.0",
+]
+
+[project.optional-dependencies]
+# Compiled acceleration: FAISS vector index + Numba JIT scoring
+fast = [
+    "faiss-cpu>=1.7.4",
+    "numba>=0.58.0",
+]
+# Local ML embeddings (downloads ~90 MB model on first use)
+# Without this the built-in hash-based embedder is used automatically.
+embeddings = ["sentence-transformers>=2.2.0"]
+# PostgreSQL distributed backend
+postgres = ["psycopg2-binary>=2.9.0"]
+# MCP server for Claude Desktop / Cursor integration
+mcp = ["mcp>=1.0.0"]
+# AES-256-GCM field-level encryption at rest
+secure = ["cryptography>=41.0.0"]
+# LangChain retriever / memory adapter
+langchain = ["langchain>=0.1.0"]
+# OpenAI embeddings provider
+openai = ["openai>=1.0.0"]
+# Development and testing
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.1.0",
+]
+# Everything at once (for power users / CI)
+all = [
+    "faiss-cpu>=1.7.4",
+    "numba>=0.58.0",
+    "sentence-transformers>=2.2.0",
+    "psycopg2-binary>=2.9.0",
+    "mcp>=1.0.0",
+    "langchain>=0.1.0",
+    "openai>=1.0.0",
+    "cryptography>=41.0.0",
+]
+
+[project.scripts]
+omem = "omem.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/mohitkumarrajbadi/omem"
+Repository = "https://github.com/mohitkumarrajbadi/omem"
+Issues = "https://github.com/mohitkumarrajbadi/omem/issues"
+Changelog = "https://github.com/mohitkumarrajbadi/omem/releases"
+
+[tool.setuptools_scm]
+# Used when building from a git checkout without a version tag, or in
+# editable installs.  The real version is always embedded into the wheel /
+# sdist at publish time via SETUPTOOLS_SCM_PRETEND_VERSION in CI.
+fallback_version = "0.0.0"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
