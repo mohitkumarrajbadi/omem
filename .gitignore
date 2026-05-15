@@ -43,4 +43,4 @@ rust/target/
 .claude/settings.local.json
 
 # Documentation
-*.md
+# (Markdown files should be tracked)
