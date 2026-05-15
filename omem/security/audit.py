@@ -12,9 +12,6 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_AUDIT_PATH = os.path.expanduser("~/.omem/audit.db")
-
-
 class AuditLogger:
     """Non-blocking audit trail that persists operations to a separate SQLite DB.
 
@@ -22,7 +19,9 @@ class AuditLogger:
     and a background thread flushes to ``~/.omem/audit.db``.
     """
 
-    def __init__(self, db_path: str = _DEFAULT_AUDIT_PATH) -> None:
+    def __init__(self, db_path: Optional[str] = None) -> None:
+        if db_path is None:
+            db_path = os.path.expanduser("~/.omem/audit.db")
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         self._db_path = db_path
         self._queue: queue.Queue = queue.Queue()
