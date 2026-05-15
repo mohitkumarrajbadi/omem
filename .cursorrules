@@ -36,3 +36,8 @@ OMem includes a **Model Context Protocol (MCP)** server natively.
 
 ## 7. Formatting & Brand Tone
 - Maintain a highly professional but "cute and approachable" brand tone in user-facing documentation. Avoid overly academic jargon without practical examples.
+
+## 8. Anti-Attribution Rules
+- **CRITICAL**: Never add your name (Claude, Cursor, Copilot, AI, etc.) to any git commits.
+- Never append `Co-authored-by` or any other attribution to commit messages or source code.
+- All code and commits must appear entirely authored by the human developer.
