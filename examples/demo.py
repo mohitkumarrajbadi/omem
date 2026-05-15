@@ -13,13 +13,13 @@ os.environ["NUMBA_DISABLE_JIT"] = "1"
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
-import time
 import sys
+import time
 
 # Ensure the project root is importable
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from omem import OMem, MemoryType, MemoryPriority
+from omem import MemoryPriority, MemoryType, OMem
 
 # -- Formatting Helpers --
 CYAN = "\033[96m"

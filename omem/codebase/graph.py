@@ -7,8 +7,8 @@ from typing import List
 
 from ..api import OMem
 from ..types import MemoryType
-
 from .types import CodeSymbol
+
 
 class ProjectGraph:
     """Insert symbols into OMem and link them.

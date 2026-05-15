@@ -1,7 +1,7 @@
 """OMem Benchmark - measure add() and rag() performance at scale."""
 
-import time
 import sys
+import time
 
 from omem import OMem
 

@@ -10,14 +10,14 @@ Run: python -m omem.viz.server
 Or:  omem dashboard
 """
 
-import json
 import http.server
+import json
+import logging
 import socketserver
 import threading
 import webbrowser
-import logging
 from typing import Optional
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urlparse
 
 from ..api import OMem
 

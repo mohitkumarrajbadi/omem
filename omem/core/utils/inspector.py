@@ -6,10 +6,10 @@ can debug and tune their memory retrieval.
 
 import re
 import time
-from typing import List, Optional, Dict
+from typing import Dict, List, Optional
 
 from ...types import Memory, RetrievalExplanation
-from ..brain.importance import compute_recency_score, compute_frequency_score
+from ..brain.importance import compute_frequency_score, compute_recency_score
 
 # Match the weights used in BrainTrace
 _W_VECTOR = 0.35

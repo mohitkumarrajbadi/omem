@@ -8,7 +8,7 @@ import os
 from typing import List
 
 from .types import CodeSymbol, SymbolType
-from .utils import hash_text, file_to_module, is_python_file, default_ignore_dirs
+from .utils import default_ignore_dirs, file_to_module, hash_text, is_python_file
 
 
 class _ASTVisitor(ast.NodeVisitor):

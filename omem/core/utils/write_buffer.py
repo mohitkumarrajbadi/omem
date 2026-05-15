@@ -10,11 +10,11 @@ v0.7.0 Production hardening (H).
 
 import base64
 import json
+import logging
 import os
 import queue
 import threading
 import time
-import logging
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -89,7 +89,8 @@ class WriteBuffer:
     def _deserialize_memory(self, line: str):
         """Reconstruct a Memory object from a WAL line."""
         import numpy as np
-        from ...types import Memory, MemoryType, MemoryStatus  # type: ignore[attr-defined]
+
+        from ...types import Memory, MemoryStatus, MemoryType  # type: ignore[attr-defined]
 
         d = json.loads(line)
         vec_b64 = d.get("vector_b64", "")

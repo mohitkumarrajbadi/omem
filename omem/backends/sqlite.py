@@ -1,14 +1,14 @@
 """SQLite storage backend — the default, zero-config backend."""
 
-import sqlite3
 import json
+import sqlite3
 from typing import List, Optional
 
 import numpy as np
 
-from .base import Backend
-from ..types import Memory, MemoryType
 from ..core.utils.retry import retry_with_backoff
+from ..types import Memory, MemoryType
+from .base import Backend
 
 
 class SQLiteBackend(Backend):

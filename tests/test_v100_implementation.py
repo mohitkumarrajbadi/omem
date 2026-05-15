@@ -10,8 +10,9 @@ Exercises every new feature from Phase 1 + Phase 2:
 """
 
 import time
-import pytest
+
 import numpy as np
+import pytest
 
 
 # ── version check ──────────────────────────────────────────────────────────────
@@ -281,7 +282,7 @@ class TestZeroUtilityPruning:
     """Memories with utility=0.0 older than 30 days must be archived."""
 
     def _old_active_memory(self, mid, utility=0.0, age_days=35):
-        from omem.types import Memory, MemoryType, MemoryTier
+        from omem.types import Memory, MemoryTier, MemoryType
 
         return Memory(
             id=mid,
@@ -340,7 +341,7 @@ class TestZeroUtilityPruning:
     def test_protected_type_not_pruned(self):
         """DECISION and INSIGHT type memories are protected — never pruned."""
         from omem.core.brain.forgetting import forget_sweep
-        from omem.types import MemoryType, MemoryTier, Memory
+        from omem.types import Memory, MemoryTier, MemoryType
 
         mem = Memory(
             id="protected1",
@@ -463,7 +464,7 @@ class TestToolSnippetSchema:
 
     def test_toolsnippet_stored_in_procedural_memory(self):
         """remember_action must store a PROCEDURAL memory with snippet in metadata."""
-        from omem import OMem, MemoryType
+        from omem import MemoryType, OMem
 
         m = OMem(backend="memory")
 
@@ -494,7 +495,7 @@ class TestToolSnippetSchema:
 
     def test_recall_with_actions_context_type_boosts_procedural(self):
         """recall(context_type='actions') must surface PROCEDURAL memories."""
-        from omem import OMem, MemoryType
+        from omem import MemoryType, OMem
 
         m = OMem(backend="memory")
 

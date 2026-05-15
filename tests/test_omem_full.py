@@ -6,6 +6,7 @@ Tests all functionality with realistic conversation dataset
 
 import json
 import time
+
 from omem import OMem
 
 

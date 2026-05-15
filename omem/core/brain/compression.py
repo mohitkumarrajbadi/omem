@@ -6,7 +6,7 @@ Supports optional LLM-based summarization.
 
 import logging
 import re
-from typing import List, Optional, Callable, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import numpy as np
 

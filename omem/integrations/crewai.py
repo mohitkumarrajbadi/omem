@@ -12,7 +12,7 @@ Usage::
 Works standalone — no CrewAI or AutoGen required.
 """
 
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
 from ..api import OMem
 from ..types import Memory

@@ -1,10 +1,10 @@
 """Circuit breaker: CLOSED/OPEN/HALF_OPEN state machine."""
 
-import time
-import threading
 import logging
+import threading
+import time
 from enum import Enum
-from typing import Callable, Any
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 

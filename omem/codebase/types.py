@@ -4,7 +4,8 @@ We keep them lightweight – only the fields needed for hierarchical IDs, source
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import List, Optional, Dict
+from typing import Dict, List, Optional
+
 
 class SymbolType(Enum):
     MODULE = auto()

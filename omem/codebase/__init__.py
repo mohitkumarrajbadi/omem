@@ -2,11 +2,11 @@
 Provides AST ingestion, graph construction, incremental sync, and hybrid retrieval.
 """
 
-from .types import CodeSymbol, SymbolType
-from .ingester import ProjectIngester
 from .graph import ProjectGraph
-from .sync import ProjectSync
+from .ingester import ProjectIngester
 from .retriever import CodeRetriever
+from .sync import ProjectSync
+from .types import CodeSymbol, SymbolType
 
 __all__ = [
     "CodeSymbol",

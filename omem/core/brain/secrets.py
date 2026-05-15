@@ -7,8 +7,8 @@ rejected or isolated.
 v0.6.0 Production hardening (A).
 """
 
-import re
 import logging
+import re
 from typing import List, Tuple
 
 logger = logging.getLogger(__name__)

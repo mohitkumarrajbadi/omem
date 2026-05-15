@@ -1,38 +1,35 @@
 """OMem Engine Base — BrainTrace core orchestration."""
 
 import time
-import logging
-from typing import List, Optional, Dict, Callable
+from typing import Callable, Dict, List, Optional
 
 from ...types import Memory, MemoryTier
-from ..retrieval.embeddings import Embedder
-from ..retrieval.vector import VectorIndex
-from ..retrieval.kv import KVCache
-from ..graph.causal import CausalGraph
-from ..graph.knowledge import KnowledgeGraph
-from ..utils.concurrency import RWLock, WriteContext
-from ..utils.cache import LRUCache
-from ..utils.write_buffer import WriteBuffer
-
-from ..brain.quotas import MemoryQuota
-from ..brain.prefetch import PrefetchEngine
-from ..brain.forgetting import restore_memory
 from ..brain.compression import run_compression
+from ..brain.forgetting import restore_memory
+from ..brain.prefetch import PrefetchEngine
+from ..brain.quotas import MemoryQuota
 from ..brain.reflection import (
-    reflect_on_memories,
-    reflect_on_conversation,
     reflect_on_conflicts,
+    reflect_on_conversation,
+    reflect_on_memories,
 )
 from ..brain.tms import ConflictResolver
+from ..graph.causal import CausalGraph
 from ..graph.dependency import DependencyGraph
+from ..graph.knowledge import KnowledgeGraph
+from ..retrieval.embeddings import Embedder
+from ..retrieval.kv import KVCache
+from ..retrieval.vector import VectorIndex
+from ..utils.cache import LRUCache
+from ..utils.concurrency import RWLock, WriteContext
 from ..utils.inspector import inspect_query
-from .maintenance import MaintenanceEngine
-
-from .add import AddMixin
-from .rag import RAGMixin
-from .lifecycle import LifecycleMixin
-
 from ..utils.structured_logging import get_logger
+from ..utils.write_buffer import WriteBuffer
+from .add import AddMixin
+from .lifecycle import LifecycleMixin
+from .maintenance import MaintenanceEngine
+from .rag import RAGMixin
+
 logger = get_logger(__name__)
 
 

@@ -22,14 +22,13 @@ Fix log:
   [6] RSS memory improved: tracemalloc peak used as fallback when RSS delta is zero.
 """
 
-import os
 import gc
+import os
 import sys
 import time
 import tracemalloc
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Callable
-
+from typing import Callable, Dict, List, Optional
 
 # ── Fix [1]: Handle OpenMP duplicate lib conflict programmatically ──────────
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")

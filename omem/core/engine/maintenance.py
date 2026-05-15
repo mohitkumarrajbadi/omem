@@ -1,9 +1,9 @@
 """Background Maintenance Engine - handles throttled memory cleanup."""
 
-import time
-import threading
 import logging
-from typing import Optional, Callable
+import threading
+import time
+from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 

@@ -6,8 +6,8 @@ will be flagged for re-evaluation.
 """
 
 import logging
-from typing import List, Set, Dict
 from collections import defaultdict
+from typing import Dict, List, Set
 
 logger = logging.getLogger(__name__)
 

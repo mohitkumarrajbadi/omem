@@ -2,15 +2,15 @@
 Uses ``git diff`` and file hashing to update only changed Python files.
 """
 
+import logging
 import os
 import subprocess
-import logging
-from typing import Set, List
+from typing import Set
 
 from ..api import OMem
-from .ingester import ProjectIngester
 from .graph import ProjectGraph
-from .utils import default_ignore_dirs, normalize_path
+from .ingester import ProjectIngester
+from .utils import default_ignore_dirs
 
 logger = logging.getLogger(__name__)
 

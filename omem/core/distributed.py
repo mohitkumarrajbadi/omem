@@ -15,8 +15,8 @@ to shards by namespace hash, distributing the FAISS index across workers.
 
 import hashlib
 import logging
-from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 

@@ -1,10 +1,10 @@
 """Exponential backoff retry with full-jitter."""
 
-import time
-import random
-import logging
 import functools
-from typing import Callable, Tuple, Type, Any
+import logging
+import random
+import time
+from typing import Any, Callable, Tuple, Type
 
 logger = logging.getLogger(__name__)
 

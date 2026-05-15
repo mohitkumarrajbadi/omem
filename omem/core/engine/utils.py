@@ -1,8 +1,9 @@
 """Internal engine utilities and constants."""
 
 import re
-import numpy as np
 from enum import Enum
+
+import numpy as np
 
 
 class RetrievalMode(Enum):

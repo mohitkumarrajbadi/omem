@@ -2,8 +2,8 @@
 
 import numpy as np
 
-from omem.types import Memory, MemoryType
 from omem.backends.sqlite import SQLiteBackend
+from omem.types import Memory, MemoryType
 
 
 def _make_memory(mid: str = "m1", content: str = "test content") -> Memory:

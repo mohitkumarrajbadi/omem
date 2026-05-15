@@ -1,4 +1,5 @@
 import shutil
+
 from setuptools import setup
 
 # Only add the Rust extension when rustc is actually present on PATH.

@@ -1,19 +1,18 @@
 """Engine Mixin: Addition Pipeline."""
 
-import time
 import logging
+import time
+from typing import Dict, List, Optional
+
 import numpy as np
-from typing import List, Optional, Dict
 
-from ...types import Memory, MemoryType, MemoryTier, MemoryPriority, PRIORITY_MULTIPLIER
 from ...classify import auto_classify_multi
-from ..utils.metrics import metrics
-from ..utils.concurrency import WriteContext
-
+from ...types import PRIORITY_MULTIPLIER, Memory, MemoryPriority, MemoryTier, MemoryType
 from ..brain.importance import estimate_importance, estimate_priority
 from ..brain.noise_gate import check_noise
-
-from .utils import _fast_hash, _token_hash, _TOKENIZER, _DEDUP_THRESHOLD
+from ..utils.concurrency import WriteContext
+from ..utils.metrics import metrics
+from .utils import _DEDUP_THRESHOLD, _TOKENIZER, _fast_hash, _token_hash
 
 logger = logging.getLogger(__name__)
 

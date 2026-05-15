@@ -4,9 +4,9 @@ Calculates memory importance based on user input, recency, and access frequency.
 Also handles automatic deactivation for low-value memories.
 """
 
-import time
 import math
 import re
+import time
 from typing import List, Optional
 
 try:

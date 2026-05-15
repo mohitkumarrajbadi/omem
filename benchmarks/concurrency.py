@@ -6,8 +6,8 @@ read/write operations to test thread safety, throughput under
 contention, and data integrity with parallel access.
 """
 
-import time
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import List, Optional

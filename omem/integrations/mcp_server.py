@@ -10,10 +10,10 @@ Features:
 - Auto-namespacing: Detects project context for zero-config isolation.
 """
 
+import logging
 import os
 import time
-import logging
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 from ..api import OMem
 from ..types import MemoryType

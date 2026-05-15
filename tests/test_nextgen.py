@@ -1,19 +1,19 @@
 """Tests for the 3 next-gen OMem systems: Forgetting, Mode-Aware Retrieval, Identity Layer."""
 
 import time
+
+import numpy as np
 import pytest
-from omem import OMem, MemoryType, MemoryTier, MemoryPriority
+
+from omem import MemoryPriority, MemoryTier, MemoryType, OMem
 from omem.core.brain.forgetting import (
+    ForgetResult,
     compute_health,
     forget_sweep,
     restore_memory,
-    ForgetResult,
 )
 from omem.core.brain.importance import estimate_priority
 from omem.types import Memory
-
-import numpy as np
-
 
 # ==============================================================
 # IDENTITY LAYER - priority classification

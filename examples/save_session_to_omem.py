@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Save current session context to OMem memory system."""
 
-from omem import OMem, MemoryType
+from omem import MemoryType, OMem
 
 # Initialize OMem
 brain = OMem()

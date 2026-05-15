@@ -10,10 +10,9 @@ of the system.
 """
 
 import time
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 from ..api import OMem
-from ..types import MemoryType
 
 # Default ranking weights – these can be tuned later via a config file.
 DEFAULT_WEIGHTS = {

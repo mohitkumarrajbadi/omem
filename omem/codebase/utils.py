@@ -4,9 +4,10 @@
 * file_relative_module – converts a file path to a dotted module name.
 * is_python_file – quick extension check.
 """
-import os
 import hashlib
+import os
 from typing import List
+
 
 def hash_text(text: str) -> str:
     """Return SHA‑256 hex digest of *text*.

@@ -1,13 +1,15 @@
 """Benchmark specifically isolating the Rust SIMD ranking loop."""
 
-import time
-import numpy as np
-import sys
 import os
+import sys
+import time
+
+import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from omem.core.engine.rag import _HAS_RUST
 import omem_rust
+
+from omem.core.engine.rag import _HAS_RUST
 
 
 def run_benchmark():

@@ -1,6 +1,7 @@
 """In-memory key-value cache for O(1) memory lookups."""
 
-from typing import Optional, Dict, List
+from typing import Dict, List, Optional
+
 from ...types import Memory
 
 

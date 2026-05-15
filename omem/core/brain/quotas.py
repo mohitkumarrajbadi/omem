@@ -7,7 +7,7 @@ v0.5.0 Production hardening (E).
 
 import logging
 from dataclasses import dataclass
-from typing import Optional, Dict
+from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 

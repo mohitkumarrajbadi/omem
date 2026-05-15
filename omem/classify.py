@@ -10,7 +10,7 @@ Improvements A+B from v0.5.0 production hardening.
 """
 
 import re
-from typing import List, Tuple, Dict
+from typing import Dict, List, Tuple
 
 from .types import MemoryType
 

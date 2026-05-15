@@ -1,5 +1,6 @@
 import pytest
-from omem import OMem, MemoryStatus
+
+from omem import MemoryStatus, OMem
 from omem.core.brain.tms import extract_triplet
 
 

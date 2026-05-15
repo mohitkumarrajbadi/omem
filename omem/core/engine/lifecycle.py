@@ -1,15 +1,15 @@
 """Engine Mixin: Lifecycle Management (Forgetting, Compression, Snapshot)."""
 
-import time
 import logging
+import time
 from typing import List, Optional
 
 from ...types import Memory, MemoryTier
-from ..utils.metrics import metrics
-from ..utils.concurrency import WriteContext
-from ..brain.forgetting import forget_sweep
 from ..brain.dream import dream_consolidate
-from ..utils.snapshot import snapshot, restore
+from ..brain.forgetting import forget_sweep
+from ..utils.concurrency import WriteContext
+from ..utils.metrics import metrics
+from ..utils.snapshot import restore, snapshot
 
 logger = logging.getLogger(__name__)
 

@@ -1,20 +1,19 @@
 """Engine Mixin: Retrieval Pipeline."""
 
-import time
-import logging
 import heapq
+import time
+from typing import Dict, List, Optional
+
 import numpy as np
-from typing import List, Optional, Dict
 
 from ...types import Memory, MemoryTier
-from ..utils.concurrency import ReadContext
 from ..brain.importance import (
-    _RECENCY_HALF_LIFE,
     _FREQUENCY_LOG_BASE,
     _MAX_FREQUENCY_BONUS,
+    _RECENCY_HALF_LIFE,
 )
-
-from .utils import fast_intersect, _token_hash, _TOKENIZER, _HAS_RUST
+from ..utils.concurrency import ReadContext
+from .utils import _HAS_RUST, _TOKENIZER, _token_hash, fast_intersect
 
 try:
     import omem_rust
@@ -22,10 +21,11 @@ except ImportError:
     pass
 
 from ..utils.structured_logging import get_logger
+
 logger = get_logger(__name__)
 
 # Mode profiles
-from .utils import _W_VECTOR, _W_KEYWORD, _W_IMPORTANCE, _W_RECENCY, _W_FREQUENCY  # noqa: E402
+from .utils import _W_FREQUENCY, _W_IMPORTANCE, _W_KEYWORD, _W_RECENCY, _W_VECTOR  # noqa: E402
 
 
 class RAGMixin:

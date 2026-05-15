@@ -6,12 +6,12 @@ Unified interface for managing memory: add, update, rag, compress, and forget.
 import base64
 import logging
 import os
-from typing import Dict, List, Optional, Callable
+from typing import Callable, Dict, List, Optional
 
-from .types import Memory, MemoryType, RetrievalExplanation
-from .core.engine import BrainTrace, ForgetResult, DreamResult
 from .backends.sqlite import SQLiteBackend
+from .core.engine import BrainTrace, DreamResult, ForgetResult
 from .security.audit import AuditLogger
+from .types import Memory, MemoryType, RetrievalExplanation
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +157,7 @@ class OMem:
         import time
 
         now = time.time()
-        
+
         top_k = k if k is not None else top_k
         context_type = context_type or mode
 
@@ -487,8 +487,8 @@ class OMem:
         """Ingest an entire Python project into the Project Memory.
         Returns the number of symbols added.
         """
-        from .codebase.ingester import ProjectIngester
         from .codebase.graph import ProjectGraph
+        from .codebase.ingester import ProjectIngester
 
         ingester = ProjectIngester(path)
         symbols = ingester.crawl()

@@ -4,11 +4,11 @@ Clusters related memories and synthesizes them into summarized insights.
 Reduces data noise and retrieval costs.
 """
 
-import time
 import logging
 import re
+import time
 from dataclasses import dataclass, field
-from typing import List, Optional, Callable, Dict
+from typing import Callable, Dict, List, Optional
 
 import numpy as np
 
@@ -30,7 +30,7 @@ except ImportError:
         return int(hashlib.md5(t.encode("utf-8")).hexdigest(), 16) & 0xFFFFFFFFFFFFFFFF
 
 
-from ...types import Memory, MemoryType, MemoryTier, MemoryPriority
+from ...types import Memory, MemoryPriority, MemoryTier, MemoryType
 from .compression import cluster_memories
 
 try:

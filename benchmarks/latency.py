@@ -5,10 +5,10 @@ Measures add() and rag() latencies at operation level, computes
 percentile distributions, and detects tail-latency spikes.
 """
 
-import time
 import statistics
-from dataclasses import dataclass, field, asdict
-from typing import List, Dict, Optional
+import time
+from dataclasses import asdict, dataclass, field
+from typing import Dict, List, Optional
 
 import numpy as np
 

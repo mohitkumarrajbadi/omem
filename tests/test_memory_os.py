@@ -3,11 +3,12 @@ namespaces, update/merge, inspect, and multi-agent shared memory.
 """
 
 import time
-from omem import OMem, MemoryType, RetrievalExplanation
+
+from omem import MemoryType, OMem, RetrievalExplanation
 from omem.core.brain.importance import (
-    estimate_importance,
-    compute_recency_score,
     compute_frequency_score,
+    compute_recency_score,
+    estimate_importance,
 )
 
 
