@@ -26,14 +26,17 @@ class AuditLogger:
         self._db_path = db_path
         self._queue: queue.Queue = queue.Queue()
         self._running = True
+        # Initialise the DB on the main thread *before* the worker starts so
+        # there is no race between _init_db and _worker both trying to acquire
+        # an exclusive lock for PRAGMA journal_mode=WAL.
+        self._init_db()
         self._thread = threading.Thread(
             target=self._worker, daemon=True, name="omem-audit"
         )
         self._thread.start()
-        self._init_db()
 
     def _init_db(self) -> None:
-        conn = sqlite3.connect(self._db_path, check_same_thread=False)
+        conn = sqlite3.connect(self._db_path, timeout=30, check_same_thread=False)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS audit_log (
@@ -76,8 +79,8 @@ class AuditLogger:
         self._queue.put(entry)
 
     def _worker(self) -> None:
-        conn = sqlite3.connect(self._db_path, check_same_thread=False)
-        conn.execute("PRAGMA journal_mode=WAL")
+        conn = sqlite3.connect(self._db_path, timeout=30, check_same_thread=False)
+        # WAL mode was already set by _init_db(); no need to set it again here.
         while self._running:
             batch = []
             try:
