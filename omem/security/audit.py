@@ -107,6 +107,9 @@ class AuditLogger:
                     conn.commit()
                 except Exception as exc:
                     logger.error("Audit flush error: %s", exc)
+                finally:
+                    for _ in batch:
+                        self._queue.task_done()
 
         # Final flush on shutdown
         remaining = []
@@ -127,6 +130,9 @@ class AuditLogger:
                 conn.commit()
             except Exception as exc:
                 logger.error("Audit final flush error: %s", exc)
+            finally:
+                for _ in remaining:
+                    self._queue.task_done()
         conn.close()
 
     def get_audit_log(
@@ -165,6 +171,10 @@ class AuditLogger:
             return [dict(r) for r in rows]
         finally:
             conn.close()
+
+    def flush(self) -> None:
+        """Block until all enqueued audit entries have been written to disk."""
+        self._queue.join()
 
     def stop(self) -> None:
         """Graceful shutdown — waits for queue to drain."""

@@ -267,13 +267,14 @@ class TestMiscellaneous:
     def test_get_audit_log_returns_list(self, m):
         m.add("test memory")
         m.recall("test")
+        m._audit.flush()
         log = m.get_audit_log()
         assert isinstance(log, list)
         assert len(log) >= 1
 
     def test_get_audit_log_entry_has_operation_field(self, m):
         m.add("test memory")
-        m.recall("test")  # embedding computation gives the async audit thread time to flush
+        m._audit.flush()
         log = m.get_audit_log()
         assert len(log) >= 1
         assert "operation" in log[0]
@@ -281,5 +282,6 @@ class TestMiscellaneous:
     def test_get_audit_log_filter_by_operation(self, m):
         m.add("test memory")
         m.recall("test")
+        m._audit.flush()
         add_log = m.get_audit_log(operation="add")
         assert all(e["operation"] == "add" for e in add_log)
