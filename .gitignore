@@ -44,3 +44,6 @@ rust/target/
 
 # Documentation
 # (Markdown files should be tracked)
+
+# Local notes (not tracked)
+.notes/

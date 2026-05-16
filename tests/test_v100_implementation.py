@@ -316,11 +316,11 @@ class TestZeroUtilityPruning:
         mem = self._old_active_memory("prune2", utility=0.8, age_days=35)
         result = forget_sweep([mem])
         assert result is not None
-        # High-utility memory should survive (may still be archived by health, but not by 0-utility rule)
-        # The key test: it's NOT in archived due to zero-utility rule
-        # (it might still be kept if health is good enough)
-        assert mem.active is True or mem.utility_score > 0.0, (
-            "Non-zero utility memory should not be pruned by zero-utility rule"
+        # The zero-utility rule (30-day TTL) only applies to memories with utility == 0.0.
+        # A memory with utility=0.8 must never be archived by that specific rule.
+        # Its utility_score must remain intact regardless of other archiving decisions.
+        assert mem.utility_score == pytest.approx(0.8), (
+            "Non-zero utility memory must retain its utility_score after forget_sweep"
         )
 
     def test_young_zero_utility_memory_not_archived(self):
@@ -406,9 +406,12 @@ class TestGraphRAGExpansion:
         results = m.brain.rag("backend development", top_k=5, graph_boost=0.6)
         result_ids = [r.id for r in results]
 
-        # id1 must appear (direct vector match)
-        assert id1 in result_ids or len(results) > 0, "Direct match must appear"
-        assert id2 and id3, "All memories must return valid IDs"
+        # id1 must appear (direct vector match for "backend development")
+        assert len(results) > 0, "Graph-expanded results must not be empty"
+        assert id1 in result_ids, "Direct vector match (id1) must appear in results"
+        # id2 and id3 were successfully stored (valid non-empty IDs)
+        assert isinstance(id2, str) and len(id2) > 0
+        assert isinstance(id3, str) and len(id3) > 0
 
     def test_graph_knowledge_populated_on_add(self):
         """KnowledgeGraph must have entities after add()."""

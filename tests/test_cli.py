@@ -15,7 +15,8 @@ class TestCLI:
         assert "version" in result.output.lower() or "0." in result.output
 
     def test_help(self):
-        for help_flag in ["-h", "-help", "--help"]:
+        # Click supports --help and -h natively; -help is not a valid Click flag
+        for help_flag in ["-h", "--help"]:
             result = self.runner.invoke(cli, [help_flag])
             assert result.exit_code == 0
             assert "OMem - Persistent Memory System" in result.output

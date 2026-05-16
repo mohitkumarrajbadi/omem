@@ -1,113 +1,143 @@
 <div align="center">
 
-<img src="https://img.shields.io/badge/version-0.0.1--pre--alpha-blueviolet?style=for-the-badge" alt="Version">
-<img src="https://img.shields.io/badge/python-3.9%2B-blue?style=for-the-badge&logo=python" alt="Python">
-<img src="https://img.shields.io/badge/rust-core-orange?style=for-the-badge&logo=rust" alt="Rust">
-<img src="https://img.shields.io/badge/license-MIT-green?style=for-the-badge" alt="License">
-<img src="https://img.shields.io/badge/MCP-compatible-purple?style=for-the-badge" alt="MCP">
-<img src="https://img.shields.io/pypi/v/omem-os?style=for-the-badge&color=brightgreen" alt="PyPI">
-
-<br><br>
-
-# OMem
-### The Memory Operating System for AI Agents 🧠🔥
-
-**Persistent. Intelligent. Blazing Fast. No Cap.**
-
-Your AI agents be out here sounding smart for 5 minutes then forgetting everything like they got **brain rot**.
-
-OMem gives them a **real brain** — one that actually learns, forgets the mid stuff, compresses the noise, and thinks on its own. Lowkey the glow-up AI memory desperately needed.
+[![PyPI](https://img.shields.io/pypi/v/omem-os?style=for-the-badge&color=brightgreen)](https://pypi.org/project/omem-os/)
+[![GitHub Stars](https://img.shields.io/github/stars/mohitkumarrajbadi/omem?style=for-the-badge)](https://github.com/mohitkumarrajbadi/omem/stargazers)
+[![Python](https://img.shields.io/badge/python-3.9%2B-blue?style=for-the-badge&logo=python)](https://www.python.org/)
+[![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)](./LICENSE)
+[![MCP](https://img.shields.io/badge/MCP-compatible-purple?style=for-the-badge)](./MCP_SETUP.md)
+[![Discord](https://img.shields.io/badge/discord-join-5865F2?style=for-the-badge&logo=discord)](https://discord.gg/#)
 
 <br>
 
-[**Quick Start**](#quick-start) · [**Benchmarks**](#benchmarks-we-ate) · [**MCP / Claude Desktop**](#integrations) · [**CLI**](#cli-reference) · [**Docs**](./DEVELOPER.md)
+# OMem
+### The Memory Operating System for AI Agents
+
+**Give your AI agent a brain that remembers. 16× faster than Mem0. Zero config. Zero API costs.**
+
+[**Quick Start**](#quick-start) · [**Benchmarks**](#benchmarks) · [**Claude Desktop & MCP**](#claude-desktop--mcp-setup) · [**CLI**](#cli-reference) · [**Docs**](./DEVELOPER.md)
 
 </div>
 
 ---
 
-## Install (One Command, No Drama)
+## Install
 
 ```bash
 pip install omem-os
+```
+
+```python
+from omem import OMem
 ```
 
 Live on PyPI: **[https://pypi.org/project/omem-os/](https://pypi.org/project/omem-os/)**
 
 ---
 
-## The Problem (Why Current Memory is Mid AF)
+## Before / After
 
-Your agent slays in the moment — but the second the chat ends? Poof. Gone.
+**Without OMem** — your agent forgets between sessions:
 
-You've tried:
+```python
+# Session 1
+agent.chat("My name is Alice and I prefer dark mode.")
+# → "Nice to meet you, Alice!"
 
-- 🗃 **Vector DBs** — Just dumb storage. No vibes check. Returns pure noise. Sus.
-- 📜 **Long context windows** — Expensive af, slow, hits limits, and drowns your agent in irrelevant delulu.
-- 💾 **Conversation buffers** — Grows forever like unchecked brain rot. Zero multi-session rizz.
+# Session 2 (new process)
+agent.chat("What's my display preference?")
+# → "I don't have information about your preferences."  ← forgot
+```
 
-**Real talk:** These aren't memory systems. They're just fancy storage. None of them actually *think*.
+**With OMem** — your agent remembers:
+
+```python
+from omem import OMem
+
+brain = OMem()  # persists to ~/.omem/brain.db
+
+# Session 1
+brain.add("User name: Alice. Prefers dark mode and Python for all backend work.")
+agent.chat("My name is Alice and I prefer dark mode.")
+
+# Session 2 (new process — brain.db persists automatically)
+context = brain.recall("display preference")
+agent.chat("What's my display preference?", context=context)
+# → "You prefer dark mode, Alice."  ← remembered
+```
 
 ---
 
-## OMem Hits Different
+## Benchmarks
 
-OMem is a full **Memory Operating System** — not another wrapper. It mirrors how a real brain works:
+> *Tested on Apple M-series. Same dataset: 5 000 memories, 500 queries, `all-MiniLM-L6-v2`. Reproduce with `python benchmarks/competitor.py` or open `benchmarks/reproduce.ipynb`.*
 
-```
-Store everything  →  Classify what actually slays  →  Retrieve the relevant tea
-Compress the mid  →  Forget the useless            →  Resolve contradictions (finally)
-```
-
-It's giving **cognitive layer** energy. Not just a database with retrieval sauce.
-
----
-
-## Benchmarks (We Ate) 🏆
-
-> *Tested on Apple M-series. Same dataset (5k memories, 500 queries, `all-MiniLM-L6-v2`) across all systems. Fair comparison, no cap.*
-
-### ⚡ Head-to-Head Performance
+### Head-to-Head Performance
 
 | System | Setup | Add (ops/s) | RAG (ops/s) | RAG p99 |
 | :--- | ---: | ---: | ---: | ---: |
 | **OMem** | **4.0 ms** | **65 †** | **292** | **20 ms** |
 | ChromaDB | 507 ms | 277 ‡ | 280 | 4 ms |
-| LanceDB | 8 ms | 82,000 ‡ | 182 | 7 ms |
-| **Mem0** | **15,000+ ms** | **< 1** | **18** | **638 ms** |
+| LanceDB | 8 ms | 82 000 ‡ | 182 | 7 ms |
+| **Mem0** | **15 000+ ms** | **< 1** | **18** | **638 ms** |
 
 > **† Smart Ingestion** — OMem's `add()` does: `embed → auto-classify → dedup → entity-graph sync → async persist`. Others just store pre-computed vectors.
 >
-> **‡ Raw storage only** — No classification. No deduplication. No graph. No thoughts.
+> **‡ Raw storage only** — No classification. No deduplication. No graph. No cognitive maintenance.
 
-### 🏆 Why OMem Mogged the Competition
+### Speedup Summary
 
 | Metric | OMem vs Mem0 | OMem vs ChromaDB | OMem vs LanceDB |
 |---|---|---|---|
 | RAG throughput | **16× faster** | **1.0× (parity)** | **1.6× faster** |
 | p50 recall | **0.007 ms** | 3.5 ms | 5.3 ms |
 | Setup time | **125× faster** | **127× faster** | parity |
-| Smart features | ✅ All 9 | ❌ 0/9 | ❌ 0/9 |
+| Cognitive features | ✅ 9/9 | ❌ 0/9 | ❌ 0/9 |
 
-**The tea:** Mem0 is slow because it runs LLM extraction on every add. OMem replaces that with a Rust-native classification engine — zero LLM calls, zero API costs, zero latency drama. We ate and left no crumbs. 🍽️
-
-### 🧩 Feature Matrix (Who's Actually Built Different?)
-
-| Feature | OMem | ChromaDB | Mem0 | LanceDB |
-| :--- | :---: | :---: | :---: | :---: |
-| Auto-Classification | ✅ | ❌ | ❌ | ❌ |
-| Causal Graphs | ✅ | ❌ | ❌ | ❌ |
-| Hybrid RAG (vector + keyword + recency + importance) | ✅ | ❌ | ❌ | ❌ |
-| Forgetting & Decay | ✅ | ❌ | ❌ | ❌ |
-| Memory Compression | ✅ | ❌ | ❌ | ❌ |
-| Conflict Detection & TMS | ✅ | ❌ | ❌ | ❌ |
-| CLI Tools | ✅ | ❌ | ❌ | ❌ |
-| Zero Config | ✅ | ✅ | ❌ | ✅ |
-| MCP Server (Claude/Cursor) | ✅ | ❌ | ❌ | ❌ |
+Mem0 is slow because it calls an LLM on every `add()`. OMem replaces that with a Rust-native classifier — zero LLM calls, zero API costs, zero added latency.
 
 ---
 
-## Quick Start (30 Seconds, Bet) ⚡
+## Stability
+
+| Component | Status | Notes |
+|---|---|---|
+| Core API (`add`, `recall`, `sleep`, `inspect`) | **Stable** | API locked for v0.1.x |
+| SQLite backend | **Stable** | Default; handles 100 000+ memories |
+| PostgreSQL backend | Beta | Production-ready; connection-string config |
+| MCP server (Claude Desktop / Cursor) | **Stable** | `omem serve` |
+| LangChain integration | Beta | `OMemRetriever` |
+| CrewAI integration | Alpha | Namespace-based multi-agent sharing |
+| Codebase indexer | Alpha | `omem sync` / `query_codebase` MCP tool |
+| Visualization dashboard | Beta | `omem dashboard` |
+
+---
+
+## The Problem
+
+Current memory approaches fall short in specific ways:
+
+- **Vector DBs** — Pure storage. Returns semantically similar noise. No lifecycle management, no deduplication, no conflict resolution.
+- **Long context windows** — Expensive, slow, hits limits, and forces agents to process irrelevant historical detail on every turn.
+- **Conversation buffers** — Grows unboundedly. No cross-session continuity. No multi-agent isolation.
+
+None of these systems *think*. They store. OMem manages memory the way a cognitive system does.
+
+---
+
+## How It Works
+
+OMem is a full Memory Operating System — it mirrors how memory works in practice:
+
+```
+Store everything  →  Classify what matters      →  Retrieve the relevant subset
+Compress similar  →  Forget low-value old items  →  Resolve contradictions
+```
+
+It functions as a **cognitive layer**, not just a database with retrieval.
+
+---
+
+## Quick Start
 
 ### Installation
 
@@ -115,27 +145,27 @@ It's giving **cognitive layer** energy. Not just a database with retrieval sauce
 # From PyPI (recommended)
 pip install omem-os
 
-# Or from source (if you want the dev experience)
+# From source
 git clone https://github.com/mohitkumarrajbadi/omem
 cd omem
 SETUPTOOLS_USE_DISTUTILS=stdlib pip install -e .
 omem health
 ```
 
-> **macOS / Anaconda users** — add this to `~/.zshrc` once and thank me later:
+> **macOS / Anaconda users** — add to `~/.zshrc`:
 > ```bash
 > export KMP_DUPLICATE_LIB_OK=TRUE
 > export HF_HUB_OFFLINE=1
 > ```
 
-### 60-Second Example (Watch It Slay)
+### 60-Second Example
 
 ```python
 from omem import OMem
 
 brain = OMem()
 
-# Add memories — it auto-detects the vibe + importance
+# Add memories — auto-detects type and importance
 brain.add("User prefers dark mode and Python for all backend work")
 brain.add("Critical bug: race condition in payment module causes duplicate charges", importance=0.95)
 brain.add("Architecture decision: migrated from REST to GraphQL for better performance")
@@ -143,15 +173,15 @@ brain.add("Architecture decision: migrated from REST to GraphQL for better perfo
 # Retrieve what matters — not everything
 results = brain.recall("What bugs do we have?")
 print(results[0].content)
-# → "Critical bug: race condition in payment module..." (the important one, no cap)
+# → "Critical bug: race condition in payment module..."
 
-# See exactly why it got picked (this hits different)
+# See exactly why it was selected
 for exp in brain.inspect("payment bugs"):
     print(exp.explain())
 # → vector=0.91, keyword=0.85, recency=0.94, importance=1.5x boost
 ```
 
-### The Sleep Cycle — Let Your Agent Cook 🍳
+### The Sleep Cycle
 
 ```python
 brain.add("User clicked login button")
@@ -159,15 +189,14 @@ brain.add("User pressed sign-in")
 brain.add("User tapped the login link")
 
 result = brain.sleep()
-# → compressed: 3 → 1  ("User repeatedly accessed login (3 instances)")
-# → forgotten:  12 low-value memories removed
-# → reflected:  4 new insights generated
-# Chef's kiss. 🤌
+# compressed: 3 → 1  ("User repeatedly accessed login (3 instances)")
+# forgotten:  12 low-value memories removed
+# reflected:  4 new insights generated
 ```
 
 ---
 
-## How It Works
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -199,7 +228,7 @@ result = brain.sleep()
              └──────────────────────────┘
 ```
 
-### The Retrieval Pipeline (4 Signals, Single SIMD Pass)
+### Retrieval Pipeline (4 Signals, Single SIMD Pass)
 
 ```
 Final Score = (0.50 × vector_similarity)
@@ -209,7 +238,23 @@ Final Score = (0.50 × vector_similarity)
             × status_multiplier
 ```
 
-Then optionally expanded via **Graph-RAG**: top results link to related entities in the knowledge graph, surfacing connected memories pure vector search would miss. Lowkey the smartest part of the whole system.
+Top results are optionally expanded via **Graph-RAG**: entities in recalled memories are used to traverse the knowledge graph and surface connected memories that pure vector search would miss.
+
+---
+
+## Feature Matrix
+
+| Feature | OMem | ChromaDB | Mem0 | LanceDB |
+| :--- | :---: | :---: | :---: | :---: |
+| Auto-Classification | ✅ | ❌ | ❌ | ❌ |
+| Causal Knowledge Graph | ✅ | ❌ | ❌ | ❌ |
+| Hybrid RAG (vector + keyword + recency + importance) | ✅ | ❌ | ❌ | ❌ |
+| Forgetting & Decay | ✅ | ❌ | ❌ | ❌ |
+| Memory Compression | ✅ | ❌ | ❌ | ❌ |
+| Conflict Detection & TMS | ✅ | ❌ | ❌ | ❌ |
+| CLI Tools | ✅ | ❌ | ❌ | ❌ |
+| Zero Config | ✅ | ✅ | ❌ | ✅ |
+| MCP Server (Claude / Cursor) | ✅ | ❌ | ❌ | ❌ |
 
 ---
 
@@ -227,13 +272,13 @@ memory.add("Acme Corp is on Enterprise plan, SOC2 required by Q3")
 
 context = memory.recall(
     "mobile issues Acme",
-    context_type="bugs",    # boost bug-type memories
-    time_range="recent",    # prioritize last 3 days
+    context_type="bugs",     # boost bug-type memories
+    time_range="recent",     # prioritize last 3 days
     k=5
 )
 ```
 
-### Multi-Agent System (No Leakage, Fr)
+### Multi-Agent System
 
 ```python
 researcher = OMem(namespace="researcher")
@@ -241,29 +286,29 @@ writer     = OMem(namespace="writer")
 
 researcher.add("Study shows 40% retention improvement with personalized onboarding")
 
-writer.recall("retention")       # → []  (fully isolated, no cross-contamination)
-researcher.recall("retention", project_only=False)  # → finds it when you actually need it
+writer.recall("retention")                         # → []  (fully isolated)
+researcher.recall("retention", project_only=False) # → finds it when needed
 ```
 
-### Conflict Detection (Built Different)
+### Conflict Detection
 
 ```python
 brain.add("Python version: 3.9")
 brain.add("Python version: 3.11")  # → auto-flagged as CONFLICTED
 
 brain.resolve_conflict("Python version")
-# → resolves in favor of most recent, deprecates the old one
-# → no more contradictory context cooked into your agent's brain
+# → resolves in favor of most recent, deprecates the old entry
 ```
 
 ---
 
-## Integrations
+## Claude Desktop & MCP Setup
 
-### Claude Desktop & Cursor (MCP Server) ⭐
+OMem works as an MCP server for Claude Desktop and Cursor IDE, giving your AI persistent memory across every session.
 
 ```bash
-omem serve   # starts MCP stdio server — that's it
+pip install "omem-os[mcp]"
+omem serve   # starts MCP stdio server
 ```
 
 Add to `claude_desktop_config.json`:
@@ -279,22 +324,29 @@ Add to `claude_desktop_config.json`:
 }
 ```
 
-**What your AI gets:**
+**Full setup guide: [MCP_SETUP.md](./MCP_SETUP.md)**
+
+### Tools available to Claude
 
 | Tool | What it does |
 |---|---|
 | `remember` | Store a fact, decision, or preference |
-| `recall` | Semantic search with type + time filters |
+| `recall` | Semantic search with type and time filters |
 | `reflect` | Generate high-level insights from memory |
 | `maintain` | Compress, forget, and optimize memory |
 | `resolve_conflict` | Detect and fix contradictions |
-| `summarize_state` | Get a project architecture overview |
+| `query_codebase` | Search indexed codebase memories |
+| `sync_codebase` | Incrementally index changed files |
 
-**Addressing the main concern:**
+### Context window impact
 
 > *"Won't injecting memory into every prompt bloat my context?"*
 
-Nah. OMem is a **retrieval layer**, not an injection layer. From 5,000 memories, it returns **3–5 targeted results (~200–500 tokens)** — that's 97% less context than a naive approach, while giving the agent exactly what it needs. Context compression is the whole point. 💡
+No. OMem is a **retrieval layer**, not an injection layer. From 5 000 memories, it returns **3–5 targeted results (~200–500 tokens)** — 97% less context than a naive approach, with exactly the relevant information. Context compression is the point.
+
+---
+
+## Integrations
 
 ### LangChain
 
@@ -304,6 +356,20 @@ from omem.integrations.langchain import OMemRetriever
 retriever = OMemRetriever(omem_instance=brain)
 chain = RetrievalQA.from_chain_type(llm=llm, retriever=retriever)
 ```
+
+See [`examples/with_langchain.py`](./examples/with_langchain.py) for a full working example.
+
+### OpenAI
+
+See [`examples/with_openai.py`](./examples/with_openai.py) — shows before/after recall wrapping an OpenAI chat call.
+
+### CrewAI
+
+See [`examples/with_crewai.py`](./examples/with_crewai.py) — demonstrates namespace-isolated shared memory across agents.
+
+### Ollama (local models)
+
+See [`examples/with_ollama.py`](./examples/with_ollama.py) — cross-session memory with Ollama running locally.
 
 ---
 
@@ -390,47 +456,52 @@ TOKENIZERS_PARALLELISM=false  # suppress tokenizer warning
 | ✅ Shipped | Hybrid RAG, Auto-classification, Forgetting, Compression, MCP Server |
 | ✅ Shipped | Truth Maintenance System, Knowledge Graph, Graph-RAG, PostgreSQL backend |
 | ✅ Shipped | CLI, Dashboard, PyPI package (`pip install omem-os`) |
-| 🔄 In Progress | LOCOMO benchmark validation, distributed mode |
-| 📅 Planned | Custom embedding providers (OpenAI, Cohere), memory versioning |
+| In Progress | LOCOMO benchmark validation, distributed mode |
+| Planned | Custom embedding providers (OpenAI, Cohere), memory versioning |
 
 ---
 
 ## FAQ
 
-**Q: Does this run an LLM internally?**  
-A: Nah. We use lightweight heuristics + a tiny ~90MB embedding model. Zero LLM API drama, fr. No API keys needed, no external calls, no costs.
+**Q: Does this run an LLM internally?**
+A: No. OMem uses lightweight heuristics and a ~90 MB embedding model. No LLM API calls, no external network calls, no API keys required, no usage costs.
 
-**Q: How is this different from ChromaDB or Pinecone?**  
-A: Those are vector storage systems. OMem is a memory *operating system* — with lifecycle management (importance → decay → forget), deduplication, conflict detection, knowledge graphs, and a cognitive maintenance cycle. Completely different category.
+**Q: How is this different from ChromaDB or Pinecone?**
+A: Those are vector storage systems. OMem is a memory *operating system* — with lifecycle management (importance → decay → forget), deduplication, conflict detection, knowledge graphs, and a cognitive maintenance cycle. Different category.
 
-**Q: Will it bloat my agent's context window?**  
+**Q: Will it bloat my agent's context window?**
 A: The opposite. OMem retrieves 3–5 relevant memories per query (~300 tokens) instead of injecting your entire history. See the [Context FAQ in DEVELOPER.md](./DEVELOPER.md#memory-layer-faq--does-it-bloat-context).
 
-**Q: Is it production-ready?**  
-A: v0.0.1 is an early pre-alpha release. Available on PyPI for testing. SQLite handles hundreds of thousands of memories. PostgreSQL backend for multi-process deployments. APIs may change between releases.
+**Q: Is it production-ready?**
+A: v0.1.0 is the first stable release. The Core API is locked for the v0.1.x series. SQLite handles hundreds of thousands of memories in production. PostgreSQL backend is available for multi-process deployments. See the [Stability table](#stability) above for component-level status.
 
-**Q: What about privacy?**  
+**Q: What about privacy?**
 A: Everything runs 100% locally by default. Your memories never leave your machine. No telemetry. PostgreSQL backend is self-hosted.
 
-**Q: Do I need Rust installed?**  
-A: Only if building from source for SIMD acceleration. `pip install omem-os` works out of the box — no Rust needed.
+**Q: Do I need Rust installed?**
+A: Only if building from source for SIMD acceleration. `pip install omem-os` works without Rust — wheels ship with the pre-compiled extension.
 
 ---
 
 ## Contributing
 
-Come help us make this even more bussin. 🔥
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for setup instructions, branch workflow, testing requirements, and a list of good first issues.
+
+**Python-only setup (no Rust required):**
 
 ```bash
 git clone https://github.com/mohitkumarrajbadi/omem
 cd omem
 python -m venv .venv && source .venv/bin/activate
-SETUPTOOLS_USE_DISTUTILS=stdlib pip install -e ".[dev]"
+pip install -e ".[dev]"
 pytest tests/ -v
-python benchmarks/competitor.py   # run head-to-head benchmarks
 ```
 
-Check [DEVELOPER.md](./DEVELOPER.md) for architecture deep-dives, CLI reference, and contribution guidelines.
+---
+
+## Used By
+
+*Be the first — [open an issue](https://github.com/mohitkumarrajbadi/omem/issues) to get listed.*
 
 ---
 
@@ -442,9 +513,7 @@ MIT — see [LICENSE](./LICENSE)
 
 <div align="center">
 
-**Built for the AI girlies and guys who are tired of mid memory 🧠**
-
-*If OMem makes your agents actually intelligent, drop a ⭐ — it means the world.*
+*If OMem makes your agents more capable, consider dropping a ⭐ — it helps others find the project.*
 
 [Report Bug](https://github.com/mohitkumarrajbadi/omem/issues) · [Request Feature](https://github.com/mohitkumarrajbadi/omem/issues) · [Discussions](https://github.com/mohitkumarrajbadi/omem/discussions)
 

@@ -57,7 +57,7 @@ class TestIdentityPriority:
 
     def test_core_priority_gets_core_tier(self):
         """CORE priority memories should be auto-assigned CORE tier."""
-        m = OMem()
+        m = OMem(backend="memory")
         mid = m.add("My name is Mohit")
         mem = m.get(mid)
         assert mem is not None
@@ -65,7 +65,7 @@ class TestIdentityPriority:
         assert mem.tier == MemoryTier.CORE
 
     def test_normal_priority_gets_active_tier(self):
-        m = OMem()
+        m = OMem(backend="memory")
         mid = m.add("Python is a programming language")
         mem = m.get(mid)
         assert mem is not None
@@ -163,14 +163,14 @@ class TestForgettingEngine:
 
     def test_forget_via_api(self):
         """End-to-end test: add memories, simulate aging, forget."""
-        m = OMem()
+        m = OMem(backend="memory")
         m.add("My name is Mohit")  # CORE - immune
         m.add("Python is a language")  # NORMAL
         m.add("okay sure got it")  # LOW - filler
         result = m.forget()
-        # With fresh memories, nothing should be archived (too recent)
-        assert result.core_immune >= 1
         assert isinstance(result, ForgetResult)
+        # CORE-priority identity memory must be protected from forgetting
+        assert result.core_immune >= 1
 
 
 # ==============================================================
@@ -183,7 +183,7 @@ class TestModeAwareRetrieval:
 
     @pytest.fixture
     def loaded_mem(self):
-        m = OMem()
+        m = OMem(backend="memory")
         m.add("Yesterday I went to the park", mem_type=MemoryType.EPISODIC)
         m.add("To deploy, run docker compose up", mem_type=MemoryType.PROCEDURAL)
         m.add("I decided to use React", mem_type=MemoryType.DECISION)
@@ -198,13 +198,19 @@ class TestModeAwareRetrieval:
     def test_coding_mode_boosts_procedural(self, loaded_mem):
         results_default = loaded_mem.recall("deploy application", mode="default")
         results_coding = loaded_mem.recall("deploy application", mode="coding")
-        # In coding mode, PROCEDURAL should get a boost
+        # In coding mode, PROCEDURAL should get a boost — results must be non-empty
         assert len(results_coding) > 0
-        # Procedural memory should score higher in coding mode
+        assert len(results_default) > 0
+        # The PROCEDURAL memory must appear in at least one result set
         proc_default = [r for r in results_default if r.type == MemoryType.PROCEDURAL]
         proc_coding = [r for r in results_coding if r.type == MemoryType.PROCEDURAL]
+        assert len(proc_coding) > 0, (
+            "PROCEDURAL memory must appear in coding-mode results for 'deploy application'"
+        )
         if proc_default and proc_coding:
-            assert proc_coding[0].score >= proc_default[0].score
+            assert proc_coding[0].score >= proc_default[0].score, (
+                "Coding mode must give PROCEDURAL memories a higher score than default mode"
+            )
 
     def test_planning_mode_boosts_decisions(self, loaded_mem):
         results = loaded_mem.recall("technology choice", mode="planning")
@@ -239,30 +245,36 @@ class TestPriorityScoring:
 
     def test_identity_memory_scores_higher(self):
         """CORE priority memory should score higher than NORMAL for same query."""
-        m = OMem()
+        m = OMem(backend="memory")
         m.add("My name is Mohit and I work on AI")  # CORE priority
         m.add("Someone named Mohit works on AI")  # NORMAL priority
         results = m.recall("who is Mohit")
-        if len(results) >= 2:
-            # The identity memory should rank higher due to 2x multiplier
-            core_results = [r for r in results if r.priority == MemoryPriority.CORE]
-            if core_results:
-                assert core_results[0].score > 0
+        assert len(results) > 0, "Recall must return at least one result"
+        # CORE memory must appear in results
+        core_results = [r for r in results if r.priority == MemoryPriority.CORE]
+        assert len(core_results) > 0, (
+            "CORE priority memory must appear in recall results"
+        )
+        assert core_results[0].score > 0, "CORE priority memory must have positive score"
 
     def test_low_priority_penalised(self):
-        """LOW priority memory should get 0.7x scoring penalty."""
-        m = OMem()
-        m.add("Python was created in 1991")  # NORMAL priority
+        """LOW priority memory should get 0.7x scoring penalty vs NORMAL."""
+        m = OMem(backend="memory")
+        m.add("Python was created in 1991 by Guido van Rossum")  # NORMAL priority
         m.add("okay sure got it thanks")  # LOW priority
         results = m.recall("Python")
-        if len(results) >= 2:
-            low = [r for r in results if r.priority == MemoryPriority.LOW]
-            normal = [r for r in results if r.priority == MemoryPriority.NORMAL]
-            if low and normal:
-                assert normal[0].score >= low[0].score
+        assert len(results) > 0, "Recall must return at least one result"
+        # NORMAL-priority Python memory must rank above LOW-priority filler
+        normal = [r for r in results if r.priority == MemoryPriority.NORMAL]
+        low = [r for r in results if r.priority == MemoryPriority.LOW]
+        assert len(normal) > 0, "NORMAL priority memory about Python must appear in results"
+        if low:
+            assert normal[0].score >= low[0].score, (
+                "NORMAL priority must score >= LOW priority for same query"
+            )
 
     def test_priority_in_to_dict(self):
-        m = OMem()
+        m = OMem(backend="memory")
         mid = m.add("My name is Test User")
         mem = m.get(mid)
         d = mem.to_dict()

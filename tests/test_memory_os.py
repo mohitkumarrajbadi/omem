@@ -4,6 +4,8 @@ namespaces, update/merge, inspect, and multi-agent shared memory.
 
 import time
 
+import pytest
+
 from omem import MemoryType, OMem, RetrievalExplanation
 from omem.core.brain.importance import (
     compute_frequency_score,
@@ -51,7 +53,7 @@ class TestMemoryUpdate:
     """Test memory update and soft-delete."""
 
     def test_update_replaces(self):
-        m = OMem()
+        m = OMem(backend="memory")
         old_id = m.add("I use VS Code")
         new_id = m.update(old_id, "I switched to Cursor AI")
         assert new_id is not None
@@ -61,7 +63,7 @@ class TestMemoryUpdate:
         assert old_mem.active is False
 
     def test_update_merge(self):
-        m = OMem()
+        m = OMem(backend="memory")
         old_id = m.add("Python is my favorite language")
         new_id = m.update(old_id, "I also love Rust", merge=True)
         assert new_id is not None
@@ -69,11 +71,11 @@ class TestMemoryUpdate:
         assert "Python" in new_mem.content or "Rust" in new_mem.content
 
     def test_update_nonexistent(self):
-        m = OMem()
+        m = OMem(backend="memory")
         assert m.update("nonexistent", "test") is None
 
     def test_soft_delete(self):
-        m = OMem()
+        m = OMem(backend="memory")
         mid = m.add("Temporary note")
         assert m.delete(mid) is True
         mem = m.get(mid)
@@ -87,7 +89,7 @@ class TestNamespaces:
     """Test multi-agent namespace isolation."""
 
     def test_namespace_isolation(self):
-        m = OMem()
+        m = OMem(backend="memory")
         m.add("Agent A memory", namespace="agent-a")
         m.add("Agent B memory", namespace="agent-b")
         results_a = m.recall("memory", namespace="agent-a")
@@ -96,7 +98,7 @@ class TestNamespaces:
         assert all(r.namespace == "agent-b" for r in results_b)
 
     def test_namespace_list(self):
-        m = OMem()
+        m = OMem(backend="memory")
         m.add("test", namespace="ns1")
         m.add("test2", namespace="ns2")
         ns = m.namespaces()
@@ -104,7 +106,7 @@ class TestNamespaces:
         assert "ns2" in ns
 
     def test_clear_namespace(self):
-        m = OMem()
+        m = OMem(backend="memory")
         m.add("keep this", namespace="keep")
         m.add("delete this", namespace="delete")
         m.clear(namespace="delete")
@@ -115,7 +117,7 @@ class TestCompression:
     """Test the memory compression engine."""
 
     def test_compression_reduces(self):
-        m = OMem()
+        m = OMem(backend="memory")
         # Add semantically similar content
         m.add("Python is a great programming language")
         m.add("Python is an excellent programming language")
@@ -131,7 +133,7 @@ class TestCompression:
         assert result["deactivated"] >= 0
 
     def test_compression_preserves_unrelated(self):
-        m = OMem()
+        m = OMem(backend="memory")
         m.add("The sky is blue")
         m.add("Databases store data persistently")
         before = m.stats()["total"]
@@ -144,7 +146,7 @@ class TestReflection:
     """Test the reflection engine."""
 
     def test_reflect_conversation(self):
-        m = OMem()
+        m = OMem(backend="memory")
         messages = [
             "I need to plan a trip to Paris",
             "Looking at flights for May",
@@ -158,11 +160,11 @@ class TestReflection:
         assert insight.importance >= 0.5
 
     def test_reflect_short_conversation_returns_none(self):
-        m = OMem()
+        m = OMem(backend="memory")
         assert m.reflect_conversation(["hi"]) is None
 
     def test_reflect_on_memories(self):
-        m = OMem()
+        m = OMem(backend="memory")
         for i in range(10):
             m.add(f"Important fact number {i} about technology and AI systems")
         refs = m.reflect()
@@ -174,7 +176,7 @@ class TestInspect:
     """Test retrieval observability."""
 
     def test_inspect_returns_explanations(self):
-        m = OMem()
+        m = OMem(backend="memory")
         m.add("Python is a programming language")
         m.add("JavaScript runs in the browser")
         exps = m.inspect("programming language")
@@ -182,7 +184,7 @@ class TestInspect:
         assert isinstance(exps[0], RetrievalExplanation)
 
     def test_inspect_has_all_scores(self):
-        m = OMem()
+        m = OMem(backend="memory")
         m.add("The capital of France is Paris")
         exps = m.inspect("Paris France capital")
         if exps:
@@ -195,7 +197,7 @@ class TestInspect:
             assert hasattr(e, "matched_keywords")
 
     def test_explain_string(self):
-        m = OMem()
+        m = OMem(backend="memory")
         m.add("test memory content")
         exps = m.inspect("test memory")
         if exps:
@@ -208,14 +210,14 @@ class TestAccessTracking:
     """Test that RAG updates access counts."""
 
     def test_access_count_increments(self):
-        m = OMem()
+        m = OMem(backend="memory")
         mid = m.add("Frequently accessed memory")
         assert m.get(mid).access_count == 0
         m.recall("accessed memory")
         assert m.get(mid).access_count >= 1
 
     def test_last_accessed_updates(self):
-        m = OMem()
+        m = OMem(backend="memory")
         mid = m.add("Track access time")
         before = m.get(mid).last_accessed
         m.recall("access time")
@@ -227,7 +229,7 @@ class TestDecay:
     """Test memory decay."""
 
     def test_decay_returns_list(self):
-        m = OMem()
+        m = OMem(backend="memory")
         m.add("Recent memory")
         decayed = m.decay()
         assert isinstance(decayed, list)
@@ -237,7 +239,10 @@ class TestSharedMemory:
     """Test multi-agent shared memory integration."""
 
     def test_shared_store_and_recall(self):
-        from omem.integrations.crewai import OMemSharedMemory
+        crewai_mod = pytest.importorskip(
+            "omem.integrations.crewai", reason="crewai integration not available"
+        )
+        OMemSharedMemory = crewai_mod.OMemSharedMemory
 
         shared = OMemSharedMemory(workspace="test-ws")
         shared.store("agent1", "Found important data point")
@@ -245,7 +250,10 @@ class TestSharedMemory:
         assert len(results) > 0
 
     def test_broadcast(self):
-        from omem.integrations.crewai import OMemSharedMemory
+        crewai_mod = pytest.importorskip(
+            "omem.integrations.crewai", reason="crewai integration not available"
+        )
+        OMemSharedMemory = crewai_mod.OMemSharedMemory
 
         shared = OMemSharedMemory(workspace="test-ws2")
         mid = shared.broadcast("System-wide announcement")
@@ -256,7 +264,10 @@ class TestLangChainIntegration:
     """Test LangChain memory integration."""
 
     def test_save_and_load(self):
-        from omem.integrations.langchain import OMemChatMemory
+        lc_mod = pytest.importorskip(
+            "omem.integrations.langchain", reason="langchain integration not available"
+        )
+        OMemChatMemory = lc_mod.OMemChatMemory
 
         mem = OMemChatMemory()
         mem.save_context(
@@ -267,16 +278,24 @@ class TestLangChainIntegration:
         assert len(variables["history"]) > 0
 
     def test_memory_variables(self):
-        from omem.integrations.langchain import OMemChatMemory
+        lc_mod = pytest.importorskip(
+            "omem.integrations.langchain", reason="langchain integration not available"
+        )
+        OMemChatMemory = lc_mod.OMemChatMemory
 
         mem = OMemChatMemory()
         assert "history" in mem.memory_variables
 
     def test_retriever(self):
-        from omem.integrations.langchain import OMemRetriever
+        lc_mod = pytest.importorskip(
+            "omem.integrations.langchain", reason="langchain integration not available"
+        )
+        OMemRetriever = lc_mod.OMemRetriever
 
         r = OMemRetriever()
         r.omem.add("Python is a programming language")
         docs = r.get_relevant_documents("programming")
         assert len(docs) > 0
+        # OMemRetriever returns plain dicts with a "page_content" key
         assert "page_content" in docs[0]
+        assert len(docs[0]["page_content"]) > 0

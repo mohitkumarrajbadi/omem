@@ -88,13 +88,25 @@ button:hover { opacity: 0.85; transform: translateY(-1px); }
                    overflow-y: auto; color: var(--text2); }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 .card { animation: fadeIn 0.3s ease; }
+.tabs { display: flex; gap: 0; margin-bottom: 0; border-bottom: 1px solid var(--border); }
+.tab-btn { background: transparent; color: var(--text2); border: none; border-bottom: 2px solid transparent;
+           padding: 0.6rem 1.25rem; cursor: pointer; font-size: 0.85rem; margin-bottom: -1px; border-radius: 0; }
+.tab-btn.active { color: var(--accent2); border-bottom-color: var(--accent2); }
+.tab-btn:hover { color: var(--text); opacity: 1; transform: none; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+#graph-svg { width: 100%; height: 420px; background: var(--surface2); border-radius: 8px; }
+.node circle { stroke: var(--border); stroke-width: 1.5; cursor: pointer; }
+.node text { font-size: 11px; fill: var(--text2); pointer-events: none; }
+.link { stroke: var(--border); stroke-opacity: 0.5; }
+#graph-info { font-size: 0.8rem; color: var(--text2); margin-top: 0.5rem; min-height: 1.5rem; }
 </style>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
 <div class="header">
   <h1>OMem Dashboard</h1>
-  <span class="badge">Memory OS v0.0.1-pre-alpha</span>
+  <span class="badge">Memory OS v0.1.0</span>
   <span class="badge" id="mem-count">—</span>
 </div>
 <div class="grid">
@@ -118,13 +130,23 @@ button:hover { opacity: 0.85; transform: translateY(-1px); }
     <div id="action-log" style="font-size:0.8rem;color:var(--text2);max-height:200px;overflow-y:auto;"></div>
   </div>
   <div class="card full">
-    <h2>Memory Table</h2>
-    <table>
-      <thead><tr><th>ID</th><th>Type</th><th>Content</th><th>Importance</th><th>Accessed</th><th>Namespace</th><th>Source</th></tr></thead>
-      <tbody id="mem-table"></tbody>
-    </table>
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('memory-table')">Memory Table</button>
+      <button class="tab-btn" onclick="switchTab('knowledge-graph')">Knowledge Graph</button>
+    </div>
+    <div id="tab-memory-table" class="tab-panel active" style="padding-top:1rem">
+      <table>
+        <thead><tr><th>ID</th><th>Type</th><th>Content</th><th>Importance</th><th>Accessed</th><th>Namespace</th><th>Source</th></tr></thead>
+        <tbody id="mem-table"></tbody>
+      </table>
+    </div>
+    <div id="tab-knowledge-graph" class="tab-panel" style="padding-top:1rem">
+      <svg id="graph-svg"></svg>
+      <div id="graph-info">Click a node to see related memories.</div>
+    </div>
   </div>
 </div>
+<script src="https://d3js.org/d3.v7.min.js"></script>
 <script>
 const API = '';
 async function fetchJSON(url) { const r = await fetch(API + url); return r.json(); }
@@ -185,6 +207,84 @@ async function doDecay() { const r = await postJSON('/api/decay'); log('Decayed:
 
 refresh();
 setInterval(refresh, 5000);
+
+// --- Tab switching ---
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach((b, i) => {
+    b.classList.toggle('active', b.getAttribute('onclick').includes(name));
+  });
+  document.querySelectorAll('.tab-panel').forEach(p => {
+    p.classList.toggle('active', p.id === 'tab-' + name);
+  });
+  if (name === 'knowledge-graph') loadGraph();
+}
+
+// --- Knowledge Graph (D3 force-directed) ---
+const TYPE_COLORS = {
+  PERSON: '#3b82f6', TECHNOLOGY: '#8b5cf6', PROJECT: '#10b981',
+  ORGANIZATION: '#f59e0b', LOCATION: '#ef4444', CONCEPT: '#06b6d4',
+  default: '#94a3b8'
+};
+
+let graphLoaded = false;
+
+async function loadGraph() {
+  if (graphLoaded) return;
+  const data = await fetchJSON('/api/graph');
+  if (!data.nodes || data.nodes.length === 0) {
+    document.getElementById('graph-info').textContent = 'No entities in the knowledge graph yet. Add some memories first.';
+    return;
+  }
+  graphLoaded = true;
+  renderGraph(data);
+}
+
+function renderGraph(data) {
+  const svg = d3.select('#graph-svg');
+  svg.selectAll('*').remove();
+  const rect = document.getElementById('graph-svg').getBoundingClientRect();
+  const W = rect.width || 800, H = rect.height || 420;
+  svg.attr('viewBox', `0 0 ${W} ${H}`);
+
+  const simulation = d3.forceSimulation(data.nodes)
+    .force('link', d3.forceLink(data.edges).id(d => d.id).distance(90))
+    .force('charge', d3.forceManyBody().strength(-200))
+    .force('center', d3.forceCenter(W / 2, H / 2))
+    .force('collision', d3.forceCollide(30));
+
+  const link = svg.append('g').selectAll('line')
+    .data(data.edges).join('line').attr('class', 'link');
+
+  const node = svg.append('g').selectAll('g')
+    .data(data.nodes).join('g').attr('class', 'node')
+    .call(d3.drag()
+      .on('start', (e, d) => { if (!e.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+      .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
+      .on('end', (e, d) => { if (!e.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; }))
+    .on('click', async (e, d) => {
+      document.getElementById('graph-info').textContent = 'Loading memories for: ' + d.id + '...';
+      const related = await fetchJSON('/api/inspect?q=' + encodeURIComponent(d.id));
+      const info = related.length
+        ? related.slice(0, 3).map(r => 'score ' + r.final_score.toFixed(3) + ': mem ' + r.memory_id).join(' | ')
+        : 'No memories found for this entity.';
+      document.getElementById('graph-info').textContent = d.id + ' (' + (d.type || 'entity') + ', ' + (d.count || 0) + ' refs): ' + info;
+    });
+
+  node.append('circle')
+    .attr('r', d => Math.min(8 + (d.count || 1) * 2, 22))
+    .attr('fill', d => TYPE_COLORS[d.type] || TYPE_COLORS.default);
+
+  node.append('text')
+    .attr('dy', d => -(Math.min(8 + (d.count || 1) * 2, 22) + 4))
+    .attr('text-anchor', 'middle')
+    .text(d => d.id.length > 16 ? d.id.slice(0, 14) + '…' : d.id);
+
+  simulation.on('tick', () => {
+    link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+        .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+    node.attr('transform', d => `translate(${d.x},${d.y})`);
+  });
+}
 </script>
 </body>
 </html>"""
@@ -242,6 +342,33 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             q = params.get("q", [""])[0]
             results = self.omem.recall(q, top_k=10)
             self._send([m.to_dict() for m in results])
+        elif path == "/api/graph":
+            try:
+                entities = self.omem.entities()
+            except Exception:
+                entities = []
+            nodes = [
+                {
+                    "id": e["entity"] if isinstance(e, dict) else str(e),
+                    "type": e.get("type", "CONCEPT") if isinstance(e, dict) else "CONCEPT",
+                    "count": e.get("count", 1) if isinstance(e, dict) else 1,
+                }
+                for e in entities
+            ]
+            # Build co-occurrence edges from shared memory references
+            edges: list = []
+            try:
+                entity_names = [n["id"] for n in nodes]
+                mems = self.omem.all(include_inactive=False)
+                for mem in mems:
+                    content = mem.content.lower()
+                    present = [n for n in entity_names if n.lower() in content]
+                    for i, a in enumerate(present):
+                        for b in present[i + 1:]:
+                            edges.append({"source": a, "target": b})
+            except Exception:
+                pass
+            self._send({"nodes": nodes, "edges": edges})
         else:
             self._send({"error": "not found"}, code=404)
 
