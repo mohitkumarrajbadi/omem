@@ -82,7 +82,7 @@ def test_newer_memory_has_higher_importance_wins():
     """When both facts have equal importance, the newer one must win."""
     m = OMem(backend="memory")
 
-    id1 = m.add("My city is Mumbai", importance=0.8)
+    m.add("My city is Mumbai", importance=0.8)
     id2 = m.add("My city is Berlin", importance=0.8)
 
     mem2 = m.get(id2)

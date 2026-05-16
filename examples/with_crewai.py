@@ -7,12 +7,6 @@
 #   - Researcher stores a fact; writer recalls it
 #   - A third "finance" agent in a different namespace cannot see their memory
 
-try:
-    from crewai import Agent, Task, Crew
-except ImportError:
-    print("CrewAI not installed. Run: pip install crewai")
-    raise
-
 from omem import OMem
 from omem.types import MemoryType
 

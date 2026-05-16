@@ -9,7 +9,6 @@
 #   - Recalls relevant past context before each prompt
 #   - Memory count grows between runs
 
-import json
 import sys
 from typing import Optional
 

@@ -4,7 +4,6 @@ Rewritten from script-style (print-based) to proper pytest assertions.
 Uses OMem(backend="memory") for speed and isolation.
 """
 
-import pytest
 
 from omem import OMem
 from omem.types import MemoryStatus, MemoryType

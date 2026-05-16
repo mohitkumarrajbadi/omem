@@ -7,7 +7,7 @@ No external file dependencies.
 
 import pytest
 
-from omem import MemoryType, OMem
+from omem import OMem
 from omem.core.engine import ForgetResult
 
 

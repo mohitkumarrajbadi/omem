@@ -10,7 +10,7 @@ import time
 from datetime import datetime, timedelta
 
 from omem import OMem
-from omem.types import MemoryType, MemoryPriority
+from omem.types import MemoryType
 
 
 def section(title: str) -> None:
