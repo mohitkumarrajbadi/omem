@@ -1,21 +1,7 @@
 """OMem CLI — command-line interface for OMem."""
 
-# ── Runtime environment fixes ─────────────────────────────────────────────────
-# Must be set BEFORE any import that loads FAISS, numpy, or sentence-transformers,
-# as those trigger OpenMP initialisation which causes libomp.dylib conflicts on macOS.
-import os
-
-os.environ.setdefault(
-    "KMP_DUPLICATE_LIB_OK", "TRUE"
-)  # fix libomp conflict (conda + FAISS)
-os.environ.setdefault("HF_HUB_OFFLINE", "1")  # no HuggingFace Hub network calls
-os.environ.setdefault(
-    "TOKENIZERS_PARALLELISM", "false"
-)  # suppress tokenizer fork warnings
-os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")  # suppress model load noise
-# ─────────────────────────────────────────────────────────────────────────────
-
 import json
+import os
 import time
 
 import click

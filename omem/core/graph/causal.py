@@ -53,6 +53,16 @@ class CausalGraph:
             ids.add(e.src)
         return ids
 
+    def edge_label(self, src: str, dst: str) -> str:
+        """Return the label of the edge src → dst, or '' if none exists."""
+        for edge in self._forward.get(src, []):
+            if edge.dst == dst:
+                return edge.label
+        for edge in self._backward.get(src, []):
+            if edge.src == dst:
+                return edge.label
+        return ""
+
     def clear(self) -> None:
         self._forward.clear()
         self._backward.clear()

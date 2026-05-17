@@ -14,7 +14,7 @@
 
 **Give your AI agent a brain that remembers. 16× faster than Mem0. Zero config. Zero API costs.**
 
-[**Quick Start**](#quick-start) · [**Benchmarks**](#benchmarks) · [**Claude Desktop & MCP**](#claude-desktop--mcp-setup) · [**CLI**](#cli-reference) · [**Docs**](./DEVELOPER.md)
+[**Quick Start**](#quick-start) · [**Benchmarks**](#benchmarks) · [**Claude Desktop & MCP**](#claude-desktop--mcp-setup) · [**Project Memory**](#project-memory--codebase-indexing) · [**CLI**](#cli-reference) · [**Docs**](./DEVELOPER.md)
 
 </div>
 
@@ -107,7 +107,7 @@ Mem0 is slow because it calls an LLM on every `add()`. OMem replaces that with a
 | MCP server (Claude Desktop / Cursor) | **Stable** | `omem serve` |
 | LangChain integration | Beta | `OMemRetriever` |
 | CrewAI integration | Alpha | Namespace-based multi-agent sharing |
-| Codebase indexer | Alpha | `omem sync` / `query_codebase` MCP tool |
+| Codebase indexer | Alpha | AST parsing, git-diff sync, graph retrieval — Python only |
 | Visualization dashboard | Beta | `omem dashboard` |
 
 ---
@@ -151,12 +151,6 @@ cd omem
 SETUPTOOLS_USE_DISTUTILS=stdlib pip install -e .
 omem health
 ```
-
-> **macOS / Anaconda users** — add to `~/.zshrc`:
-> ```bash
-> export KMP_DUPLICATE_LIB_OK=TRUE
-> export HF_HUB_OFFLINE=1
-> ```
 
 ### 60-Second Example
 
@@ -255,6 +249,7 @@ Top results are optionally expanded via **Graph-RAG**: entities in recalled memo
 | CLI Tools | ✅ | ❌ | ❌ | ❌ |
 | Zero Config | ✅ | ✅ | ❌ | ✅ |
 | MCP Server (Claude / Cursor) | ✅ | ❌ | ❌ | ❌ |
+| Codebase Indexing (AST + Graph) | ✅ | ❌ | ❌ | ❌ |
 
 ---
 
@@ -335,14 +330,123 @@ Add to `claude_desktop_config.json`:
 | `reflect` | Generate high-level insights from memory |
 | `maintain` | Compress, forget, and optimize memory |
 | `resolve_conflict` | Detect and fix contradictions |
-| `query_codebase` | Search indexed codebase memories |
-| `sync_codebase` | Incrementally index changed files |
+| `query_codebase` | Natural language search over indexed codebase (file + line + callers) |
+| `sync_codebase` | Re-index only files changed since last commit (git diff) |
+| `ingest_codebase` | Full project baseline — parse all Python files via AST |
 
 ### Context window impact
 
 > *"Won't injecting memory into every prompt bloat my context?"*
 
 No. OMem is a **retrieval layer**, not an injection layer. From 5 000 memories, it returns **3–5 targeted results (~200–500 tokens)** — 97% less context than a naive approach, with exactly the relevant information. Context compression is the point.
+
+---
+
+## Project Memory — Codebase Indexing
+
+Every AI coding tool today rediscovers your codebase from scratch on every session. Claude Code reads your files. Codex scans your directory tree. Cursor searches symbols in real-time. They spend tokens re-learning your architecture every single time — then forget it the moment the session ends.
+
+**OMem fixes this permanently.**
+
+One command indexes your entire project into a persistent, semantic knowledge base. From that point forward, any agent — Claude Code, Codex, Cursor, your own agent — can ask "where does auth happen?", "what calls this function?", "show me all database access patterns" and get an exact answer in milliseconds, without reading a single file.
+
+### Quick Start
+
+```python
+brain = OMem()
+
+# Index your project once — AST parsing across all Python files
+count = brain.ingest_project(".")
+# → 284 symbols indexed: 12 modules, 44 classes, 228 functions
+
+# Query with natural language
+results = brain.query_code("authentication token refresh")
+# → auth/jwt.py:142   generate_token()
+# → auth/jwt.py:178   refresh_token()       [calls: verify_claims, sign_payload]
+# → middleware/auth.py:67  authenticate_request()  [calls: verify_token]
+
+# After code changes — only re-parses git-diff'd files (milliseconds)
+brain.sync_project(".")
+# → 8 symbols updated across 3 changed files
+```
+
+### Or via CLI
+
+```bash
+omem ingest .                          # full baseline — parse entire project
+omem sync .                            # incremental update via git diff
+omem codebase "database error handling" # natural language search
+```
+
+### Why This Changes How AI Coding Tools Work
+
+Today, when you ask Claude Code "find where database connections are pooled":
+
+1. Claude searches files with `grep` / `find`
+2. Reads multiple files to understand context
+3. Consumes hundreds of tokens rediscovering your architecture
+4. Forgets all of it next session
+
+**With OMem project memory:**
+
+1. Claude calls `query_codebase("database connection pooling")`
+2. Gets back: exact file, line number, function signature, and related callers/dependencies
+3. Uses ~50 tokens total
+4. The knowledge persists — next session, next week, next year
+
+This works for any agent that supports MCP: Claude Code, Cursor, your own OpenAI or Ollama agent via the Python API.
+
+### What Gets Indexed
+
+OMem parses your Python codebase using AST (Abstract Syntax Tree) analysis — no LLM required:
+
+| Symbol Type | Example ID | What's Captured |
+|---|---|---|
+| Module | `auth.jwt` | Imports, file path, docstring |
+| Class | `auth.jwt.TokenManager` | Methods, inheritance chain, signature |
+| Function | `auth.jwt.generate_token` | Signature, dependencies, callers |
+| Method | `auth.jwt.TokenManager.refresh` | Parent class, all calls made |
+
+Symbols are stored with stable hierarchical IDs (`package.module.Class.method`) so incremental syncs can update exactly what changed.
+
+### The Knowledge Graph Difference
+
+Plain vector search finds the function you asked about. OMem's graph layer surfaces everything connected to it automatically:
+
+```
+Query: "token refresh logic"
+
+Direct match:
+  auth/jwt.py:178   refresh_token(user_id, old_token)
+
+Graph context (depth=2):
+  ← called by:  api/endpoints.py:44    POST /auth/refresh
+  ← called by:  middleware/auth.py:91  auto_refresh_middleware
+  →  calls:     auth/claims.py:23      verify_claims(token)
+  →  calls:     crypto/signing.py:67   sign_payload(claims)
+```
+
+One query. Full dependency context. Zero file reading.
+
+### Using With Claude Code and Cursor via MCP
+
+Once OMem is running as your MCP server, Claude gets three tools for codebase navigation:
+
+| MCP Tool | What Claude does with it |
+|---|---|
+| `ingest_codebase` | Full AST parse of the project — run once |
+| `sync_codebase` | Re-index only files changed since last commit |
+| `query_codebase` | Semantic + graph search returning file, line, callers |
+
+Claude's behaviour changes fundamentally: instead of `grep -r "def authenticate"` across your entire project, it calls `query_codebase("authenticate user")` and gets back structured results with file paths, line numbers, signatures, and related functions — in a single tool call.
+
+**Prompt to try after MCP setup:**
+```
+"Index this project. Now find everywhere we handle database errors
+and show me what functions call the error handler."
+```
+
+> **Note:** Currently supports Python projects. Multi-language support is on the roadmap.
 
 ---
 
@@ -395,6 +499,11 @@ omem maintain --all               # compress + reflect + forget + dream
 # Import / Export
 omem export -f json -o dump.json
 omem load dump.json -n myproject
+
+# Project Memory (Codebase Indexing)
+omem ingest [PATH]                # full AST parse — index entire project
+omem sync [PATH]                  # incremental update via git diff (fast)
+omem codebase "query"             # natural language search over indexed code
 
 # Integrations
 omem serve                        # MCP server for Claude / Cursor

@@ -4,13 +4,14 @@ import logging
 import os
 from functools import lru_cache
 
-import numpy as np
-
-# Suppress noisy HuggingFace Hub warnings by default.
-# Users can override by setting HF_HUB_OFFLINE=0 in their environment.
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
+# Must be set before numpy, FAISS, or sentence-transformers are imported to
+# prevent libomp.dylib conflicts on macOS (conda/Anaconda environments).
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+# Suppress tokenizer fork warnings and noisy model-load output.
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
 

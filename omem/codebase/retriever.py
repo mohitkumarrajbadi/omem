@@ -151,7 +151,7 @@ class CodeRetriever:
                 # Use the knowledge graph to fetch direct neighbours
                 try:
                     graph = self.omem.brain.graph
-                    neighbours = graph.neighbors(mem.id)
+                    neighbours = graph.neighbours(mem.id)
                 except Exception:
                     neighbours = []
                 for nb_id in neighbours:
