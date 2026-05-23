@@ -15,6 +15,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       RELEASE_VERSION: ""
+      PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -73,14 +74,17 @@ jobs:
           CIBW_ENVIRONMENT: >-
             PATH="$PATH:$HOME/.cargo/bin"
             SETUPTOOLS_SCM_PRETEND_VERSION=${{ env.RELEASE_VERSION }}
+            PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
 
           CIBW_ENVIRONMENT_MACOS: >-
             PATH="$PATH:$HOME/.cargo/bin"
             SETUPTOOLS_SCM_PRETEND_VERSION=${{ env.RELEASE_VERSION }}
             MACOSX_DEPLOYMENT_TARGET="10.13"
+            PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
 
           CIBW_ENVIRONMENT_WINDOWS: >-
             SETUPTOOLS_SCM_PRETEND_VERSION=${{ env.RELEASE_VERSION }}
+            PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
 
           # PyPy is not supported (Rust/PyO3 targets CPython ABI only)
           CIBW_SKIP: "pp*"

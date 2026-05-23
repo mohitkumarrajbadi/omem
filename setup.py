@@ -1,6 +1,10 @@
+import os
 import shutil
 
 from setuptools import setup
+
+# Suppress PyO3 python version compatibility check on Python 3.13+
+os.environ["PYO3_USE_ABI3_FORWARD_COMPATIBILITY"] = "1"
 
 # Only add the Rust extension when rustc is actually present on PATH.
 # This lets `pip install omem-os` succeed from the sdist on machines without
