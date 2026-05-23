@@ -7,9 +7,9 @@ Handles the lifecycle of memories beyond simple insert:
 - Supersede: mark old memory as replaced by new one
 """
 
-import time
 import logging
 import re
+import time
 from typing import List, Optional, Tuple
 
 import numpy as np

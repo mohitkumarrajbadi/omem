@@ -8,9 +8,10 @@ v0.6.0 Production hardening (E).
 
 import logging
 from typing import Tuple
+
 import numpy as np
 
-from ...types import Memory, MemoryType, MemoryTier, MemoryPriority
+from ...types import Memory, MemoryPriority, MemoryTier, MemoryType
 
 logger = logging.getLogger(__name__)
 

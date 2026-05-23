@@ -1,7 +1,8 @@
 import os
-import time
 import sys
-from omem import OMem, MemoryType
+import time
+
+from omem import MemoryType, OMem
 
 # -- ANSI COLORS --
 C_RESET = "\033[0m"

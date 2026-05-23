@@ -15,13 +15,14 @@ os.environ.setdefault(
 os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")  # suppress model load noise
 # ─────────────────────────────────────────────────────────────────────────────
 
-import time
 import json
+import time
+
 import click
 
+from . import __version__
 from .api import OMem
 from .types import MemoryType
-from . import __version__
 
 
 @click.group(context_settings=dict(help_option_names=['-h', '-help', '--help']))

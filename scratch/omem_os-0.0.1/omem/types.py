@@ -1,10 +1,10 @@
 """Memory type definitions and core data structures."""
 
-from enum import Enum
-from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, List
-
 import time
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
 import numpy as np
 
 

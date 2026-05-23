@@ -13,7 +13,7 @@ import hashlib
 import threading
 from typing import Dict, Tuple
 
-from omem import OMem, MemoryType
+from omem import MemoryType, OMem
 
 
 def test_no_data_loss(n: int = 10_000, verbose: bool = True) -> Tuple[bool, str]:

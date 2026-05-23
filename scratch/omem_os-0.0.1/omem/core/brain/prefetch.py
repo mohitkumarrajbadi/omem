@@ -11,13 +11,12 @@ How it works:
 4. When rag() is called, checks warm buffer first (near-zero latency)
 """
 
-import time
 import logging
 import re
-from dataclasses import dataclass
-from typing import List, Optional, Dict, Deque
+import time
 from collections import deque
-
+from dataclasses import dataclass
+from typing import Deque, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 

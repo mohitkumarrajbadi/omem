@@ -8,13 +8,12 @@ Supports:
 v0.6.0 Production hardening (G).
 """
 
-import json
-import time
 import gzip
+import json
 import logging
+import time
 from pathlib import Path
-from typing import Dict, Any
-
+from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 

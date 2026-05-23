@@ -9,11 +9,11 @@ When mem.add() is called, entities are extracted and linked.
 When mem.rag() is called, graph traversal augments vector search.
 """
 
-import re
 import logging
+import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Set, Optional
 from enum import Enum
+from typing import Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 

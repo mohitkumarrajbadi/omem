@@ -1,6 +1,6 @@
 """End-to-end tests for the OMem public API."""
 
-from omem import OMem, MemoryType, Memory
+from omem import Memory, MemoryType, OMem
 
 
 class TestOMem:

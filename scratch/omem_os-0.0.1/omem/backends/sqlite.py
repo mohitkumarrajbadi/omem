@@ -1,13 +1,13 @@
 """SQLite storage backend — the default, zero-config backend."""
 
-import sqlite3
 import json
+import sqlite3
 from typing import List, Optional
 
 import numpy as np
 
-from .base import Backend
 from ..types import Memory, MemoryType
+from .base import Backend
 
 
 class SQLiteBackend(Backend):
@@ -69,9 +69,9 @@ class SQLiteBackend(Backend):
 
     def save(self, memory: Memory) -> None:
         self._conn.execute(
-            """INSERT OR REPLACE INTO memories 
-               (id, type, content, vector, timestamp, importance, utility_score, access_count, 
-                last_accessed, namespace, source, active, status, consensus_score, logical_hash, metadata, score) 
+            """INSERT OR REPLACE INTO memories
+               (id, type, content, vector, timestamp, importance, utility_score, access_count,
+                last_accessed, namespace, source, active, status, consensus_score, logical_hash, metadata, score)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 memory.id,
@@ -121,9 +121,9 @@ class SQLiteBackend(Backend):
             for m in memories
         ]
         self._conn.executemany(
-            """INSERT OR REPLACE INTO memories 
-               (id, type, content, vector, timestamp, importance, utility_score, access_count, 
-                last_accessed, namespace, source, active, status, consensus_score, logical_hash, metadata, score) 
+            """INSERT OR REPLACE INTO memories
+               (id, type, content, vector, timestamp, importance, utility_score, access_count,
+                last_accessed, namespace, source, active, status, consensus_score, logical_hash, metadata, score)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             data,
         )

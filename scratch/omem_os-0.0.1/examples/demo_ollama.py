@@ -16,16 +16,17 @@ os.environ["NUMBA_DISABLE_JIT"] = "1"
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
-import sys
-import time
 import json
 import logging
+import sys
 import textwrap
-import requests
+import time
 from dataclasses import dataclass, field
 
+import requests
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from omem import OMem, MemoryPriority, MemoryTier  # noqa: E402
+from omem import MemoryPriority, MemoryTier, OMem  # noqa: E402
 
 # -- Logging -----------------------------------------------------------
 logging.basicConfig(

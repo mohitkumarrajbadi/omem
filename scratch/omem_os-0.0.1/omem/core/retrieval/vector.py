@@ -6,7 +6,7 @@ from typing import Tuple
 import faiss
 import numpy as np
 
-from ..utils.concurrency import RWLock, ReadContext, WriteContext
+from ..utils.concurrency import ReadContext, RWLock, WriteContext
 
 logger = logging.getLogger(__name__)
 

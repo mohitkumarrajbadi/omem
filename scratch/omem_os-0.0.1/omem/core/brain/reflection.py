@@ -8,10 +8,10 @@ Works without an LLM via template-based summarization.
 When an LLM function is provided, produces much richer reflections.
 """
 
-import time
 import logging
 import re
-from typing import List, Optional, Callable, Dict
+import time
+from typing import Callable, Dict, List, Optional
 
 import numpy as np
 
@@ -33,7 +33,7 @@ except ImportError:
         return int(hashlib.md5(t.encode("utf-8")).hexdigest(), 16) & 0xFFFFFFFFFFFFFFFF
 
 
-from ...types import Memory, MemoryType, MemoryStatus
+from ...types import Memory, MemoryStatus, MemoryType
 from .compression import cluster_memories
 
 logger = logging.getLogger(__name__)
@@ -96,7 +96,7 @@ def _template_reflect(memories: List[Memory]) -> str:
     return ". ".join(parts)
 
 
-_ABSTRACTION_PROMPT = """Analyze the following related memories and extract higher-level insights, patterns, or user preferences. 
+_ABSTRACTION_PROMPT = """Analyze the following related memories and extract higher-level insights, patterns, or user preferences.
 Do not just summarize the facts; identify the 'why' or the 'style' behind them.
 Example: 'User likes blue' + 'User likes neon' -> 'User prefers vibrant, high-contrast aesthetics.'
 

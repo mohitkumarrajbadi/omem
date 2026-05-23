@@ -7,9 +7,10 @@ spam patterns, duplicate phrases.
 v0.5.0 Production hardening (C).
 """
 
-import re
 import logging
+import re
 from dataclasses import dataclass
+
 from .secrets import scan_secrets
 
 logger = logging.getLogger(__name__)

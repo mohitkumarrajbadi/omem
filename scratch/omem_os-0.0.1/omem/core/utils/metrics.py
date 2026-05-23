@@ -6,11 +6,11 @@ memory growth, and throughput. No external dependencies.
 v0.5.0 Production hardening (H).
 """
 
-import time
 import logging
+import time
+from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, List
-from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 

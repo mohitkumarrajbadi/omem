@@ -1,7 +1,7 @@
 """Embedding abstraction with sentence-transformers and random fallback."""
 
-import os
 import logging
+import os
 from functools import lru_cache
 
 import numpy as np

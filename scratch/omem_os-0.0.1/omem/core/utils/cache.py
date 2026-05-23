@@ -5,7 +5,7 @@ for repetitive or highly frequent queries.
 """
 
 import hashlib
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 
 
 class LRUCache:

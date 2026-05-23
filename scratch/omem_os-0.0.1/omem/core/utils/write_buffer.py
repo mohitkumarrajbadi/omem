@@ -6,10 +6,10 @@ to the backend in a background thread. Makes add() near-zero latency.
 v0.6.0 Performance boost (G).
 """
 
-import time
+import logging
 import queue
 import threading
-import logging
+import time
 from typing import Optional
 
 logger = logging.getLogger(__name__)

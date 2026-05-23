@@ -18,9 +18,9 @@ Usage:
 import argparse
 import json
 import time
-from datetime import datetime
 from dataclasses import asdict
-from typing import Dict, Any, Optional
+from datetime import datetime
+from typing import Any, Dict, Optional
 
 
 def _get_system_info() -> Dict[str, str]:

@@ -11,7 +11,7 @@ Works standalone (no LangChain required) — the class follows the
 LangChain BaseMemory interface pattern.
 """
 
-from typing import Dict, List, Any, Optional
+from typing import Any, Dict, List, Optional
 
 from ..api import OMem
 

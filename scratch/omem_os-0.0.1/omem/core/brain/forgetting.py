@@ -4,9 +4,9 @@ Calculates a health score based on importance, recency, and usage.
 Memories transition between tiers (Active, Archive, Forgotten) based on this score.
 """
 
-import time
-import math
 import logging
+import math
+import time
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -17,7 +17,7 @@ try:
 except ImportError:
     omem_rust = None
 
-from ...types import Memory, MemoryType, MemoryTier, MemoryPriority
+from ...types import Memory, MemoryPriority, MemoryTier, MemoryType
 
 logger = logging.getLogger(__name__)
 

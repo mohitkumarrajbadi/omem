@@ -4,7 +4,7 @@ Formalizes the 'Think-Act-Learn' loop for AI agents using OMem as a cognitive co
 """
 
 import logging
-from typing import List, Optional, Callable
+from typing import Callable, List, Optional
 
 from ..api import OMem
 

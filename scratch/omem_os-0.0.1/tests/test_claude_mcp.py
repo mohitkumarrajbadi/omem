@@ -2,7 +2,7 @@
 """Comprehensive OMem + Claude Code MCP Integration Test."""
 
 from omem import OMem
-from omem.integrations.mcp_server import remember, recall, summarize_state
+from omem.integrations.mcp_server import recall, remember, summarize_state
 
 
 def test_mcp_integration():

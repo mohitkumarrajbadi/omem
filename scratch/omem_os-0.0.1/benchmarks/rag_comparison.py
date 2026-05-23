@@ -15,14 +15,14 @@ all systems perform similarly. OMem wins when:
 This benchmark tests all 5 scenarios with ground-truth labels.
 """
 
-import time
 import re
+import time
 from typing import List, Tuple
 
 from omem.core.embeddings import Embedder
-from omem.core.retrieval.vector import VectorIndex
-from omem import OMem
 
+from omem import OMem
+from omem.core.retrieval.vector import VectorIndex
 
 # -- Baseline: Vector-Only RAG --
 

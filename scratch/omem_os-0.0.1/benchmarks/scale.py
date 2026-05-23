@@ -12,18 +12,17 @@ This benchmark is separate from the quick suite because 1M entries
 can take 1-3 minutes depending on hardware.
 """
 
-import time
-import gc
-import sys
-import json
 import argparse
+import gc
+import json
+import sys
+import time
 from dataclasses import dataclass
 from typing import List, Optional
 
 import numpy as np
 
 from omem.core.retrieval.vector import VectorIndex
-
 
 # -- Result types --
 

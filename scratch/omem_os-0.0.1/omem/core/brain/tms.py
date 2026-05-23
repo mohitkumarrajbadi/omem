@@ -10,10 +10,10 @@ Temporal Resolution Policy (v1.0):
   any further configuration. The new memory is always kept ACTIVE.
 """
 
-import re
 import hashlib
 import logging
-from typing import List, Tuple, Optional
+import re
+from typing import List, Optional, Tuple
 
 from ...types import Memory, MemoryStatus
 

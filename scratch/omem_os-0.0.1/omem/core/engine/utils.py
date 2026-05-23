@@ -1,9 +1,10 @@
 """Internal engine utilities and constants."""
 
 import re
-import numpy as np
-import numba
 from enum import Enum
+
+import numba
+import numpy as np
 
 
 class RetrievalMode(Enum):

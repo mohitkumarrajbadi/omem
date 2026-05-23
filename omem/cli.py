@@ -22,7 +22,6 @@ def cli():
 @click.option("--db-path", default=None, help="Database path")
 def init(db_path):
     """Initialize a OMem memory system."""
-    import os
 
     if db_path is None:
         db_path = os.path.expanduser("~/.omem/brain.db")

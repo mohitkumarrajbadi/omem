@@ -4,13 +4,13 @@ import json
 import logging
 from typing import List, Optional
 
+import numpy as np
 import psycopg2
 import psycopg2.pool
 from psycopg2.extras import DictCursor
-import numpy as np
 
+from ..types import Memory, MemoryStatus, MemoryType
 from .base import Backend
-from ..types import Memory, MemoryType, MemoryStatus
 
 logger = logging.getLogger(__name__)
 
@@ -87,9 +87,9 @@ class PostgresBackend(Backend):
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    """INSERT INTO memories 
-                       (id, type, content, vector, timestamp, importance, utility_score, access_count, 
-                        last_accessed, namespace, source, active, status, consensus_score, logical_hash, metadata, score) 
+                    """INSERT INTO memories
+                       (id, type, content, vector, timestamp, importance, utility_score, access_count,
+                        last_accessed, namespace, source, active, status, consensus_score, logical_hash, metadata, score)
                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                        ON CONFLICT (id) DO UPDATE SET
                        type = EXCLUDED.type,
@@ -164,9 +164,9 @@ class PostgresBackend(Backend):
             with conn.cursor() as cur:
                 from psycopg2.extras import execute_values
 
-                query = """INSERT INTO memories 
-                       (id, type, content, vector, timestamp, importance, utility_score, access_count, 
-                        last_accessed, namespace, source, active, status, consensus_score, logical_hash, metadata, score) 
+                query = """INSERT INTO memories
+                       (id, type, content, vector, timestamp, importance, utility_score, access_count,
+                        last_accessed, namespace, source, active, status, consensus_score, logical_hash, metadata, score)
                        VALUES %s
                        ON CONFLICT (id) DO UPDATE SET
                        type = EXCLUDED.type,

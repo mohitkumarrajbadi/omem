@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """Test OMem MCP Integration with Claude Code."""
 
-import sys
 import json
+import sys
+
 from omem.integrations.mcp_server import (
-    remember,
+    maintain,
     recall,
     reflect,
-    maintain,
-    summarize_state,
+    remember,
     resolve_conflict,
+    summarize_state,
 )
 
 print("=" * 70)

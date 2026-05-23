@@ -7,7 +7,7 @@ print("=" * 70)
 
 print("\n[1] Testing MCP Server Module Import...")
 try:
-    from omem.integrations.mcp_server import remember, recall, summarize_state
+    from omem.integrations.mcp_server import recall, remember, summarize_state
 
     print("  ✓ SUCCESS: All MCP tools imported")
 except Exception as e:
@@ -83,10 +83,10 @@ print("=" * 70)
 print("""
 Components Status:
   ✓ OMem MCP server module: WORKING
-  ✓ MCP tools (remember, recall, etc.): WORKING  
+  ✓ MCP tools (remember, recall, etc.): WORKING
   ✓ Claude Code MCP integration: CONFIGURED
   ✓ OMem CLI commands: WORKING
-  
+
 Configuration Details:
   - MCP Server: omem serve
   - Transport: stdio
@@ -96,13 +96,13 @@ Configuration Details:
 How to Use with Claude Code:
   1. Start Claude Code with MCP:
      claude "Can you access OMem memory tools?"
-     
+
   2. Store memories:
      claude "Remember: I prefer TypeScript for frontend"
-     
+
   3. Query memories:
      claude "What are my technology preferences?"
-     
+
   4. View stored memories:
      omem list
      omem stats

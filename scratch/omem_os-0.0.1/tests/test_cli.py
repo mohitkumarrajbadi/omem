@@ -1,6 +1,7 @@
 """Tests for the OMem CLI."""
 
 from click.testing import CliRunner
+
 from omem.cli import cli
 
 

@@ -1,8 +1,9 @@
 """Tests for omem.types and omem.classify."""
 
 import numpy as np
-from omem.types import MemoryType, Memory
+
 from omem.classify import auto_classify
+from omem.types import Memory, MemoryType
 
 
 class TestMemoryType:

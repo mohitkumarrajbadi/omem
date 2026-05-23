@@ -19,15 +19,14 @@ Query Example: "What editor do I currently use?"
 Ideal Behavior: Return the most recent updated fact, not the older outdated ones.
 """
 
-import time
 import random
 import re
+import time
 from typing import List
 
 from omem import OMem
 from omem.core.retrieval.embeddings import Embedder
 from omem.core.retrieval.vector import VectorIndex
-
 
 # -- Baselines --
 

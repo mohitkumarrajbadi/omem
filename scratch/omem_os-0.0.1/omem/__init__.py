@@ -1,15 +1,15 @@
+from importlib.metadata import PackageNotFoundError, version
+
+from .api import OMem
+from .core.engine import DreamResult, ForgetResult
 from .types import (
     Memory,
-    MemoryType,
-    MemoryTier,
     MemoryPriority,
     MemoryStatus,
+    MemoryTier,
+    MemoryType,
     RetrievalExplanation,
 )
-from .api import OMem
-from .core.engine import ForgetResult, DreamResult
-
-from importlib.metadata import version, PackageNotFoundError
 
 try:
     __version__ = version("omem-os")
