@@ -1,0 +1,202 @@
+[
+  {
+    "content": "User prefers dark mode for all applications",
+    "importance": 0.9
+  },
+  {
+    "content": "Customer Sarah from Acme Corp reported login issues on mobile Safari",
+    "importance": 0.8
+  },
+  {
+    "content": "Decision: Migrated from REST API to GraphQL for better performance",
+    "importance": 0.9
+  },
+  {
+    "content": "Bug fixed: race condition in payment processing caused duplicate charges",
+    "importance": 0.95
+  },
+  {
+    "content": "User mentioned they're based in Mumbai, India timezone",
+    "importance": 0.7
+  },
+  {
+    "content": "Architecture decision: Using PostgreSQL for primary database, Redis for caching",
+    "importance": 0.85
+  },
+  {
+    "content": "Customer complained about slow page load times on dashboard",
+    "importance": 0.75
+  },
+  {
+    "content": "User prefers email notifications over push notifications",
+    "importance": 0.8
+  },
+  {
+    "content": "Critical security vulnerability discovered in authentication module - CVE-2024-1234",
+    "importance": 1.0
+  },
+  {
+    "content": "User asked how to export data to CSV format",
+    "importance": 0.5
+  },
+  {
+    "content": "Team decided to implement feature flags for gradual rollouts",
+    "importance": 0.8
+  },
+  {
+    "content": "Database migration completed successfully, zero downtime achieved",
+    "importance": 0.7
+  },
+  {
+    "content": "User reported that forgot password email is not arriving",
+    "importance": 0.8
+  },
+  {
+    "content": "API rate limit set to 1000 requests per hour per user",
+    "importance": 0.85
+  },
+  {
+    "content": "User John works at TechCorp and needs SOC2 compliance documentation",
+    "importance": 0.9
+  },
+  {
+    "content": "Deployment scheduled for Saturday 2 AM EST to minimize disruption",
+    "importance": 0.75
+  },
+  {
+    "content": "Bug: infinite loop in data sync causing CPU spike to 100%",
+    "importance": 0.95
+  },
+  {
+    "content": "User prefers metric system for all measurements",
+    "importance": 0.6
+  },
+  {
+    "content": "New feature request: bulk user import from CSV",
+    "importance": 0.7
+  },
+  {
+    "content": "Performance optimization: reduced API response time from 800ms to 120ms",
+    "importance": 0.8
+  },
+  {
+    "content": "User mentioned they use the mobile app 80% of the time",
+    "importance": 0.65
+  },
+  {
+    "content": "Critical incident: payment gateway went down for 45 minutes",
+    "importance": 0.95
+  },
+  {
+    "content": "User asked about integrating with Slack for notifications",
+    "importance": 0.7
+  },
+  {
+    "content": "Code review revealed security issue in file upload validation",
+    "importance": 0.9
+  },
+  {
+    "content": "User birthday is March 15th - they appreciate birthday discounts",
+    "importance": 0.6
+  },
+  {
+    "content": "Architecture: Implementing microservices pattern for better scalability",
+    "importance": 0.85
+  },
+  {
+    "content": "Customer retention rate improved from 65% to 82% after UX redesign",
+    "importance": 0.8
+  },
+  {
+    "content": "User reported spam emails coming from our domain - investigating",
+    "importance": 0.85
+  },
+  {
+    "content": "New regulation: GDPR requires data deletion within 30 days of request",
+    "importance": 0.95
+  },
+  {
+    "content": "User prefers video tutorials over written documentation",
+    "importance": 0.65
+  },
+  {
+    "content": "A/B test results: new checkout flow increased conversion by 23%",
+    "importance": 0.9
+  },
+  {
+    "content": "Bug: pagination breaks when sorting by date in descending order",
+    "importance": 0.75
+  },
+  {
+    "content": "User works in healthcare industry, needs HIPAA compliance",
+    "importance": 0.95
+  },
+  {
+    "content": "Server migration from AWS to Google Cloud completed",
+    "importance": 0.8
+  },
+  {
+    "content": "User mentioned they're color blind - needs accessibility improvements",
+    "importance": 0.8
+  },
+  {
+    "content": "Feature launch: AI-powered search with 95% accuracy on beta testing",
+    "importance": 0.85
+  },
+  {
+    "content": "User's company has 500+ employees, needs enterprise pricing",
+    "importance": 0.9
+  },
+  {
+    "content": "Technical debt: legacy code in auth module needs refactoring",
+    "importance": 0.7
+  },
+  {
+    "content": "User reported phishing attempt using our company name",
+    "importance": 0.9
+  },
+  {
+    "content": "Performance metrics: 99.9% uptime achieved for Q1 2024",
+    "importance": 0.75
+  },
+  {
+    "content": "User loves the dark mode feature and wants more customization options",
+    "importance": 0.6
+  },
+  {
+    "content": "Critical: SQL injection vulnerability found in search endpoint",
+    "importance": 1.0
+  },
+  {
+    "content": "User timezone: Pacific Standard Time (PST)",
+    "importance": 0.7
+  },
+  {
+    "content": "Decision: Switching from Jenkins to GitHub Actions for CI/CD",
+    "importance": 0.8
+  },
+  {
+    "content": "Customer churn analysis: main reason is lack of mobile app features",
+    "importance": 0.85
+  },
+  {
+    "content": "User asked if we support single sign-on (SSO) with Okta",
+    "importance": 0.8
+  },
+  {
+    "content": "Bug fixed: memory leak in background job processor",
+    "importance": 0.85
+  },
+  {
+    "content": "User prefers phone support over chat support for urgent issues",
+    "importance": 0.65
+  },
+  {
+    "content": "New partnership with Microsoft announced - Azure integration coming",
+    "importance": 0.9
+  },
+  {
+    "content": "User reported that dark mode doesn't work on iPad",
+    "importance": 0.7
+  }
+]
