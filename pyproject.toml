@@ -1,10 +1,8 @@
 [build-system]
-# setuptools-rust is intentionally NOT listed here.
-# setup.py already does:  try: from setuptools_rust import ...  except ImportError: pass
-# so the Rust extension is compiled only when rustc is available.
-# Pre-built wheels on PyPI include the Rust extension; the sdist falls back to
-# pure Python silently on any platform that doesn't have the Rust toolchain.
-requires = ["setuptools>=68.0", "wheel", "setuptools-scm>=8.0"]
+# setuptools-rust is required at build time to register the 'rust_extensions' entrypoint.
+# The actual compilation of the Rust extension is guarded by the presence of 'rustc' on PATH in setup.py.
+# If 'rustc' is missing, it builds/installs silently as a pure Python fallback without issues.
+requires = ["setuptools>=68.0", "wheel", "setuptools-scm>=8.0", "setuptools-rust>=1.8.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]

@@ -253,6 +253,33 @@ To add a new storage backend (e.g., Redis, MongoDB):
 3. Implement the required interface (`save`, `load`, `delete`, `query`).
 4. Register the backend in `omem/api.py` inside the `_initialize_backend()` factory.
 
+### Releasing to PyPI
+
+OMem uses **PyPI Trusted Publishers** (OIDC) via GitHub Actions (`.github/workflows/publish.yml`) to securely compile and publish native binaries (wheels) and the pure-Python source distribution (sdist). No password or API token needs to be stored as a GitHub Secret.
+
+#### 1. Connect GitHub to PyPI (One-time Setup)
+1. Go to your project settings page on PyPI: [pypi.org/project/omem-os/manage/settings](https://pypi.org/project/omem-os/manage/settings/).
+2. Under the **Publishing** section, click **Add a new publisher**.
+3. Select **GitHub** and fill in the details:
+   - **Owner**: `mohitkumarrajbadi`
+   - **Repository**: `omem`
+   - **Workflow name**: `publish.yml`
+   - **Environment name**: `pypi`
+4. Click **Register**. PyPI is now connected to GitHub!
+
+#### 2. Create the GitHub Release
+The workflow is triggered when you publish a new GitHub Release:
+1. Ensure the codebase passes tests: `pytest tests/`
+2. Create and push a new version tag (e.g. `v0.0.3`):
+   ```bash
+   git tag v0.0.3
+   git push origin v0.0.3
+   ```
+3. Go to GitHub and draft a new release for that tag. When you click **Publish release**, GitHub Actions will automatically:
+   - Build compiled binary wheels across Linux, macOS, and Windows.
+   - Build the pure-Python source distribution.
+   - Securely authenticate with PyPI using OIDC and publish the release.
+
 ---
 
 ## CLI Reference
