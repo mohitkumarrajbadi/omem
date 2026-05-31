@@ -1,8 +1,11 @@
-"""OMem CLI — command-line interface for OMem."""
+"""OMem CLI — professional-grade command line interface for OMem."""
 
 import json
 import os
+import sys
 import time
+from collections import OrderedDict
+from typing import Any, Dict, List, Optional
 
 import click
 
@@ -10,73 +13,218 @@ from . import __version__
 from .api import OMem
 from .types import MemoryType
 
+# Omem CLI Banner with stylized output for enhanced user experience and branding consistency.
+CLI_BANNER = click.style(
+    r"""
+ ██████╗ ███╗   ███╗███████╗███╗   ███╗
+██╔═══██╗████╗ ████║██╔════╝████╗ ████║
+██║   ██║██╔████╔██║█████╗  ██╔████╔██║
+██║   ██║██║╚██╔╝██║██╔══╝  ██║╚██╔╝██║
+╚██████╔╝██║ ╚═╝ ██║███████╗██║ ╚═╝ ██║
+ ╚═════╝ ╚═╝     ╚═╝╚══════╝╚═╝     ╚═╝
 
-@click.group(context_settings=dict(help_option_names=['-h', '-help', '--help']))
-@click.version_option(__version__)
-def cli():
-    """OMem - Persistent Memory System for AI Agents."""
-    pass
+OMem — AI Memory Operating System
+────────────────────────────────────────────────────────────
+Unified memory • Retrieval • Reflection • Knowledge Graphs
+""",
+    fg="cyan",
+    bold=True,
+)
+
+COMMAND_GROUPS = OrderedDict(
+    [
+        (
+            "Core Memory Operations",
+            ["init", "add", "search", "list", "clear", "stats", "inspect", "maintain"],
+        ),
+        ("Project Memory & Codebase", ["ingest", "sync", "codebase", "namespaces"]),
+        ("Integration & Monitoring", ["serve", "dashboard", "demo"]),
+        ("Data Lifecycle", ["export", "import", "version", "completion"]),
+        ("Diagnostics & Benchmarks", ["health", "benchmark"]),
+    ]
+)
+
+class OMemGroup(click.Group):
+    """Custom Click Group to provide polished categorized help output."""
+
+    def format_help(self, ctx, formatter):
+        formatter.write(CLI_BANNER)
+        formatter.write("\n\n")
+        self.format_usage(ctx, formatter)
+        self.format_options(ctx, formatter)
+        self.format_commands(ctx, formatter)
+
+    def format_commands(self, ctx, formatter):
+        commands = self.list_commands(ctx)
+        mapped_commands = set()
+
+        for category, cmd_list in COMMAND_GROUPS.items():
+            available_cmds = [c for c in cmd_list if c in commands]
+            if not available_cmds:
+                continue
+            with formatter.section(category):
+                rows = []
+                for name in available_cmds:
+                    cmd = self.get_command(ctx, name)
+                    if cmd is None:
+                        continue
+                    rows.append((name, cmd.get_short_help_str()))
+                    mapped_commands.add(name)
+                formatter.write_dl(rows)
+
+        orphan_cmds = [c for c in commands if c not in mapped_commands]
+        if orphan_cmds:
+            with formatter.section("Other Commands"):
+                rows = []
+                for name in orphan_cmds:
+                    cmd = self.get_command(ctx, name)
+                    rows.append((name, cmd.get_short_help_str() if cmd else ""))
+                formatter.write_dl(rows)
+
+CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"], max_content_width=100)
+
+
+def _get_omem(ctx: click.Context) -> OMem:
+    config = ctx.obj or {}
+    return OMem(
+        backend=config.get("backend", "sqlite"),
+        db_path=config.get("db_path"),
+        embedding_provider=config.get("embedding_provider", "local"),
+    )
+
+
+def _format_duration(delta_seconds: float) -> str:
+    if delta_seconds < 1:
+        return f"{delta_seconds * 1000:.1f}ms"
+    return f"{delta_seconds:.3f}s"
+
+
+def _json_or_table(output: str, payload: Any, fmt: str):
+    if fmt == "json":
+        click.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+    else:
+        click.echo(output)
+
+
+@click.group(
+    cls=OMemGroup,
+    context_settings=CONTEXT_SETTINGS,
+    invoke_without_command=True,
+)
+@click.version_option(__version__, package_name="omem-os")
+@click.option(
+    "--db-path",
+    default=None,
+    help="Custom SQLite database path or backend connection string.",
+)
+@click.option(
+    "--backend",
+    default="sqlite",
+    type=click.Choice(["sqlite", "memory", "postgres"]),
+    help="Select the storage backend.",
+)
+@click.option(
+    "--embedding-provider",
+    default="local",
+    type=click.Choice(["local", "openai", "sentence-transformers"]),
+    help="Embedding provider used for memory vectorization.",
+)
+@click.option("--quiet", is_flag=True, help="Suppress non-essential output.")
+@click.pass_context
+def cli(ctx: click.Context, db_path: Optional[str], backend: str, embedding_provider: str, quiet: bool):
+    """Persistent Memory OS for agent-grade memory, retrieval, and reasoning."""
+    ctx.ensure_object(dict)
+    ctx.obj["db_path"] = db_path
+    ctx.obj["backend"] = backend
+    ctx.obj["embedding_provider"] = embedding_provider
+    ctx.obj["quiet"] = quiet
+
+    if ctx.invoked_subcommand is None:
+        click.echo(ctx.get_help())
 
 
 @cli.command()
-@click.option("--db-path", default=None, help="Database path")
-def init(db_path):
-    """Initialize a OMem memory system."""
-
-    if db_path is None:
-        db_path = os.path.expanduser("~/.omem/brain.db")
+@click.option("--db-path", default=None, help="Custom SQLite database target path.")
+@click.pass_context
+def init(ctx: click.Context, db_path: Optional[str]):
+    """Initialize a new local memory space."""
+    db_path = db_path or ctx.obj.get("db_path") or os.path.expanduser("~/.omem/brain.db")
 
     db_dir = os.path.dirname(db_path)
-    if not os.path.exists(db_dir):
+    if db_dir and not os.path.exists(db_dir):
         os.makedirs(db_dir, exist_ok=True)
 
-    m = OMem(db_path=db_path)
+    m = OMem(
+        backend=ctx.obj.get("backend", "sqlite"),
+        db_path=db_path,
+        embedding_provider=ctx.obj.get("embedding_provider", "local"),
+    )
 
-    click.echo("OMem memory system initialized successfully")
-    click.echo(f"  Database: {db_path}")
-    click.echo(f"  Status:   {m.stats()['total']} memories")
-    click.echo("\nQuick start:")
-    click.echo('  omem add "Your first memory"')
-    click.echo('  omem search "memory"')
-    click.echo("  omem stats")
+    click.echo(click.style("OMem subsystem successfully initialized.", fg="green", bold=True))
+    click.echo(f"  Target Ledger: {db_path}")
+    click.echo(f"  Active Records: {m.stats().get('total', 0)} memories")
+    click.echo("\nQuickstart:")
+    click.echo('  omem add "Context to retain"')
+    click.echo('  omem search "Query term"')
 
 
 @cli.command()
 @click.argument("content")
-@click.option("--importance", "-i", type=float, help="Importance score (0.0-1.0)")
-@click.option("--namespace", "-n", default="default", help="Namespace")
-@click.option("--type", "-t", "mem_type", help="Memory type")
-def add(content, importance, namespace, mem_type):
-    """Add a new memory to the system."""
-    m = OMem()
+@click.option("--importance", "-i", type=float, help="Explicit importance weight [0.0-1.0].")
+@click.option("--namespace", "-n", default="default", help="Isolate memory partition.")
+@click.option("--type", "-t", "mem_type", help="Target schema memory classification type.")
+@click.pass_context
+def add(ctx: click.Context, content: str, importance: Optional[float], namespace: str, mem_type: Optional[str]):
+    """Write an individual text memory vector."""
+    m = _get_omem(ctx)
 
-    kwargs = {"namespace": namespace}
+    kwargs: Dict[str, Any] = {"namespace": namespace}
     if importance is not None:
         kwargs["importance"] = importance
     if mem_type:
-        kwargs["mem_type"] = getattr(MemoryType, mem_type.upper(), None)
+        type_enum = getattr(MemoryType, mem_type.upper(), None)
+        if type_enum is None:
+            raise click.BadParameter(f"Unknown memory type '{mem_type}'")
+        kwargs["mem_type"] = type_enum
 
     mem_id = m.add(content, **kwargs)
     mem = m.get(mem_id)
 
-    click.echo("Memory added successfully")
-    click.echo(f"  ID:         {mem_id[:12]}...")
+    click.echo(click.style("Memory committed.", fg="green", bold=True))
+    click.echo(f"  UID:        {mem_id[:12]}")
     click.echo(f"  Type:       {mem.type.name}")
-    click.echo(f"  Importance: {mem.importance:.2f}")
+    click.echo(f"  Weight:     {mem.importance:.2f}")
     click.echo(f"  Namespace:  {mem.namespace}")
 
 
 @cli.command()
 @click.argument("query")
-@click.option("--k", "-k", default=5, help="Number of results")
-@click.option("--namespace", "-n", help="Filter by namespace")
+@click.option("--k", "-k", default=5, help="Limit maximum returned fragments.")
+@click.option("--namespace", "-n", help="Filter matching by specific partition.")
+@click.option("--context-type", "-c", help="Contextual intent tag filter match.")
+@click.option("--time-range", "-t", help="Window constraints (today, recent, last_week).")
 @click.option(
-    "--context-type", "-c", help="Context type (architecture, bugs, decisions)"
+    "--format",
+    "-f",
+    "output_format",
+    default="table",
+    type=click.Choice(["table", "json"]),
+    help="Render results as a table or JSON.",
 )
-@click.option("--time-range", "-t", help="Time range (today, recent, last_week)")
-def search(query, k, namespace, context_type, time_range):
-    """Search memories with a query."""
-    m = OMem()
+@click.option("--show-scores", "-s", is_flag=True, help="Include relevance scores in output.")
+@click.pass_context
+def search(
+    ctx: click.Context,
+    query: str,
+    k: int,
+    namespace: Optional[str],
+    context_type: Optional[str],
+    time_range: Optional[str],
+    output_format: str,
+    show_scores: bool,
+):
+    """Query current memory states via hybrid retrieval."""
+    m = _get_omem(ctx)
 
     results = m.recall(
         query,
@@ -87,30 +235,53 @@ def search(query, k, namespace, context_type, time_range):
     )
 
     if not results:
-        click.echo("No memories found.")
+        click.echo(click.style("No memories found for the given query.", fg="yellow"))
         return
 
-    click.echo(f"Found {len(results)} memories:\n")
+    if output_format == "json":
+        output = [
+            {
+                "id": mem.id,
+                "type": mem.type.name,
+                "namespace": mem.namespace,
+                "importance": mem.importance,
+                "score": getattr(mem, "score", None),
+                "content": mem.content,
+                "timestamp": mem.timestamp,
+            }
+            for mem in results
+        ]
+        click.echo(json.dumps(output, indent=2, default=str))
+        return
+
+    click.echo(click.style(f"Retrieved {len(results)} matching entries:", fg="green", bold=True))
+    click.echo("")
     for i, mem in enumerate(results, 1):
-        click.echo(
-            f"{i}. [{mem.type.name}] score={mem.score:.3f} imp={mem.importance:.2f}"
-        )
+        score_text = f" distance={mem.score:.3f}" if show_scores and getattr(mem, "score", None) is not None else ""
+        click.echo(f"{i}. [{mem.type.name}] weight={mem.importance:.2f}{score_text}")
         click.echo(f"   {mem.content[:80]}")
         click.echo(
-            f"   ID: {mem.id[:12]}... | {mem.namespace} | {_time_ago(mem.timestamp)}"
+            f"   Ref: {mem.id[:12]} | scope:{mem.namespace} | {_time_ago(mem.timestamp)}\n"
         )
-        click.echo()
 
 
-@cli.command()
-@click.option("--namespace", "-n", help="Filter by namespace")
-@click.option("--type", "-t", "mem_type", help="Filter by type")
-@click.option("--limit", "-l", default=20, help="Max results")
-@click.option("--inactive", is_flag=True, help="Include inactive memories")
-def list(namespace, mem_type, limit, inactive):
-    """List all memories."""
-    m = OMem()
-
+@cli.command(name="list")
+@click.option("--namespace", "-n", help="Filter target storage partition.")
+@click.option("--type", "-t", "mem_type", help="Filter by raw structure type.")
+@click.option("--limit", "-l", default=20, help="Truncate visual log limit.")
+@click.option("--inactive", is_flag=True, help="Include records marked down for historical pruning.")
+@click.option(
+    "--format",
+    "-f",
+    "output_format",
+    default="table",
+    type=click.Choice(["table", "json"]),
+    help="Render results as a table or JSON.",
+)
+@click.pass_context
+def list(ctx: click.Context, namespace: Optional[str], mem_type: Optional[str], limit: int, inactive: bool, output_format: str):
+    """Scan and list a segment of linear memory blocks."""
+    m = _get_omem(ctx)
     memories = m.all(namespace=namespace, include_inactive=inactive)
 
     if mem_type:
@@ -121,73 +292,102 @@ def list(namespace, mem_type, limit, inactive):
     memories = memories[:limit]
 
     if not memories:
-        click.echo("No memories found.")
+        click.echo(click.style("No available records matched specifications.", fg="yellow"))
         return
 
-    click.echo(f"Showing {len(memories)} memories:\n")
+    if output_format == "json":
+        payload = [
+            {
+                "id": mem.id,
+                "type": mem.type.name,
+                "namespace": mem.namespace,
+                "importance": mem.importance,
+                "active": mem.active,
+                "content": mem.content,
+            }
+            for mem in memories
+        ]
+        click.echo(json.dumps(payload, indent=2, default=str))
+        return
+
+    click.echo(click.style(f"Displaying top {len(memories)} elements:", fg="green", bold=True))
+    click.echo("")
     for i, mem in enumerate(memories, 1):
-        status = "[active]" if mem.active else "[inactive]"
+        status = "●" if mem.active else "○"
         click.echo(
-            f"{i}. {status} [{mem.type.name:11s}] imp={mem.importance:.2f} | {mem.content[:60]}"
+            f"  {status} {i:02d} [{mem.type.name:11s}] w={mem.importance:.2f} | {mem.content[:65]}"
         )
 
 
 @cli.command()
 @click.argument("query")
-@click.option("--k", default=5, help="Number of results")
-def inspect(query, k):
-    """Inspect retrieval scoring for a query."""
-    m = OMem()
+@click.option("--k", default=5, help="Inspection target vector pool depth.")
+@click.pass_context
+def inspect(ctx: click.Context, query: str, k: int):
+    """Verify raw algorithm score matrix distribution details."""
+    m = _get_omem(ctx)
     exps = m.inspect(query, top_k=k)
 
     if not exps:
-        click.echo("No memories to inspect. Add some first!")
+        click.echo(click.style("Inspection requires at least one indexed memory entry.", fg="yellow"))
         return
 
-    click.echo(f'Inspection results for: "{query}"\n')
-    click.echo("=" * 70)
-
+    click.echo(click.style(f"Scoring Analysis Matrix for: '{query}'", fg="green", bold=True))
+    click.echo("─" * 60)
     for i, exp in enumerate(exps, 1):
-        click.echo(f"\n{i}. {exp.explain()}")
+        click.echo(f"\n{i:02d}. {exp.explain()}")
 
 
 @cli.command()
-def stats():
-    """Show memory system statistics."""
-    m = OMem()
+@click.option(
+    "--format",
+    "-f",
+    "output_format",
+    default="table",
+    type=click.Choice(["table", "json"]),
+    help="Render stats as table or JSON.",
+)
+@click.pass_context
+def stats(ctx: click.Context, output_format: str):
+    """Display volumetric health data metrics overview."""
+    m = _get_omem(ctx)
     s = m.stats()
 
-    click.echo("\nOMem Memory Statistics")
-    click.echo("=" * 50)
-    click.echo(f"  Total memories:       {s['total']}")
-    click.echo(f"  Active:               {s['total'] - s['inactive']}")
-    click.echo(f"  Inactive:             {s['inactive']}")
-    click.echo(f"  Average importance:   {s['avg_importance']:.2f}")
-    click.echo(f"  Knowledge graph:      {s['graph_edges']} edges")
-    click.echo(
-        f"\nNamespaces:             {', '.join(s['namespaces']) if s['namespaces'] else 'default'}"
-    )
-    click.echo("\nMemory types:")
-    for mtype, count in s["types"].items():
+    if output_format == "json":
+        click.echo(json.dumps(s, indent=2, default=str, sort_keys=True))
+        return
+
+    click.echo("\nOMem Volumetric Index Summary")
+    click.echo("─" * 45)
+    click.echo(f"  Total Index Nodes:    {s['total']}")
+    click.echo(f"  Active Contexts:      {s['total'] - s['inactive']}")
+    click.echo(f"  Pruned/Inactive:      {s['inactive']}")
+    click.echo(f"  Mean Importance Node: {s['avg_importance']:.2f}")
+    click.echo(f"  Knowledge Graph Links: {s.get('graph_edges', 0)} edges")
+
+    ns_str = ", ".join(s.get('namespaces', [])) if s.get('namespaces') else "default"
+    click.echo(f"  Allocated Namespaces: {ns_str}")
+    click.echo("\nNode Type Weight Distributions:")
+    for mtype, count in s.get("types", {}).items():
         click.echo(f"    {mtype:15s} {count:>5d}")
     click.echo()
 
 
 @cli.command()
-@click.option("--namespace", "-n", help="Filter by namespace")
+@click.option("--namespace", "-n", help="Export matching partition scope only.")
 @click.option(
     "--format",
     "-f",
     "fmt",
     default="json",
     type=click.Choice(["json", "txt"]),
-    help="Export format",
+    help="Target extraction template structure.",
 )
-@click.option("--output", "-o", help="Output file")
-def export(namespace, fmt, output):
-    """Export memories to a file."""
-    m = OMem()
-
+@click.option("--output", "-o", help="File disk path output destination.")
+@click.pass_context
+def export(ctx: click.Context, namespace: Optional[str], fmt: str, output: Optional[str]):
+    """Serialize and export internal spaces out to standard formats."""
+    m = _get_omem(ctx)
     memories = m.all(namespace=namespace)
 
     if fmt == "json":
@@ -198,28 +398,31 @@ def export(namespace, fmt, output):
         }
         content = json.dumps(data, indent=2)
     else:
-        lines = [
-            f"{mem.content} | {mem.type.name} | {mem.importance:.2f}"
-            for mem in memories
-        ]
-        content = "\n".join(lines)
+        content = "\n".join(
+            [f"{mem.content} | {mem.type.name} | {mem.importance:.2f}" for mem in memories]
+        )
 
     if output:
         with open(output, "w") as f:
             f.write(content)
-        click.echo(f"Exported {len(memories)} memories to {output}")
+        click.echo(
+            click.style(
+                f"Export successful: {len(memories)} entries saved to {output}",
+                fg="green",
+            )
+        )
     else:
         click.echo(content)
 
 
-@cli.command()
+@cli.command(name="import")
 @click.argument("file", type=click.Path(exists=True))
-@click.option("--namespace", "-n", default="default", help="Import namespace")
-def load(file, namespace):
-    """Load memories from a JSON file."""
+@click.option("--namespace", "-n", default="default", help="Import ingestion target partition namespace.")
+@click.pass_context
+def load(ctx: click.Context, file: str, namespace: str):
+    """Incorporate records from standardized historical source files."""
     import builtins
-
-    m = OMem()
+    m = _get_omem(ctx)
 
     with open(file, "r") as f:
         data = json.load(f)
@@ -229,11 +432,10 @@ def load(file, namespace):
     elif isinstance(data, builtins.list):
         memories = data
     else:
-        click.echo("Invalid file format. Expected list of memories.")
+        click.echo(click.style("Error: unsupported import format.", fg="red"))
         return
 
-    click.echo(f"Loading {len(memories)} memories...")
-
+    click.echo(click.style(f"Hydrating {len(memories)} storage cells...", fg="blue"))
     count = 0
     for mem_data in memories:
         if isinstance(mem_data, dict):
@@ -246,92 +448,119 @@ def load(file, namespace):
             m.add(mem_data, namespace=namespace)
             count += 1
 
-    click.echo(f"Loaded {count} memories into namespace '{namespace}'")
+    click.echo(
+        click.style(
+            f"Hydration complete: {count} elements allocated inside partition '{namespace}'.",
+            fg="green",
+        )
+    )
 
 
 @cli.command()
-@click.option("--compress", is_flag=True, help="Compress similar memories")
-@click.option("--reflect", is_flag=True, help="Generate reflections")
-@click.option("--forget", is_flag=True, help="Run forgetting cycle")
-@click.option("--dream", is_flag=True, help="Run dream cycle")
-@click.option("--all", "all_ops", is_flag=True, help="Run all maintenance")
-def maintain(compress, reflect, forget, dream, all_ops):
-    """Run maintenance operations."""
-    m = OMem()
+@click.option("--compress", is_flag=True, help="Consolidate contextual overlap anomalies.")
+@click.option("--reflect", is_flag=True, help="Trigger consolidation analytical reflections.")
+@click.option("--forget", is_flag=True, help="Force execute decay logic prune intervals.")
+@click.option("--dream", is_flag=True, help="Execute cross-cluster consolidation cycles.")
+@click.option(
+    "--all", "all_ops", is_flag=True, help="Run standard full-stack lifecycle maintenance optimizations."
+)
+@click.pass_context
+def maintain(
+    ctx: click.Context,
+    compress: bool,
+    reflect: bool,
+    forget: bool,
+    dream: bool,
+    all_ops: bool,
+):
+    """Execute structural optimization and decay consolidation passes."""
+    m = _get_omem(ctx)
 
     if all_ops or not any([compress, reflect, forget, dream]):
-        click.echo("Running full maintenance cycle...")
+        click.echo(click.style("Initializing system optimizations pass...", fg="blue"))
         result = m.sleep()
-        click.echo("Maintenance complete")
-        click.echo(f"  Compressed:  {result.get('compressed', 0)} memories")
-        click.echo(f"  Reflected:   {result.get('reflected', 0)} insights")
-        click.echo(f"  Forgotten:   {result.get('forgotten', 0)} memories")
+        click.echo(click.style("Optimization routine complete.", fg="green"))
+        click.echo(f"  Merged Units:      {result.get('compressed', 0)}")
+        click.echo(f"  Derived Insights:  {result.get('reflected', 0)}")
+        click.echo(f"  Pruned Nodes:      {result.get('forgotten', 0)}")
         return
 
     if compress:
-        click.echo("Compressing similar memories...")
+        click.echo("Compressing high-overlap data nodes...")
         result = m.compress()
-        click.echo(
-            f"Compressed {result['compressed']} groups, deactivated {result['deactivated']}"
-        )
+        click.echo(f"Compressed {result['compressed']} configurations; suspended {result['deactivated']} nodes.")
 
     if reflect:
-        click.echo("Generating reflections...")
+        click.echo("Compiling system analytical patterns...")
         refs = m.reflect()
-        click.echo(f"Generated {len(refs)} reflection insights")
+        click.echo(f"Injected {len(refs)} derived contextual optimization cells.")
 
     if forget:
-        click.echo("Running forgetting cycle...")
+        click.echo("Processing index structural weight decay evaluations...")
         result = m.forget()
-        click.echo(f"Forgot {len(result.forgotten_ids)} low-value memories")
+        click.echo(f"Pruned {len(result.forgotten_ids)} sub-threshold memory blocks.")
 
     if dream:
-        click.echo("Running dream cycle...")
+        click.echo("Executing deep non-linear correlation graph consolidation...")
         result = m.dream()
         click.echo(
-            f"Dream complete: {result.clusters_formed} clusters, {result.insights_created} insights"
+            f"Completed: {result.clusters_formed} topology clusters mapped, {result.insights_created} nodes injected."
         )
 
 
 @cli.command()
-@click.option("--namespace", "-n", help="Namespace to clear")
-@click.confirmation_option(prompt="Are you sure you want to clear all memories?")
-def clear(namespace):
-    """Clear all memories (use with caution)."""
-    m = OMem()
-
+@click.option("--namespace", "-n", help="Target singular partition scope to dump.")
+@click.confirmation_option(prompt="Confirm structural destruction command sequence? This action cannot be reversed.")
+@click.pass_context
+def clear(ctx: click.Context, namespace: Optional[str]):
+    """Purge structural memory registers safely."""
+    m = _get_omem(ctx)
     if namespace:
         m.clear(namespace=namespace)
-        click.echo(f"Cleared namespace '{namespace}'")
+        click.echo(click.style(f"Dropped storage partition namespace context: '{namespace}'", fg="green"))
     else:
         m.clear()
-        click.echo("Cleared all memories")
+        click.echo(click.style("System wipe successful. All memory systems blank.", fg="green"))
 
 
 @cli.command()
-def namespaces():
-    """List all namespaces."""
-    m = OMem()
+@click.option(
+    "--format",
+    "-f",
+    "output_format",
+    default="table",
+    type=click.Choice(["table", "json"]),
+    help="Render namespaces as table or JSON.",
+)
+@click.pass_context
+def namespaces(ctx: click.Context, output_format: str):
+    """List structural partitions and allocation distribution maps."""
+    m = _get_omem(ctx)
     ns_list = m.namespaces()
 
     if not ns_list:
-        click.echo("No namespaces found.")
+        click.echo(click.style("Zero namespace allocations logged.", fg="yellow"))
         return
 
-    click.echo("Active namespaces:\n")
+    if output_format == "json":
+        mapping = {ns: m.namespace_stats(ns).get("total", 0) for ns in ns_list}
+        click.echo(json.dumps(mapping, indent=2, sort_keys=True))
+        return
+
+    click.echo("Active Namespace Allocation Map:\n")
     for ns in ns_list:
         stats = m.namespace_stats(ns)
-        click.echo(f"  • {ns:20s} {stats.get('total', 0):>5d} memories")
+        click.echo(f"  • {ns:22s} {stats.get('total', 0):>6d} elements allocated")
 
 
 @cli.command()
-def demo():
-    """Run an interactive demo of OMem."""
-    m = OMem()
-
-    click.echo("\n" + "=" * 60)
-    click.echo("  OMem Interactive Demo")
-    click.echo("=" * 60 + "\n")
+@click.pass_context
+def demo(ctx: click.Context):
+    """Initiate an automated end-to-end features demo loop."""
+    m = _get_omem(ctx)
+    click.echo("\n" + "═" * 50)
+    click.echo("  OMem Engine Framework Simulation Terminal")
+    click.echo("" + "═" * 50 + "\n")
 
     samples = [
         "My name is Mohit and I'm building OMem",
@@ -344,154 +573,135 @@ def demo():
         "Python is the most popular programming language",
     ]
 
-    click.echo("Adding memories...")
+    click.echo("Simulating active stream records additions...")
     for content in samples:
         mid = m.add(content)
         mem = m.get(mid)
-        click.echo(f"  [{mem.type.name:11s}] imp={mem.importance:.2f} | {content[:50]}")
+        click.echo(f"  [{mem.type.name:11s}] w={mem.importance:.2f} | {content[:50]}")
 
     s = m.stats()
-    click.echo(f"\nStats: {s['total']} memories, {len(s['types'])} types\n")
+    click.echo(f"\nMatrix Status: {s['total']} logs running, {len(s['types'])} variants loaded.\n")
 
-    click.echo("Retrieval queries:")
+    click.echo("Testing similarity extraction recall heuristics:")
     for q in ["Who am I?", "deployment production", "security urgent"]:
         results = m.recall(q, k=2)
-        click.echo(f'\n  Q: "{q}"')
+        click.echo(f'  Query target: "{q}"')
         for r in results:
-            click.echo(f"    [{r.score:.3f}] {r.content[:60]}")
+            click.echo(f"    ↳ [{r.score:.3f}] {r.content[:55]}")
 
-    click.echo("\nCompressing memories...")
+    click.echo("\nExecuting background structural convergence logic...")
     result = m.compress()
-    click.echo(
-        f"  Compressed: {result['compressed']} groups, deactivated: {result['deactivated']}"
-    )
+    click.echo(f"  Group targets consolidated: {result['compressed']}. Linear allocations dropped: {result['deactivated']}")
 
-    click.echo("\nGenerating reflections...")
+    click.echo("\nSimulating metadata insight calculations...")
     refs = m.reflect()
-    click.echo(f"  Reflected {len(refs)} insights")
-
-    click.echo("\n" + "=" * 60)
-    click.echo("  Demo complete! Try these commands:")
-    click.echo('    omem search "your query"')
-    click.echo("    omem list")
-    click.echo("    omem stats")
-    click.echo("=" * 60 + "\n")
+    click.echo(f"  Synthesized {len(refs)} cognitive patterns.")
+    click.echo("\n" + "═" * 50)
+    click.echo("  Verification phase pass complete.")
 
 
 @cli.command()
-@click.option("--n", default=10_000, help="Number of memories to benchmark")
-def benchmark(n):
-    """Run a quick performance benchmark."""
-    m = OMem()
-
-    click.echo(f"\nBenchmarking with {n:,} memories...\n")
+@click.option("--n", default=10_000, help="Throughput load parameter size configuration.")
+@click.pass_context
+def benchmark(ctx: click.Context, n: int):
+    """Run real-time performance ingestion calculations metrics logs."""
+    m = _get_omem(ctx)
+    click.echo(click.style(f"\nInitiating benchmark profile routines across {n:,} simulated items...\n", fg="blue"))
 
     t0 = time.perf_counter()
     for i in range(n):
-        m.add(f"Benchmark entry {i}: domain {i % 100} topic {i % 50}", importance=0.5)
+        m.add(f"Benchmark transaction sequence {i}: tag {i % 100} vector block {i % 50}", importance=0.5)
     add_time = time.perf_counter() - t0
 
     click.echo(
-        f"  Add:      {add_time:.3f}s total | {(add_time / n) * 1000:.3f}ms/op | {n / add_time:,.0f} ops/s"
+        f"  Writes:   {_format_duration(add_time)} total | {(add_time / n) * 1000:.4f}ms/op | {n / add_time:,.0f} records/sec"
     )
 
     queries = 1000
     t0 = time.perf_counter()
     for i in range(queries):
-        m.recall(f"domain {i % 100} topic {i % 50}", k=5)
+        m.recall(f"tag {i % 100} vector block {i % 50}", k=5)
     rag_time = time.perf_counter() - t0
 
     click.echo(
-        f"  Recall:   {rag_time:.3f}s total | {(rag_time / queries) * 1000:.3f}ms/query | {queries / rag_time:,.0f} ops/s"
+        f"  Queries:  {_format_duration(rag_time)} total | {(rag_time / queries) * 1000:.4f}ms/query | {queries / rag_time:,.0f} find/sec"
     )
-
-    t0 = time.perf_counter()
-    m.compress()
-    comp_time = time.perf_counter() - t0
-    click.echo(f"  Compress: {comp_time:.3f}s\n")
-
-    s = m.stats()
-    click.echo(f"  Final: {s['total']} active, {s['inactive']} inactive\n")
 
 
 @cli.command()
-@click.option("--port", default=7900, help="Dashboard port")
-def dashboard(port):
-    """Launch the OMem Memory Dashboard."""
+@click.option("--port", default=7900, help="Interface telemetry bind server port address.")
+@click.pass_context
+def dashboard(ctx: click.Context, port: int):
+    """Launch the localized diagnostic telemetry monitoring browser app."""
     from .viz.server import serve as start_dashboard
 
-    m = OMem()
-
-    samples = [
-        "My name is Mohit and I build AI systems",
-        "Prefer Python for all backend development",
-        "Working on OMem — open source AI memory",
-        "Decided to use FAISS for vector indexing",
-        "Step 1: design API, Step 2: implement core",
-        "Yesterday released OMem v0.2.0",
-        "Server latency caused by N+1 queries",
-        "Currently optimizing compression engine",
-    ]
-    for s in samples:
-        m.add(s)
-
+    m = _get_omem(ctx)
     start_dashboard(omem=m, port=port)
 
 
 @cli.command()
-def health():
-    """Check system health and connectivity."""
-    import sys
-
+@click.pass_context
+def health(ctx: click.Context):
+    """Verify standard structural process context errors status."""
     try:
-        m = OMem()
+        m = _get_omem(ctx)
         stats = m.stats()
-
-        click.echo("Status: HEALTHY")
-        click.echo(f"Version: {__version__}")
-        click.echo(f"Memories: {stats['total']}")
-        click.echo("Database: OK")
+        click.echo(click.style("SYSTEM STATUS: OPERATIONAL", fg="green", bold=True))
+        click.echo(f"Core Engine  : v{__version__}")
+        click.echo(f"Local Matrix : {stats['total']} cells mapped")
         sys.exit(0)
     except Exception as e:
-        click.echo(f"Status: UNHEALTHY - {str(e)}", err=True)
+        click.echo(click.style(f"SYSTEM STATUS: DEGRADED - CRITICAL FAULT: {e}", fg="red"), err=True)
         sys.exit(1)
 
-@cli.command()
-@click.argument('path', default='.', type=click.Path(exists=True))
-@click.option('--namespace', '-n', default='project', help='Namespace for project memory')
-def ingest(path, namespace):
-    """Ingest a Python codebase into Project Memory."""
-    m = OMem()
-    count = m.ingest_project(path, namespace)
-    click.echo(f'Ingested {count} symbols into namespace "{namespace}"')
 
 @cli.command()
 @click.argument('path', default='.', type=click.Path(exists=True))
-@click.option('--namespace', '-n', default='project', help='Namespace for project memory')
-def sync(path, namespace):
-    """Incrementally sync a codebase using Git diff."""
-    m = OMem()
+@click.option('--namespace', '-n', default='project', help='Partition mapping label target.')
+@click.pass_context
+def ingest(ctx: click.Context, path: str, namespace: str):
+    """Ingest clean static filesystem code symbol maps."""
+    m = _get_omem(ctx)
+    count = m.ingest_project(path, namespace)
+    click.echo(
+        click.style(
+            f"Ingested {count} parsed symbol definitions into namespace '{namespace}'.",
+            fg="green",
+        )
+    )
+
+
+@cli.command()
+@click.argument('path', default='.', type=click.Path(exists=True))
+@click.option('--namespace', '-n', default='project', help='Partition mapping label target.')
+@click.pass_context
+def sync(ctx: click.Context, path: str, namespace: str):
+    """Incrementally parse codebase differences tracking historical delta edits."""
+    m = _get_omem(ctx)
     processed = m.sync_project(path, namespace)
-    click.echo(f'Synced {processed} symbols for namespace "{namespace}"')
+    click.echo(
+        click.style(
+            f"Synchronization complete: processed {processed} symbol updates into '{namespace}'.",
+            fg="green",
+        )
+    )
+
 
 @cli.command()
 @click.argument('query')
-@click.option('--namespace', '-n', default='project', help='Namespace for project memory')
-@click.option('--depth', '-d', default=2, help='Context depth')
-@click.option('--top-k', default=5, help='Number of results')
-def codebase(query, namespace, depth, top_k):
-    """Query the Project Memory (codebase) using hybrid retrieval."""
-    m = OMem()
+@click.option('--namespace', '-n', default='project', help='Target storage partition namespace scope.')
+@click.option('--depth', '-d', default=2, help='Graph relational link traversal tracking query limits depth.')
+@click.option('--top-k', default=5, help='Limit tracking results count returned metrics.')
+@click.pass_context
+def codebase(ctx: click.Context, query: str, namespace: str, depth: int, top_k: int):
+    """Execute syntax graph semantic analysis searches across ingested codebase paths."""
+    m = _get_omem(ctx)
     results = m.query_code(query, namespace=namespace, context_depth=depth, top_k=top_k)
     for i, r in enumerate(results, 1):
-        click.echo(f"{i}. {r.get('symbol_id', 'N/A')} ({r.get('type', '')})")
-        click.echo(f"   File: {r.get('file_path', '')}:{r.get('start_line', '')}-{r.get('end_line', '')}")
+        click.echo(f"{i:02d}. {r.get('symbol_id', 'N/A')} ({r.get('type', '')})")
+        click.echo(f"    Location: {r.get('file_path', '')}:{r.get('start_line', '')}")
         if 'summary' in r:
-            click.echo(f"   Summary: {r['summary']}")
-        if 'related' in r:
-            click.echo('   Related:')
-            for rel in r['related']:
-                click.echo(f"    - {rel.get('type')}: {rel.get('symbol_id')}")
+            click.echo(f"    Abstract: {r['summary']}")
         click.echo('')
 
 
@@ -500,47 +710,205 @@ def codebase(query, namespace, depth, top_k):
     "--transport",
     default="stdio",
     type=click.Choice(["stdio"]),
-    help="MCP transport protocol",
+    help="Core communication channel transport paradigm.",
 )
-def serve(transport):
-    """Start the OMem MCP server for Claude Desktop integration.
-
-    The MCP (Model Context Protocol) server enables Claude Desktop and other
-    MCP-compatible clients to use OMem as persistent cognitive memory.
-
-    Example usage:
-        omem serve
-
-    For Claude Desktop configuration, add to your config file:
-    {
-      "mcpServers": {
-        "omem": {
-          "command": "omem",
-          "args": ["serve"]
-        }
-      }
-    }
-    """
-    click.echo("Starting OMem MCP Server...")
-    click.echo(f"Transport: {transport}")
-    click.echo("Ready for Claude Desktop connections.\n")
+@click.pass_context
+def serve(ctx: click.Context, transport: str):
+    """Expose the interface context as an MCP compliant microservice system daemon."""
+    click.echo("Initializing OMem Model Context Protocol Server process...")
+    click.echo(f"Channel Pipeline Transport: {transport}")
+    click.echo("Engine ready to service external agent context attachment sequences.\n")
 
     try:
         from .integrations.mcp_server import mcp
-
         mcp.run(transport=transport)
     except KeyboardInterrupt:
-        click.echo("\nOMem MCP Server stopped.")
+        click.echo("\nService intercept signal caught. OMem daemon down.")
     except Exception as e:
-        click.echo(f"Error starting MCP server: {e}", err=True)
-        raise
+        click.echo(click.style(f"Fatal integration engine startup termination anomaly: {e}", fg="red"), err=True)
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument("shell", default="bash", type=click.Choice(["bash", "zsh", "fish", "powershell"]))
+def completion(shell: str):
+    """Generate shell completion code for supported shells."""
+    try:
+        from click.shell_completion import get_completion_script
+
+        click.echo(get_completion_script("omem", shell))
+    except (ImportError, AttributeError):
+        click.echo(
+            click.style(
+                "Shell completion is not available with this Click version.",
+                fg="yellow",
+            )
+        )
+
+
+@cli.command()
+def version():
+    """Show the currently installed OMem version."""
+    click.echo(f"omem {__version__}")
+
+
+@cli.command()
+def demo():
+    """Initiate an automated end-to-end features demo loop."""
+    m = OMem()
+    click.echo("\n" + "═" * 50)
+    click.echo("  OMem Engine Framework Simulation Terminal")
+    click.echo("" + "═" * 50 + "\n")
+
+    samples = [
+        "My name is Mohit and I'm building OMem",
+        "Decided to use FAISS for vector search",
+        "Step 1: install omem, Step 2: import OMem",
+        "Yesterday deployed v0.2.0 to production",
+        "Rain caused server outage in Mumbai region",
+        "Currently optimizing the hybrid RAG pipeline",
+        "Urgent: security vulnerability in auth module",
+        "Python is the most popular programming language",
+    ]
+
+    click.echo("Simulating active stream records additions...")
+    for content in samples:
+        mid = m.add(content)
+        mem = m.get(mid)
+        click.echo(f"  [{mem.type.name:11s}] w={mem.importance:.2f} | {content[:50]}")
+
+    s = m.stats()
+    click.echo(f"\nMatrix Status: {s['total']} logs running, {len(s['types'])} variants loaded.\n")
+
+    click.echo("Testing similarity extraction recall heuristics:")
+    for q in ["Who am I?", "deployment production", "security urgent"]:
+        results = m.recall(q, k=2)
+        click.echo(f'  Query target: "{q}"')
+        for r in results:
+            click.echo(f"    ↳ [{r.score:.3f}] {r.content[:55]}")
+
+    click.echo("\nExecuting background structural convergence logic...")
+    result = m.compress()
+    click.echo(f"  Group targets consolidated: {result['compressed']}. Linear allocations dropped: {result['deactivated']}")
+
+    click.echo("\nSimulating metadata insight calculations...")
+    refs = m.reflect()
+    click.echo(f"  Synthesized {len(refs)} cognitive patterns.")
+    click.echo("\n" + "═" * 50)
+    click.echo("  Verification phase pass complete.")
+
+
+@cli.command()
+@click.option("--n", default=10_000, help="Throughput load parameter size configuration.")
+def benchmark(n):
+    """Run real-time performance ingestion calculations metrics logs."""
+    m = OMem()
+    click.echo(f"\nInitiating benchmark profile routines across {n:,} simulated items...\n")
+
+    t0 = time.perf_counter()
+    for i in range(n):
+        m.add(f"Benchmark transaction sequence {i}: tag {i % 100} vector block {i % 50}", importance=0.5)
+    add_time = time.perf_counter() - t0
+
+    click.echo(f"  Writes:   {add_time:.3f}s total | {(add_time / n) * 1000:.4f}ms/op | {n / add_time:,.0f} records/sec")
+
+    queries = 1000
+    t0 = time.perf_counter()
+    for i in range(queries):
+        m.recall(f"tag {i % 100} vector block {i % 50}", k=5)
+    rag_time = time.perf_counter() - t0
+
+    click.echo(f"  Queries:  {rag_time:.3f}s total | {(rag_time / queries) * 1000:.4f}ms/query | {queries / rag_time:,.0f} find/sec")
+
+
+@cli.command()
+@click.option("--port", default=7900, help="Interface telemetry bind server port address.")
+def dashboard(port):
+    """Launch the localized diagnostic telemetry monitoring browser app."""
+    from .viz.server import serve as start_dashboard
+    m = OMem()
+    start_dashboard(omem=m, port=port)
+
+
+@cli.command()
+def health():
+    """Verify standard structural process context errors status."""
+    try:
+        m = OMem()
+        stats = m.stats()
+        click.echo("SYSTEM STATUS: OPERATIONAL")
+        click.echo(f"Core Engine  : v{__version__}")
+        click.echo(f"Local Matrix : {stats['total']} cells mapped")
+        sys.exit(0)
+    except Exception as e:
+        click.echo(f"SYSTEM STATUS: DEGRADED - CRITICAL FAULT: {str(e)}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument('path', default='.', type=click.Path(exists=True))
+@click.option('--namespace', '-n', default='project', help='Partition mapping label target.')
+def ingest(path, namespace):
+    """Ingest clean static filesystem code symbol maps."""
+    m = OMem()
+    count = m.ingest_project(path, namespace)
+    click.echo(f"Ingested {count} parsed abstractions symbols mapping successfully into namespace '{namespace}'.")
+
+
+@cli.command()
+@click.argument('path', default='.', type=click.Path(exists=True))
+@click.option('--namespace', '-n', default='project', help='Partition mapping label target.')
+def sync(path, namespace):
+    """Incrementally parse codebase differences tracking historical delta edits."""
+    m = OMem()
+    processed = m.sync_project(path, namespace)
+    click.echo(f"Synchronization absolute: calculated {processed} symbol updates into target space '{namespace}'.")
+
+
+@cli.command()
+@click.argument('query')
+@click.option('--namespace', '-n', default='project', help='Target storage partition namespace scope.')
+@click.option('--depth', '-d', default=2, help='Graph relational link traversal tracking query limits depth.')
+@click.option('--top-k', default=5, help='Limit tracking results count returned metrics.')
+def codebase(query, namespace, depth, top_k):
+    """Execute syntax graph semantic analysis searches across ingested codebase paths."""
+    m = OMem()
+    results = m.query_code(query, namespace=namespace, context_depth=depth, top_k=top_k)
+    for i, r in enumerate(results, 1):
+        click.echo(f"{i:02d}. {r.get('symbol_id', 'N/A')} ({r.get('type', '')})")
+        click.echo(f"    Location: {r.get('file_path', '')}:{r.get('start_line', '')}")
+        if 'summary' in r:
+            click.echo(f"    Abstract: {r['summary']}")
+        click.echo('')
+
+
+@cli.command()
+@click.option(
+    "--transport",
+    default="stdio",
+    type=click.Choice(["stdio"]),
+    help="Core communication channel transport paradigm.",
+)
+def serve(transport):
+    """Expose the interface context as an MCP compliant microservice system daemon."""
+    click.echo("Initializing OMem Model Context Protocol Server process...")
+    click.echo(f"Channel Pipeline Transport: {transport}")
+    click.echo("Engine ready to service external agent context attachment sequences.\n")
+
+    try:
+        from .integrations.mcp_server import mcp
+        mcp.run(transport=transport)
+    except KeyboardInterrupt:
+        click.echo("\nService intercept signal caught. OMem daemon down.")
+    except Exception as e:
+        click.echo(f"Fatal integration engine startup termination anomaly: {e}", err=True)
+        sys.exit(1)
 
 
 def _time_ago(timestamp):
-    """Human-readable time ago."""
     seconds = time.time() - timestamp
     if seconds < 60:
-        return "just now"
+        return "now"
     elif seconds < 3600:
         return f"{int(seconds / 60)}m ago"
     elif seconds < 86400:

@@ -19,18 +19,18 @@ class TestCLI:
         for help_flag in ["-h", "--help"]:
             result = self.runner.invoke(cli, [help_flag])
             assert result.exit_code == 0
-            assert "OMem - Persistent Memory System" in result.output
+            assert "OMem — AI Memory Operating System" in result.output
 
     def test_demo(self):
         result = self.runner.invoke(cli, ["demo"])
         assert result.exit_code == 0
         assert "OMem" in result.output
-        assert "rag" in result.output.lower() or "Adding" in result.output
+        assert "recall" in result.output.lower() or "simulating" in result.output.lower()
 
     def test_benchmark(self):
         result = self.runner.invoke(cli, ["benchmark", "--n", "50"])
         assert result.exit_code == 0
-        assert "Benchmark" in result.output
+        assert "Initiating benchmark profile routines" in result.output
         assert "ms" in result.output
 
     def test_init(self):
@@ -42,4 +42,4 @@ class TestCLI:
     def test_stats(self):
         result = self.runner.invoke(cli, ["stats"])
         assert result.exit_code == 0
-        assert "Statistics" in result.output
+        assert "Total Index Nodes" in result.output
