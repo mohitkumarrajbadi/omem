@@ -63,6 +63,15 @@ secure = ["cryptography>=41.0.0"]
 langchain = ["langchain>=0.1.0"]
 # OpenAI embeddings provider
 openai = ["openai>=1.0.0"]
+# AI memory benchmark dependencies
+benchmarks = [
+    "mteb>=0.6.0",
+    "beir>=0.2.0",
+    "datasets>=2.0.0",
+    "transformers>=4.30.0",
+    "sentence-transformers>=2.2.0",
+    "faiss-cpu>=1.7.4",
+]
 # Development and testing
 dev = [
     "pytest>=7.0",

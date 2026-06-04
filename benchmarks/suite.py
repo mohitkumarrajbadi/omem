@@ -12,6 +12,7 @@ Usage:
     python -m benchmarks.suite --test integrity
     python -m benchmarks.suite --test competitor
     python -m benchmarks.suite --test memory
+    python -m benchmarks.suite --test ai_memory
     python -m benchmarks.suite --report json --output results.json
 """
 
@@ -77,6 +78,7 @@ def run_suite(
         "integrity",
         "memory",
         "competitor",
+        "ai_memory",
     }
     if tests is None:
         tests = sorted(all_tests)
@@ -170,11 +172,27 @@ def run_suite(
         mem_results = profile_memory_usage(scales=scales, verbose=verbose)
         report["results"]["memory"] = [asdict(r) for r in mem_results]
 
+    # -- AI Memory Benchmarks --
+    if "ai_memory" in tests:
+        if verbose:
+            print("\n" + "#" * 70)
+            print("  6/6  AI MEMORY BENCHMARKS")
+            print("#" * 70)
+        from benchmarks.ai_memory.runner import run_ai_memory_benchmarks
+
+        ai_results = run_ai_memory_benchmarks(
+            benchmarks=None,
+            model_name="all-MiniLM-L6-v2",
+            n_queries=min(n_queries, 100),
+            verbose=verbose,
+        )
+        report["results"]["ai_memory"] = ai_results
+
     # -- Competitor Comparison --
     if "competitor" in tests:
         if verbose:
             print("\n" + "#" * 70)
-            print("  6/6  COMPETITOR COMPARISON")
+            print("  7/7  COMPETITOR COMPARISON")
             print("#" * 70)
         from benchmarks.competitor import run_comparison
 

@@ -100,6 +100,41 @@ Browse open issues at: https://github.com/mohitkumarrajbadi/omem/issues
 
 ---
 
+## Issue Templates & Labels
+
+To make contributions production-ready, we use issue templates and labels that help maintainers prioritize, triage, and ship work faster.
+
+### Use the right template
+- Open a new issue and choose either **Bug report** or **Feature request**.
+- Include a short title and provide enough context so maintainers can reproduce or evaluate the request quickly.
+- For bug reports, include reproduction steps, expected behavior, actual behavior, and environment details.
+- For feature requests, describe the problem, why it matters, and an example of the desired behavior.
+
+### Issue labels
+Use the labels below when filing issues or PRs; maintainers will also apply them during triage.
+
+| Label | When to use | Example / meaning |
+|---|---|---|
+| `bug` | Defect, regression, crash, incorrect results | Core memory retrieval returns wrong result |
+| `enhancement` | New capability, connector, integration, or UX improvement | Add LangGraph memory adapter |
+| `good first issue` | Simple, easy-to-start contributions | Add CLI flag, write a small unit test |
+| `documentation` | Docs, examples, usage guides, README improvements | Add integration docs for LangChain |
+| `performance` | Speed, latency, benchmarking, optimization | Improve RAG throughput or memory add latency |
+| `security` | Vulnerability, data safety, encryption, secrets handling | Review encryption or input sanitization |
+| `testing` | Test coverage, new tests, CI improvements | Add regression tests for recall() |
+| `question` | Clarification, ask for design guidance, contribution help | Ask how to extend storage backends |
+
+### Issue title format
+Use a clear prefix to make issues easier to scan:
+- `[BUG]` for defects
+- `[FEATURE]` for new features or integrations
+- `[DOCS]` for documentation requests
+- `[PERF]` for performance work
+
+Example: `[FEATURE] add LangGraph connector for OMem memory`
+
+---
+
 ## Code Style
 
 **Linting:** Run `ruff check .` before committing. CI will fail if ruff reports errors.

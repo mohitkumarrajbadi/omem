@@ -10,6 +10,7 @@ Modules:
     concurrency - thread-safety and parallel throughput
     memory      - RSS/heap profiling under load
     integrity   - data correctness under stress
+    ai_memory   - MTEB / BEIR / LongBench / LAMA-style AI memory evaluation
     competitor  - head-to-head comparison framework
     report      - JSON/HTML report generation
 
