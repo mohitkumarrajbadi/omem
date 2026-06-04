@@ -2,7 +2,7 @@
 name: Feature request
 about: Suggest a new feature, connector, integration, or enhancement for OMem.
 title: "[FEATURE] "
-labels: [enhancement]
+labels: [enhancement, feature]
 assignees: []
 ---
 
