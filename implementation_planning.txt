@@ -1,0 +1,239 @@
+Reviewing the repo architecture to ground the implementation plan in current modules.
+
+Searched for regex `knowledge_graph|graph|consolidat|reason|self-evolve|dream|forget|tier|MemoryTier|vector_index|HNSW|belief|confidence|priority` (`**/omem/**/*.py`), 200 results
+
+Searched for files matching `**/omem/**/*.py`, 68 matches
+
+I found the deeper architecture; now I’m verifying what existing graph/reasoning/consolidation engines already exist.
+
+Read [](file:///Users/mbadi/Downloads/Personal%20/Projects/omem/omem/core/engine.py)
+
+Read [](file:///Users/mbadi/Downloads/Personal%20/Projects/omem/omem/core/brain/dream.py#1-1), lines 1 to 260
+
+Read [](file:///Users/mbadi/Downloads/Personal%20/Projects/omem/omem/core/brain/forgetting.py)
+
+Read [](file:///Users/mbadi/Downloads/Personal%20/Projects/omem/omem/core/graph/knowledge.py#1-1), lines 1 to 260
+
+Read [](file:///Users/mbadi/Downloads/Personal%20/Projects/omem/omem/codebase/retriever.py)
+
+Created 5 todos
+
+I’m confirming the current retrieval and engine integration so the plan maps to real modules.
+
+Read [](file:///Users/mbadi/Downloads/Personal%20/Projects/omem/omem/core/engine/rag.py#1-1), lines 1 to 220
+
+## Implementation Plan for OMem as a Memory Operating System
+
+You’re right: the core problem is not just hardcoded `MemoryType` values. The real shift is from “embedding table + search” to a living substrate of nodes, relations, weights, confidence, and evolution.
+
+---
+
+## 1. Build the substrate data model first
+
+### What changes
+- Keep `Memory` for compatibility, but make it a graph-backed unit rather than a type bucket.
+- Create first-class graph types:
+  - `Node` / `EntityNode`
+  - `RelationEdge`
+  - `Evidence`
+  - `Confidence`
+  - `Provenance`
+  - `Time / freshness`
+  - `Strength / weight`
+
+### Where
+- types.py
+  - Add `Node`, `Edge`, and `Evidence` dataclasses
+  - Turn `MemoryType` into a legacy compatibility label
+  - Add explicit `confidence_score`, `evidence_count`, `provenance`, `node_ids`, `edge_ids`
+- knowledge.py
+  - Harden this module into the canonical graph store
+  - Add node creation, merge, edge weighting, provenance tracking
+
+### Why
+This is the move from “type = Semantic/Episodic” to “memory is structured relational knowledge.”
+
+---
+
+## 2. Refactor ingestion into “Experience → Understand → Connect”
+
+### What changes
+- Replace the current `add()` pipeline with a graph-first ingestion pipeline.
+- Ingest should:
+  1. parse experience text
+  2. extract entities
+  3. detect relation types
+  4. build or update graph nodes
+  5. build or update typed edges
+  6. attach embeddings, confidence, recency, evidence, provenance
+
+### Where
+- add.py
+  - Refactor `AddMixin.add()` so it uses graph ingestion as the central flow
+- classify.py
+  - Move from hardcoded bucket classification to relation/entity extraction
+  - Keep type scoring as legacy fallback, but prioritize graph structure
+- knowledge.py
+  - Leverage edge extraction and expand it to support:
+    - relation strength
+    - evidence counts
+    - dynamic entity merging
+    - directed relations
+- api.py
+  - Add new entrypoints like:
+    - `add_experience(...)`
+    - `link_entities(...)`
+    - `assert_fact(...)`
+    - `query_graph(...)`
+
+### Why
+This makes OMem behave like a system that understands and connects experience, instead of merely tagging text with a bucket.
+
+---
+
+## 3. Make retrieval truly multi-objective
+
+### What changes
+- Replace the old “vector + keyword + type boost” model with a configurable scoring engine:
+  - semantic similarity
+  - recency/freshness
+  - importance
+  - confidence
+  - graph centrality / distance
+  - personalization / feedback
+- Expose a scoring formula like:
+  `score = αS + βR + γI + δC + εG + ζP`
+
+### Where
+- rag.py
+  - This is already the right place for retrieval evolution
+  - Add graph centrality and confidence into the scoring function
+- retriever.py
+  - Use this module as a prototype for multi-objective ranking
+- importance.py
+  - Add learned/online signal support
+- api.py
+  - Add query tuning options and explainability
+
+### Why
+This turns retrieval from “vector search only” into “search over a living memory network”.
+
+---
+
+## 4. Add continuous memory evolution
+
+### What changes
+- Turn `dream()` and `forget()` into a real sleep/consolidation cycle
+- Add:
+  - merge/summarize
+  - split/structure
+  - abstract/generalize
+  - reinforce based on use and feedback
+- Use `confidence_score` and evidence to avoid over-generalizing bad memory
+
+### Where
+- dream.py
+  - Extend from simple cluster summarization to:
+    - abstracting repeated patterns
+    - creating new insight nodes
+    - generating higher-level concepts
+- forgetting.py
+  - Extend the lifecycle to support:
+    - STM → LTM → archive
+    - evidence-weighted retention
+    - confidence-aware pruning
+- api.py
+  - Add a `sleep()` / `consolidate()` API
+- agent_wrapper.py and mcp_server.py
+  - Expose periodic consolidation cycles and scheduled memory maintenance
+
+### Why
+This is the key part of “Memory should self-evolve” and moves OMem toward a true substrate.
+
+---
+
+## 5. Add a real memory hierarchy and tiered store
+
+### What changes
+- Formalize tiers:
+  - Working memory
+  - Short-term memory
+  - Long-term memory
+  - Archive
+- Make tier transitions automated and graph-aware
+- Ensure retrieval can target different tiers
+
+### Where
+- types.py and lifecycle modules
+- forgetting.py
+- add.py
+- api.py
+
+### Why
+This reduces retrieval cost and provides the same architectural leverage as CPU memory hierarchies.
+
+---
+
+## 6. Build the Memory OS architecture
+
+### What changes
+- Separate core engines as modules:
+  - Storage Engine
+  - Graph Engine
+  - Retrieval Engine
+  - Consolidation Engine
+  - Reasoning Engine
+  - Memory Scheduler
+  - Forgetting Engine
+  - Learning / tuning Engine
+
+### Where
+- Add new modules such as:
+  - `omem/core/brain/reasoning.py`
+  - `omem/core/retrieval/fusion.py`
+  - `omem/core/brain/scheduler.py`
+  - `omem/core/brain/self_tune.py`
+- Keep api.py as the OS interface
+- Add CLI commands around these cycles
+
+### Why
+That’s how OMem becomes category-defining instead of “another vector memory library”.
+
+---
+
+## 7. Practical first milestone
+
+### Start with a minimal core substrate
+1. Redesign types.py to support node/edge and evidence metadata.
+2. Refactor add.py to ingest graph nodes and relations.
+3. Keep current `MemoryType` as compatibility, but make it non-essential.
+4. Enhance rag.py to score graph distance and confidence.
+5. Extend dream.py so consolidation creates abstract insight nodes instead of only bucketed summaries.
+
+### Then iterate
+- Phase 1: graph-first ingest + multi-tier storage
+- Phase 2: multi-objective retrieval + explainability
+- Phase 3: merge/split/abstract + self-tuning
+- Phase 4: distributed backend + operational APIs
+
+---
+
+## Why this is feasible in this repo
+
+You already have important pieces:
+- knowledge.py → graph engine foundation
+- dream.py → consolidation engine
+- forgetting.py → lifecycle manager
+- rag.py → retrieval scoring engine
+- types.py → richer memory metadata already exists
+- retriever.py → multi-factor scoring prototype
+
+So the correct path is not to throw everything away. It is to elevate those foundations into:
+- node/relation/evidence-first storage
+- graph-native retrieval
+- continuous consolidation
+- self-tuning importance/confidence
+
+If you want, I can next turn this into a concrete repo-level implementation roadmap with file-by-file tasks and a first PR plan.
+
+Completed: *Plan implementation for OMem improvements* (4/5)
