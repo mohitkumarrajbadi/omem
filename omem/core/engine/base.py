@@ -18,6 +18,7 @@ from ..graph.causal import CausalGraph
 from ..graph.dependency import DependencyGraph
 from ..graph.knowledge import KnowledgeGraph
 from ..retrieval.embeddings import Embedder
+from ..retrieval.fusion import DEFAULT_WEIGHTS
 from ..retrieval.kv import KVCache
 from ..retrieval.vector import VectorIndex
 from ..utils.cache import LRUCache
@@ -62,6 +63,7 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
         self._id_order: List[str] = []
         self._noise_gate_enabled = True
         self._dedup_enabled = True
+        self._fusion_weights = DEFAULT_WEIGHTS
         self._start_time = time.time()
 
         self._load_from_backend()
@@ -143,7 +145,45 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
 
     def graph_query(self, entity_name: str, depth: int = 2) -> List[Memory]:
         m_ids = self.knowledge_graph.query(entity_name, depth=depth)
-        return [self.kv.get(mid) for mid in m_ids if self.kv.get(mid)]
+        return [m for mid in m_ids if (m := self.kv.get(mid)) is not None]
+
+    def query_graph(self, entity_name: str, depth: int = 2) -> Dict:
+        """Structured graph query with nodes, edges, and related memory IDs."""
+        from ..brain.reasoning import query_graph_substrate
+
+        return query_graph_substrate(self.knowledge_graph, entity_name, depth=depth)
+
+    def link_entities(
+        self,
+        source: str,
+        target: str,
+        relation: str = "related_to",
+        memory_id: str = "",
+        confidence: float = 1.0,
+    ) -> str:
+        from ..graph.knowledge import EdgeType
+
+        edge_type = EdgeType(relation) if relation in EdgeType._value2member_map_ else EdgeType.RELATED_TO
+        return self.knowledge_graph.link_entities(
+            source, target, edge_type, memory_id=memory_id, confidence=confidence
+        )
+
+    def assert_fact(
+        self,
+        subject: str,
+        relation: str,
+        obj: str,
+        memory_id: str = "",
+        confidence: float = 0.9,
+    ) -> Dict:
+        from ..graph.knowledge import EdgeType
+
+        if not memory_id:
+            memory_id = self.add(f"{subject} {relation} {obj}", source="assertion")
+        edge_type = EdgeType(relation) if relation in EdgeType._value2member_map_ else EdgeType.ASSERTED
+        return self.knowledge_graph.assert_fact(
+            subject, edge_type, obj, memory_id, confidence=confidence
+        )
 
     def prefetch(self) -> Dict:
         return self.prefetcher.get_predicted_queries()
@@ -158,15 +198,18 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
         return restore_memory(self.kv.all(), memory_id)
 
     def inspect(
-        self, query: str, top_k: int = 5, namespace: Optional[str] = None
+        self,
+        query: str,
+        top_k: int = 5,
+        namespace: Optional[str] = None,
+        mode: str = "default",
+        weight_overrides: Optional[Dict] = None,
     ) -> List:
         """Explain why certain memories were retrieved for a query."""
         mems = self.kv.all()
         if namespace:
             mems = [m for m in mems if m.namespace == namespace]
 
-        # We need vector scores for inspection.
-        # For simplicity in modular version, we re-run a search or use cached if available.
         query_vec = self.embedder.encode(query)
         scores, indices = self.vector_index.search(query_vec, top_k=min(len(mems), 100))
 
@@ -176,7 +219,15 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
             if 0 <= int(idx) < len(id_snap):
                 vector_scores[id_snap[int(idx)]] = float(s)
 
-        return inspect_query(query, mems, vector_scores, top_k=top_k)
+        return inspect_query(
+            query,
+            mems,
+            vector_scores,
+            top_k=top_k,
+            mode=mode,
+            knowledge_graph=self.knowledge_graph,
+            weight_overrides=weight_overrides,
+        )
 
     def compress(
         self,
@@ -247,20 +298,22 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
 
     def feedback(self, memory_ids: List[str], score: float):
         """Update utility scores for a set of memories."""
+        from ..brain.self_tune import normalize_weights, tune_weights_from_feedback
+
         with WriteContext(self._lock):
             for mid in memory_ids:
                 mem = self.kv.get(mid)
                 if mem:
-                    # Adaptive feedback: 0.1 increment/decrement per vote
-                    # Scaled by the input score (-1 to 1)
                     adjustment = 0.1 * max(min(score, 1.0), -1.0)
                     mem.utility_score = max(
                         min(mem.utility_score + adjustment, 1.0), 0.0
                     )
-
-                    # Update local caches and buffer
                     self.kv.put(mid, mem)
                     self.write_buffer.enqueue(mem)
+
+            self._fusion_weights = normalize_weights(
+                tune_weights_from_feedback(self._fusion_weights, score)
+            )
         logger.info(
             "Feedback applied to %d memories (score=%.2f)", len(memory_ids), score
         )

@@ -3,11 +3,16 @@ from importlib.metadata import PackageNotFoundError, version
 from .api import OMem
 from .core.engine import DreamResult, ForgetResult
 from .types import (
+    Evidence,
+    GraphNode,
     Memory,
+    MemoryLevel,
     MemoryPriority,
     MemoryStatus,
     MemoryTier,
     MemoryType,
+    Provenance,
+    RelationEdge,
     RetrievalExplanation,
 )
 
@@ -22,6 +27,11 @@ __all__ = [
     "MemoryPriority",
     "MemoryStatus",
     "Memory",
+    "MemoryLevel",
+    "GraphNode",
+    "RelationEdge",
+    "Evidence",
+    "Provenance",
     "RetrievalExplanation",
     "ForgetResult",
     "DreamResult",

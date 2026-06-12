@@ -1,21 +1,30 @@
 """Knowledge Graph — Entity Extraction & Semantic Linking.
 
-Upgrades the existing CausalGraph into a full Knowledge Graph with:
-- Automatic entity extraction (Person, Technology, Project, Org, Location)
-- Typed semantic edges (USES, WORKS_ON, PREFERS, DECIDED, etc.)
-- Multi-hop graph traversal for relational queries
-
-When mem.add() is called, entities are extracted and linked.
-When mem.rag() is called, graph traversal augments vector search.
+Canonical graph substrate for OMem: nodes, relations, evidence, and provenance.
+Memories are graph-backed units; vector search augments graph traversal.
 """
 
 import logging
 import re
+import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional, Set
 
+from ...types import GraphNode, NodeKind, Provenance, RelationEdge
+
 logger = logging.getLogger(__name__)
+
+try:
+    import xxhash
+
+    def _fast_hash(data: str) -> str:
+        return xxhash.xxh64_hexdigest(data.encode("utf-8"))[:12]
+except ImportError:
+    import hashlib
+
+    def _fast_hash(data: str) -> str:
+        return hashlib.md5(data.encode("utf-8")).hexdigest()[:12]
 
 
 class EntityType(Enum):
@@ -42,6 +51,7 @@ class EdgeType(Enum):
     RELATED_TO = "related_to"
     CREATED = "created"
     DEPENDS_ON = "depends_on"
+    ASSERTED = "asserted"
 
 
 @dataclass
@@ -52,6 +62,7 @@ class Entity:
     type: EntityType
     memory_ids: List[str] = field(default_factory=list)
     mention_count: int = 1
+    node_id: str = ""
 
     def __hash__(self):
         return hash((self.name.lower(), self.type))
@@ -68,17 +79,18 @@ class Entity:
 class Edge:
     """A typed, weighted edge between two entities."""
 
-    source: str  # Entity name (lowercase)
-    target: str  # Entity name (lowercase)
+    source: str
+    target: str
     edge_type: EdgeType
     weight: float = 1.0
-    memory_id: str = ""  # The memory that created this edge
+    memory_id: str = ""
     label: str = ""
+    id: str = ""
+    evidence_count: int = 1
+    confidence: float = 1.0
+    provenance: Provenance = field(default_factory=Provenance)
 
 
-# ── Entity extraction patterns ──
-
-# Technology names (common programming languages, frameworks, tools)
 _TECH_PATTERNS = re.compile(
     r"\b("
     r"Python|JavaScript|TypeScript|Java|Go|Rust|C\+\+|Ruby|PHP|Swift|Kotlin|"
@@ -92,7 +104,6 @@ _TECH_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
-# Organization patterns
 _ORG_PATTERNS = re.compile(
     r"\b("
     r"Google|Microsoft|Apple|Amazon|Meta|Facebook|Netflix|Uber|Airbnb|"
@@ -103,7 +114,6 @@ _ORG_PATTERNS = re.compile(
     r")\b"
 )
 
-# Person name heuristics (after "my name is", "I am", etc.)
 _PERSON_PATTERNS = [
     re.compile(
         r"(?:my name is|i am|i'm|call me)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)",
@@ -112,14 +122,10 @@ _PERSON_PATTERNS = [
     re.compile(r"(?:told|asked|met|know|called)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b"),
 ]
 
-# Location patterns
 _LOCATION_PATTERNS = re.compile(
-    r"\b(?:in|at|from|to|near)\s+("
-    r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*"
-    r")\b"
+    r"\b(?:in|at|from|to|near)\s+(" r"[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*" r")\b"
 )
 
-# Relationship detection patterns
 _RELATION_PATTERNS = {
     EdgeType.USES: re.compile(
         r"\b(?:use|using|used|uses|built with|built on|runs on|powered by)\b",
@@ -151,15 +157,10 @@ _RELATION_PATTERNS = {
 
 
 def extract_entities(content: str) -> List[Entity]:
-    """Extract named entities from memory content using regex patterns.
-
-    Returns a list of Entity objects with type classification.
-    Fast, runs in microseconds, no LLM needed.
-    """
+    """Extract named entities from memory content using regex patterns."""
     entities: List[Entity] = []
     seen: Set[str] = set()
 
-    # Extract person names
     for pattern in _PERSON_PATTERNS:
         for match in pattern.finditer(content):
             name = match.group(1).strip()
@@ -168,7 +169,6 @@ def extract_entities(content: str) -> List[Entity]:
                 entities.append(Entity(name=name, type=EntityType.PERSON))
                 seen.add(key)
 
-    # Extract technology names
     for match in _TECH_PATTERNS.finditer(content):
         name = match.group(1)
         key = name.lower()
@@ -176,7 +176,6 @@ def extract_entities(content: str) -> List[Entity]:
             entities.append(Entity(name=name, type=EntityType.TECHNOLOGY))
             seen.add(key)
 
-    # Extract organization names
     for match in _ORG_PATTERNS.finditer(content):
         name = match.group(1).strip()
         key = name.lower()
@@ -184,7 +183,6 @@ def extract_entities(content: str) -> List[Entity]:
             entities.append(Entity(name=name, type=EntityType.ORGANIZATION))
             seen.add(key)
 
-    # Extract locations (simpler heuristic)
     for match in _LOCATION_PATTERNS.finditer(content):
         name = match.group(1).strip()
         key = name.lower()
@@ -209,24 +207,18 @@ def detect_relationships(content: str) -> List[EdgeType]:
 
 
 class KnowledgeGraph:
-    """Entity-relationship knowledge graph for semantic memory linking.
-
-    Extends CausalGraph with:
-    - Named entity nodes with types
-    - Typed edges (USES, PREFERS, WORKS_ON, etc.)
-    - Multi-hop traversal
-    - Memory-to-entity linking
-    """
+    """Entity-relationship knowledge graph — canonical memory substrate store."""
 
     def __init__(self) -> None:
-        # Entity store: name_lower → Entity
         self._entities: Dict[str, Entity] = {}
-        # Edges: source_lower → [Edge]
+        self._nodes: Dict[str, GraphNode] = {}
+        self._label_to_node: Dict[str, str] = {}
         self._edges: Dict[str, List[Edge]] = {}
-        # Reverse edges: target_lower → [Edge]
         self._reverse_edges: Dict[str, List[Edge]] = {}
-        # Memory → entities mapping
+        self._edge_index: Dict[str, Edge] = {}
         self._memory_entities: Dict[str, List[str]] = {}
+        self._memory_node_ids: Dict[str, List[str]] = {}
+        self._memory_edge_ids: Dict[str, List[str]] = {}
 
     @property
     def num_entities(self) -> int:
@@ -234,19 +226,57 @@ class KnowledgeGraph:
 
     @property
     def num_edges(self) -> int:
-        return sum(len(v) for v in self._edges.values())
+        return len(self._edge_index)
+
+    def _node_id_for(self, label: str, entity_type: EntityType) -> str:
+        return _fast_hash(f"node:{label.lower()}:{entity_type.value}")
+
+    def _edge_id_for(self, source: str, target: str, edge_type: EdgeType) -> str:
+        return _fast_hash(f"edge:{source.lower()}:{target.lower()}:{edge_type.value}")
+
+    def get_node(self, node_id: str) -> Optional[GraphNode]:
+        return self._nodes.get(node_id)
+
+    def get_node_by_label(self, label: str) -> Optional[GraphNode]:
+        node_id = self._label_to_node.get(label.lower())
+        return self._nodes.get(node_id) if node_id else None
+
+    def get_edge(self, edge_id: str) -> Optional[Edge]:
+        return self._edge_index.get(edge_id)
 
     def add_entity(self, entity: Entity) -> Entity:
         """Add or merge an entity into the graph."""
         key = entity.name.lower()
+        node_id = self._node_id_for(entity.name, entity.type)
+        entity.node_id = node_id
+
         if key in self._entities:
             existing = self._entities[key]
             existing.mention_count += 1
             for mid in entity.memory_ids:
                 if mid not in existing.memory_ids:
                     existing.memory_ids.append(mid)
+            node = self._nodes.get(existing.node_id)
+            if node:
+                node.mention_count = existing.mention_count
+                node.evidence_count += 1
+                node.updated_at = time.time()
+                for mid in entity.memory_ids:
+                    if mid not in node.memory_ids:
+                        node.memory_ids.append(mid)
             return existing
+
         self._entities[key] = entity
+        node = GraphNode(
+            id=node_id,
+            label=entity.name,
+            kind=NodeKind.ENTITY,
+            entity_type=entity.type.value,
+            memory_ids=list(entity.memory_ids),
+            mention_count=entity.mention_count,
+        )
+        self._nodes[node_id] = node
+        self._label_to_node[key] = node_id
         return entity
 
     def add_edge(
@@ -256,49 +286,84 @@ class KnowledgeGraph:
         edge_type: EdgeType,
         memory_id: str = "",
         weight: float = 1.0,
+        confidence: float = 1.0,
+        provenance: Optional[Provenance] = None,
     ) -> Edge:
-        """Add a typed edge between two entities."""
+        """Add or reinforce a typed edge between two entities."""
         src_key = source.lower()
         tgt_key = target.lower()
+        edge_id = self._edge_id_for(source, target, edge_type)
+
+        if edge_id in self._edge_index:
+            existing = self._edge_index[edge_id]
+            existing.weight = min(existing.weight + 0.1, 5.0)
+            existing.evidence_count += 1
+            existing.confidence = min(
+                1.0, (existing.confidence + confidence) / 2.0 + 0.05
+            )
+            if memory_id and memory_id not in self._memory_edge_ids.setdefault(memory_id, []):
+                self._memory_edge_ids[memory_id].append(edge_id)
+            return existing
 
         edge = Edge(
+            id=edge_id,
             source=src_key,
             target=tgt_key,
             edge_type=edge_type,
             weight=weight,
             memory_id=memory_id,
+            confidence=confidence,
+            provenance=provenance or Provenance(source="user", memory_id=memory_id),
         )
+        self._edge_index[edge_id] = edge
         self._edges.setdefault(src_key, []).append(edge)
         self._reverse_edges.setdefault(tgt_key, []).append(edge)
+        if memory_id:
+            self._memory_edge_ids.setdefault(memory_id, []).append(edge_id)
         return edge
 
-    def link_memory(
-        self, memory_id: str, content: str, user_name: str = ""
-    ) -> List[Entity]:
-        """Extract entities from content and create graph links.
-
-        Called automatically by engine.add(). Returns extracted entities.
-        """
+    def ingest_experience(
+        self,
+        memory_id: str,
+        content: str,
+        source: str = "user",
+        confidence: float = 1.0,
+        namespace: str = "default",
+        user_name: str = "",
+    ) -> Dict:
+        """Graph-first ingestion: extract entities, relations, evidence, provenance."""
         entities = extract_entities(content)
         relationships = detect_relationships(content)
+        node_ids: List[str] = []
+        edge_ids: List[str] = []
+        entity_names: List[str] = []
 
         if not entities:
-            return []
+            return {
+                "node_ids": [],
+                "edge_ids": [],
+                "entities": [],
+                "confidence": confidence,
+                "evidence_count": 1,
+                "relation_types": [r.value for r in relationships],
+            }
 
-        entity_names = []
         for ent in entities:
             ent.memory_ids.append(memory_id)
-            self.add_entity(ent)
-            entity_names.append(ent.name.lower())
+            merged = self.add_entity(ent)
+            entity_names.append(merged.name)
+            if merged.node_id:
+                node_ids.append(merged.node_id)
+                self._memory_node_ids.setdefault(memory_id, []).append(merged.node_id)
 
-        self._memory_entities[memory_id] = entity_names
+        self._memory_entities[memory_id] = [n.lower() for n in entity_names]
 
-        # Create edges based on detected relationships
-        # If user name is known, link entities to user
         person_entities = [e for e in entities if e.type == EntityType.PERSON]
         other_entities = [e for e in entities if e.type != EntityType.PERSON]
+        prov = Provenance(
+            source=source, memory_id=memory_id, namespace=namespace
+        )
 
-        # Link person → technology/org/project edges
         for rel in relationships:
             persons = (
                 person_entities
@@ -311,30 +376,217 @@ class KnowledgeGraph:
             )
             for person in persons:
                 for other in other_entities:
-                    self.add_edge(person.name, other.name, rel, memory_id)
+                    edge = self.add_edge(
+                        person.name,
+                        other.name,
+                        rel,
+                        memory_id=memory_id,
+                        confidence=confidence,
+                        provenance=prov,
+                    )
+                    edge_ids.append(edge.id)
 
-        # If no person but multiple entities, link them with RELATED_TO
         if not person_entities and len(other_entities) > 1:
+            rel = relationships[0] if relationships else EdgeType.RELATED_TO
             for i, e1 in enumerate(other_entities):
                 for e2 in other_entities[i + 1 :]:
-                    rel = relationships[0] if relationships else EdgeType.RELATED_TO
-                    self.add_edge(e1.name, e2.name, rel, memory_id)
+                    edge = self.add_edge(
+                        e1.name,
+                        e2.name,
+                        rel,
+                        memory_id=memory_id,
+                        confidence=confidence,
+                        provenance=prov,
+                    )
+                    edge_ids.append(edge.id)
 
-        return entities
+        return {
+            "node_ids": list(dict.fromkeys(node_ids)),
+            "edge_ids": list(dict.fromkeys(edge_ids)),
+            "entities": entity_names,
+            "confidence": confidence,
+            "evidence_count": max(len(edge_ids), 1),
+            "relation_types": [r.value for r in relationships],
+        }
+
+    def link_memory(
+        self, memory_id: str, content: str, user_name: str = ""
+    ) -> List[Entity]:
+        """Backward-compatible wrapper around graph-first ingestion."""
+        payload = self.ingest_experience(
+            memory_id=memory_id,
+            content=content,
+            user_name=user_name,
+        )
+        return [
+            self._entities[name.lower()]
+            for name in payload.get("entities", [])
+            if name.lower() in self._entities
+        ]
+
+    def link_entities(
+        self,
+        source: str,
+        target: str,
+        edge_type: EdgeType = EdgeType.RELATED_TO,
+        memory_id: str = "",
+        weight: float = 1.0,
+        confidence: float = 1.0,
+    ) -> str:
+        """Explicitly link two entities with a typed relation."""
+        self.add_entity(Entity(name=source, type=EntityType.CONCEPT))
+        self.add_entity(Entity(name=target, type=EntityType.CONCEPT))
+        edge = self.add_edge(
+            source,
+            target,
+            edge_type,
+            memory_id=memory_id,
+            weight=weight,
+            confidence=confidence,
+        )
+        return edge.id
+
+    def assert_fact(
+        self,
+        subject: str,
+        relation: EdgeType,
+        obj: str,
+        memory_id: str,
+        confidence: float = 0.9,
+        source: str = "assertion",
+    ) -> Dict[str, str]:
+        """Assert a structured fact as a high-confidence graph relation."""
+        self.add_entity(Entity(name=subject, type=EntityType.CONCEPT))
+        self.add_entity(Entity(name=obj, type=EntityType.CONCEPT))
+        edge = self.add_edge(
+            subject,
+            obj,
+            relation,
+            memory_id=memory_id,
+            weight=2.0,
+            confidence=confidence,
+            provenance=Provenance(source=source, memory_id=memory_id),
+        )
+        subj_node = self.get_node_by_label(subject)
+        obj_node = self.get_node_by_label(obj)
+        return {
+            "edge_id": edge.id,
+            "subject_node_id": subj_node.id if subj_node else "",
+            "object_node_id": obj_node.id if obj_node else "",
+        }
+
+    def create_insight_node(
+        self,
+        label: str,
+        memory_ids: List[str],
+        themes: Optional[List[str]] = None,
+        confidence: float = 0.85,
+    ) -> GraphNode:
+        """Create an abstract insight node during consolidation."""
+        node_id = _fast_hash(f"insight:{label.lower()}:{time.time()}")
+        node = GraphNode(
+            id=node_id,
+            label=label[:120],
+            kind=NodeKind.INSIGHT,
+            entity_type="insight",
+            memory_ids=list(memory_ids),
+            mention_count=len(memory_ids),
+            confidence=confidence,
+            evidence_count=len(memory_ids),
+        )
+        self._nodes[node_id] = node
+        self._label_to_node[label.lower()] = node_id
+
+        insight_entity = Entity(
+            name=label[:120],
+            type=EntityType.CONCEPT,
+            memory_ids=list(memory_ids),
+            node_id=node_id,
+        )
+        self._entities[label.lower()] = insight_entity
+
+        if themes:
+            for theme in themes[:5]:
+                theme_entity = Entity(name=theme, type=EntityType.CONCEPT)
+                self.add_entity(theme_entity)
+                self.add_edge(
+                    label,
+                    theme,
+                    EdgeType.RELATED_TO,
+                    memory_id=memory_ids[0] if memory_ids else "",
+                    confidence=confidence,
+                )
+        return node
+
+    def graph_score_for_memory(
+        self,
+        memory_id: str,
+        query_entity_names: List[str],
+        depth: int = 2,
+    ) -> float:
+        """Score graph proximity between a memory and query entities."""
+        mem_entities = self._memory_entities.get(memory_id, [])
+        if not mem_entities or not query_entity_names:
+            return 0.0
+
+        best = 0.0
+        query_keys = {n.lower() for n in query_entity_names}
+        for mem_ent in mem_entities:
+            if mem_ent in query_keys:
+                return 1.0
+            reachable = set(self.traverse(mem_ent, depth=depth))
+            overlap = query_keys.intersection(reachable)
+            if overlap:
+                best = max(best, len(overlap) / max(len(query_keys), 1))
+        return min(best, 1.0)
+
+    def entity_centrality(self, entity_name: str) -> float:
+        """Normalized degree centrality for an entity [0, 1]."""
+        key = entity_name.lower()
+        degree = len(self._edges.get(key, [])) + len(self._reverse_edges.get(key, []))
+        if degree == 0:
+            return 0.0
+        max_degree = max(
+            (
+                len(self._edges.get(k, [])) + len(self._reverse_edges.get(k, []))
+                for k in self._entities
+            ),
+            default=1,
+        )
+        return min(degree / max(max_degree, 1), 1.0)
+
+    def centrality_for_memory(
+        self,
+        memory_id: str,
+        query_entity_names: Optional[List[str]] = None,
+    ) -> float:
+        """Average centrality of entities linked to a memory, boosted by query overlap."""
+        entities = self._memory_entities.get(memory_id, [])
+        if not entities:
+            return 0.0
+        scores = [self.entity_centrality(e) for e in entities]
+        base = sum(scores) / len(scores)
+        if not query_entity_names:
+            return base
+        query_keys = {n.lower() for n in query_entity_names}
+        if any(e in query_keys for e in entities):
+            return min(base + 0.2, 1.0)
+        return base
+
+    def query(self, entity_name: str, depth: int = 2) -> List[str]:
+        """Return memory IDs related to an entity within depth hops."""
+        return self.get_related_memory_ids(entity_name, depth=depth)
 
     def get_entity(self, name: str) -> Optional[Entity]:
-        """Look up an entity by name."""
         return self._entities.get(name.lower())
 
     def get_edges(self, entity_name: str) -> List[Edge]:
-        """Get all outgoing edges from an entity."""
         key = entity_name.lower()
         forward = self._edges.get(key, [])
         backward = self._reverse_edges.get(key, [])
         return forward + backward
 
     def neighbours(self, entity_name: str) -> Set[str]:
-        """Get all directly connected entity names."""
         key = entity_name.lower()
         result: Set[str] = set()
         for e in self._edges.get(key, []):
@@ -344,10 +596,6 @@ class KnowledgeGraph:
         return result
 
     def traverse(self, entity_name: str, depth: int = 2) -> List[str]:
-        """Multi-hop breadth-first traversal from an entity.
-
-        Returns all entity names reachable within `depth` hops.
-        """
         visited: Set[str] = set()
         queue = [(entity_name.lower(), 0)]
         result: List[str] = []
@@ -368,7 +616,6 @@ class KnowledgeGraph:
         return result
 
     def get_related_memory_ids(self, entity_name: str, depth: int = 2) -> List[str]:
-        """Get all memory IDs connected to an entity within depth hops."""
         related_entities = [entity_name.lower()] + self.traverse(entity_name, depth)
         memory_ids: List[str] = []
         seen: Set[str] = set()
@@ -384,22 +631,18 @@ class KnowledgeGraph:
         return memory_ids
 
     def find_entities_in_query(self, query: str) -> List[Entity]:
-        """Find entities mentioned in a query string."""
         return extract_entities(query)
 
     def all_entities(self) -> List[Entity]:
-        """Return all entities in the graph."""
         return list(self._entities.values())
 
+    def all_nodes(self) -> List[GraphNode]:
+        return list(self._nodes.values())
+
     def all_edges(self) -> List[Edge]:
-        """Return all edges in the graph."""
-        result = []
-        for edges in self._edges.values():
-            result.extend(edges)
-        return result
+        return list(self._edge_index.values())
 
     def to_dict(self) -> Dict:
-        """Serialize the graph for inspection/debugging."""
         return {
             "entities": {
                 k: {
@@ -407,27 +650,45 @@ class KnowledgeGraph:
                     "type": v.type.value,
                     "mentions": v.mention_count,
                     "memory_ids": v.memory_ids,
+                    "node_id": v.node_id,
                 }
                 for k, v in self._entities.items()
             },
+            "nodes": {
+                nid: {
+                    "label": n.label,
+                    "kind": n.kind.value,
+                    "confidence": n.confidence,
+                    "evidence_count": n.evidence_count,
+                }
+                for nid, n in self._nodes.items()
+            },
             "edges": [
                 {
+                    "id": e.id,
                     "source": e.source,
                     "target": e.target,
                     "type": e.edge_type.value,
                     "memory_id": e.memory_id,
+                    "confidence": e.confidence,
+                    "evidence_count": e.evidence_count,
                 }
-                for edges in self._edges.values()
-                for e in edges
+                for e in self._edge_index.values()
             ],
             "stats": {
                 "entities": self.num_entities,
+                "nodes": len(self._nodes),
                 "edges": self.num_edges,
             },
         }
 
     def clear(self) -> None:
         self._entities.clear()
+        self._nodes.clear()
+        self._label_to_node.clear()
         self._edges.clear()
         self._reverse_edges.clear()
+        self._edge_index.clear()
         self._memory_entities.clear()
+        self._memory_node_ids.clear()
+        self._memory_edge_ids.clear()

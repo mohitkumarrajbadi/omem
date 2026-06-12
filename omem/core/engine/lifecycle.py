@@ -1,8 +1,9 @@
 """Engine Mixin: Lifecycle Management (Forgetting, Compression, Snapshot)."""
 
 import logging
+import re
 import time
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from ...types import Memory, MemoryTier
 from ..brain.dream import dream_consolidate
@@ -12,6 +13,8 @@ from ..utils.metrics import metrics
 from ..utils.snapshot import restore, snapshot
 
 logger = logging.getLogger(__name__)
+
+_TOKENIZER = re.compile(r"\w+")
 
 from ..brain.importance import run_decay_sweep  # noqa: E402
 from ..brain.updater import create_updated_memory  # noqa: E402
@@ -106,10 +109,30 @@ class LifecycleMixin:
             min_cluster_size=min_cluster_size,
         )
 
+        themes_by_insight: Dict[str, List[str]] = {}
+        for wisdom in wisdom_memories:
+            themes = []
+            for word in _TOKENIZER.findall(wisdom.content.lower()):
+                if len(word) > 4:
+                    themes.append(word)
+            themes_by_insight[wisdom.id] = sorted(set(themes))[:5]
+
         # Add new wisdom memories and archive sources
         for wisdom in wisdom_memories:
             self.kv.set(wisdom.id, wisdom)
             self.vector_index.add(wisdom.vector)
+            self._id_order.append(wisdom.id)
+
+            if hasattr(self, "knowledge_graph"):
+                themes = themes_by_insight.get(wisdom.id, [])
+                node = self.knowledge_graph.create_insight_node(
+                    label=wisdom.content[:120],
+                    memory_ids=[wisdom.id] + wisdom.insight_sources,
+                    themes=themes,
+                    confidence=wisdom.confidence_score,
+                )
+                wisdom.node_ids = [node.id]
+                self.kv.set(wisdom.id, wisdom)
 
         for s_id in source_ids:
             mem = self.kv.get(s_id)
@@ -184,18 +207,24 @@ class LifecycleMixin:
         # 1. Aging and TTL
         deactivated = self.run_decay()
 
-        # 2. Importance-based forgetting
+        # 2. Tier scheduling (working → short-term → long-term)
+        from ..brain.scheduler import build_centrality_map, schedule_tier_transitions
+
+        centralities = build_centrality_map(getattr(self, "knowledge_graph", None))
+        schedule_tier_transitions(self.kv.all(), graph_centralities=centralities)
+
+        # 3. Importance-based forgetting
         f_result = self.forget()
 
-        # 3. Consolidation (Dreaming)
+        # 4. Consolidation (Dreaming)
         d_result = None
         if include_dream:
             d_result = self.dream(llm_fn=llm_fn)
 
-        # 4. Physical Purge
+        # 5. Physical Purge
         purged = self.vacuum()
 
-        # 5. Index Optimization
+        # 6. Index Optimization
         self.compact_index()
 
         elapsed = (time.time() - t0) * 1000
@@ -241,5 +270,8 @@ class LifecycleMixin:
             "types": type_dist,
             "avg_importance": avg_imp,
             "graph_edges": getattr(self.graph, "num_edges", 0),
+            "knowledge_entities": getattr(self.knowledge_graph, "num_entities", 0),
+            "knowledge_nodes": len(getattr(self.knowledge_graph, "_nodes", {})),
+            "knowledge_edges": getattr(self.knowledge_graph, "num_edges", 0),
             "uptime": time.time() - getattr(self, "_start_time", time.time()),
         }

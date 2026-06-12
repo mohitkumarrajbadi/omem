@@ -61,6 +61,8 @@ mcp = ["mcp>=1.0.0; python_version >= '3.10'"]
 secure = ["cryptography>=41.0.0"]
 # LangChain retriever / memory adapter
 langchain = ["langchain>=0.1.0"]
+# LlamaIndex integration adapter
+llama_index = ["llama-index>=0.6.0"]
 # OpenAI embeddings provider
 openai = ["openai>=1.0.0"]
 # AI memory benchmark dependencies

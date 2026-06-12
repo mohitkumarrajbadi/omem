@@ -9,6 +9,7 @@ import numpy as np
 from ...classify import auto_classify_multi
 from ...types import PRIORITY_MULTIPLIER, Memory, MemoryPriority, MemoryTier, MemoryType
 from ..brain.importance import estimate_importance, estimate_priority
+from ..brain.ingestion import apply_ingest_to_memory, ingest_experience
 from ..brain.noise_gate import check_noise
 from ..utils.concurrency import WriteContext
 from ..utils.metrics import metrics
@@ -30,6 +31,7 @@ class AddMixin:
         source: str = "user",
         force: bool = False,
         memory_id: Optional[str] = None,
+        confidence: Optional[float] = None,
     ) -> str:
         with metrics.timer("add"):
             imp = importance if importance is not None else estimate_importance(content)
@@ -45,13 +47,13 @@ class AddMixin:
             vector = self.embedder.encode(content)
             priority = estimate_priority(content)
             now = time.time()
+            conf = confidence if confidence is not None else 1.0
 
             if self._dedup_enabled and not force:
                 dedup_id = self._check_dedup(vector, content)
                 if dedup_id:
                     return dedup_id
 
-            # Fast O(1) quota check using size counter instead of kv.all() O(n)
             current_size = self.kv.size
             if current_size >= self.quota.max_total:
                 self.compress()
@@ -92,25 +94,55 @@ class AddMixin:
                     tier=tier,
                     base_score=base_score,
                     type_mask=t_mask,
+                    confidence_score=conf,
+                    provenance=source,
+                    freshness=now,
+                    level="working",
                 )
 
                 self.vector_index.add(vector)
                 self._id_order.append(mem_id)
                 self.kv.set(mem_id, memory)
 
-                # Phase 3: Truth Maintenance (v1.0.0)
                 if hasattr(self, "tms"):
                     self.tms.check_and_mark_conflicts(memory)
 
                 self.working_memory.clear()
 
-            entities = self.knowledge_graph.link_memory(mem_id, content)
-            if entities:
-                memory.entities = [e.name for e in entities]
+            ingest = ingest_experience(
+                self.knowledge_graph,
+                memory_id=mem_id,
+                content=content,
+                source=source,
+                confidence=conf,
+                namespace=namespace,
+            )
+            apply_ingest_to_memory(memory, ingest)
+            self.kv.set(mem_id, memory)
+
             self.prefetcher.observe(content)
             self.write_buffer.enqueue(memory)
             metrics.increment("memories_added")
             return mem_id
+
+    def add_experience(
+        self,
+        content: str,
+        namespace: str = "default",
+        source: str = "experience",
+        confidence: float = 1.0,
+        importance: Optional[float] = None,
+        metadata: Optional[Dict] = None,
+    ) -> str:
+        """Graph-first ingestion entrypoint for unstructured experience text."""
+        return self.add(
+            content,
+            namespace=namespace,
+            source=source,
+            confidence=confidence,
+            importance=importance,
+            metadata=metadata,
+        )
 
     def _check_dedup(self, vector: np.ndarray, content: str) -> Optional[str]:
         if self.vector_index.size == 0:
@@ -124,6 +156,8 @@ class AddMixin:
                 if existing and existing.active:
                     existing.access_count += 1
                     existing.last_accessed = time.time()
+                    existing.evidence_count += 1
+                    existing.freshness = time.time()
                     return existing_id
         return None
 

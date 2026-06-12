@@ -259,9 +259,13 @@ def dream_consolidate(
             metadata={
                 "source_count": len(cluster),
                 "cluster_types": list(set(m.type.name for m in cluster)),
+                "abstract": True,
             },
             insight_sources=cluster_source_ids,
             consolidation_count=len(cluster),
+            confidence_score=min(0.6 + len(cluster) * 0.05, 0.95),
+            evidence_count=len(cluster),
+            level="long_term",
         )
         insight_memories.append(insight)
         result.insight_ids.append(insight_id)

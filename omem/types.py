@@ -43,6 +43,30 @@ class MemoryTier(Enum):
     INSIGHT = 5  # Consolidated results
 
 
+class MemoryLevel(Enum):
+    """Hierarchy level for tier-targeted retrieval (CPU-style memory hierarchy)."""
+
+    WORKING = "working"
+    SHORT_TERM = "short_term"
+    LONG_TERM = "long_term"
+    ARCHIVE = "archive"
+
+
+# Maps hierarchy level → allowed MemoryTier values for filtering
+LEVEL_TIER_MAP: Dict[str, List["MemoryTier"]] = {
+    MemoryLevel.WORKING.value: [MemoryTier.SENSORY, MemoryTier.ACTIVE],
+    MemoryLevel.SHORT_TERM.value: [MemoryTier.ACTIVE],
+    MemoryLevel.LONG_TERM.value: [MemoryTier.ACTIVE, MemoryTier.CORE, MemoryTier.INSIGHT],
+    MemoryLevel.ARCHIVE.value: [MemoryTier.ARCHIVE],
+}
+
+
+def level_matches(level: str, tier: MemoryTier) -> bool:
+    """Return True if a memory's tier belongs to the requested hierarchy level."""
+    allowed = LEVEL_TIER_MAP.get(level, [MemoryTier.ACTIVE])
+    return tier in allowed
+
+
 class MemoryPriority(Enum):
     """Weighting for retrieval scores."""
 
@@ -52,6 +76,15 @@ class MemoryPriority(Enum):
     LOW = 3  # Minor
 
 
+class NodeKind(Enum):
+    """Graph node categories in the memory substrate."""
+
+    ENTITY = "entity"
+    CONCEPT = "concept"
+    INSIGHT = "insight"
+    EVIDENCE = "evidence"
+
+
 # Score multipliers for each priority level
 PRIORITY_MULTIPLIER = {
     MemoryPriority.CORE: 2.0,
@@ -59,6 +92,61 @@ PRIORITY_MULTIPLIER = {
     MemoryPriority.NORMAL: 1.0,
     MemoryPriority.LOW: 0.7,
 }
+
+
+@dataclass
+class Provenance:
+    """Origin metadata for graph-backed memory units."""
+
+    source: str = "user"
+    memory_id: str = ""
+    timestamp: float = field(default_factory=time.time)
+    namespace: str = "default"
+
+
+@dataclass
+class Evidence:
+    """Supporting evidence attached to a node or relation."""
+
+    id: str
+    memory_id: str
+    content: str
+    confidence: float = 1.0
+    provenance: Provenance = field(default_factory=Provenance)
+    timestamp: float = field(default_factory=time.time)
+
+
+@dataclass
+class GraphNode:
+    """First-class graph node — entity, concept, or consolidated insight."""
+
+    id: str
+    label: str
+    kind: NodeKind = NodeKind.ENTITY
+    entity_type: str = "concept"
+    memory_ids: List[str] = field(default_factory=list)
+    mention_count: int = 1
+    confidence: float = 1.0
+    evidence_count: int = 1
+    created_at: float = field(default_factory=time.time)
+    updated_at: float = field(default_factory=time.time)
+
+
+@dataclass
+class RelationEdge:
+    """Typed, weighted edge with evidence and provenance."""
+
+    id: str
+    source_id: str
+    target_id: str
+    edge_type: str
+    weight: float = 1.0
+    strength: float = 1.0
+    memory_id: str = ""
+    evidence_count: int = 1
+    confidence: float = 1.0
+    provenance: Provenance = field(default_factory=Provenance)
+    label: str = ""
 
 
 @dataclass
@@ -91,11 +179,16 @@ class Memory:
     archived_at: float = 0.0
 
     entities: List[str] = field(default_factory=list)
+    node_ids: List[str] = field(default_factory=list)
+    edge_ids: List[str] = field(default_factory=list)
     insight_sources: List[str] = field(default_factory=list)
     consolidation_count: int = 0
 
     consensus_score: float = 0.0
     confidence_score: float = 1.0  # 0.0 to 1.0 (source reliability + consistency)
+    evidence_count: int = 1
+    provenance: str = ""
+    freshness: float = field(default_factory=time.time)
     dependencies: List[str] = field(
         default_factory=list
     )  # IDs of memories this one depends on
@@ -128,6 +221,11 @@ class Memory:
             "priority": self.priority.name,
             "consensus_score": self.consensus_score,
             "confidence_score": self.confidence_score,
+            "evidence_count": self.evidence_count,
+            "node_ids": self.node_ids,
+            "edge_ids": self.edge_ids,
+            "provenance": self.provenance,
+            "freshness": self.freshness,
             "dependencies": self.dependencies,
             "logical_hash": self.logical_hash,
             "metadata": self.metadata,
@@ -154,6 +252,9 @@ class RetrievalExplanation:
     priority_multiplier: float = 1.0
     mode: str = "default"
     matched_keywords: List[str] = field(default_factory=list)
+    confidence_score: float = 0.0
+    graph_score: float = 0.0
+    personalization_score: float = 0.0
 
     def explain(self) -> str:
         lines = [
@@ -163,6 +264,9 @@ class RetrievalExplanation:
             f"  recency:            {self.recency_score:.4f}",
             f"  importance:         {self.importance_score:.4f}",
             f"  frequency bonus:    {self.frequency_bonus:.4f}",
+            f"  confidence:         {self.confidence_score:.4f}",
+            f"  graph proximity:    {self.graph_score:.4f}",
+            f"  personalization:    {self.personalization_score:.4f}",
             f"  priority multiplier:{self.priority_multiplier:.2f}",
         ]
         return "\n".join(lines)

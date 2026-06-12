@@ -11,7 +11,7 @@ from typing import Callable, Dict, List, Optional
 from .backends.sqlite import SQLiteBackend
 from .core.engine import BrainTrace, DreamResult, ForgetResult
 from .security.audit import AuditLogger
-from .types import Memory, MemoryType, RetrievalExplanation
+from .types import Memory, MemoryTier, MemoryType, RetrievalExplanation
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +101,57 @@ class OMem:
         self._audit.log("add", memory_id=memory_id_result, namespace=namespace, source=source)
         return memory_id_result
 
+    def add_experience(
+        self,
+        content: str,
+        namespace: str = "default",
+        source: str = "experience",
+        confidence: float = 1.0,
+        importance: Optional[float] = None,
+        metadata: Optional[Dict] = None,
+    ) -> str:
+        """Graph-first ingestion for unstructured experience text."""
+        memory_id = self.brain.add_experience(
+            content,
+            namespace=namespace,
+            source=source,
+            confidence=confidence,
+            importance=importance,
+            metadata=metadata,
+        )
+        self._audit.log("add_experience", memory_id=memory_id, namespace=namespace)
+        return memory_id
+
+    def link_entities(
+        self,
+        source: str,
+        target: str,
+        relation: str = "related_to",
+        memory_id: str = "",
+        confidence: float = 1.0,
+    ) -> str:
+        """Explicitly link two entities in the knowledge graph."""
+        return self.brain.link_entities(
+            source, target, relation, memory_id=memory_id, confidence=confidence
+        )
+
+    def assert_fact(
+        self,
+        subject: str,
+        relation: str,
+        obj: str,
+        memory_id: str = "",
+        confidence: float = 0.9,
+    ) -> Dict:
+        """Assert a structured fact as a high-confidence graph relation."""
+        return self.brain.assert_fact(
+            subject, relation, obj, memory_id=memory_id, confidence=confidence
+        )
+
+    def query_graph(self, entity_name: str, depth: int = 2) -> Dict:
+        """Structured graph query: nodes, edges, and related memory IDs."""
+        return self.brain.query_graph(entity_name, depth=depth)
+
     def add_batch(
         self,
         contents: List[str],
@@ -143,6 +194,11 @@ class OMem:
         time_range: Optional[str] = None,
         namespace: Optional[str] = None,
         project_only: bool = False,
+        level: Optional[str] = None,
+        tiers: Optional[List[MemoryTier]] = None,
+        explain: bool = False,
+        weight_overrides: Optional[Dict] = None,
+        include_archive: bool = False,
     ) -> List[Memory]:
         """Advanced retrieval with context-type boosting and temporal filtering.
 
@@ -150,9 +206,15 @@ class OMem:
             query: The search query.
             k: Number of results.
             context_type: One of 'architecture', 'bugs', 'decisions', etc.
+            mode: Retrieval mode profile ('default', 'planning', 'coding', 'chat', 'recall').
             time_range: One of 'today', 'recent', 'last_week'.
             namespace: Specific namespace.
             project_only: If True, only searches the provided namespace (doesn't mix global).
+            level: Hierarchy filter ('working', 'short_term', 'long_term', 'archive').
+            tiers: Optional list of MemoryTier enums to restrict search.
+            explain: If True, populate explanations via get_explanations().
+            weight_overrides: Optional dict to override fusion weight components.
+            include_archive: Include archived memories in search.
         """
         import time
 
@@ -231,7 +293,17 @@ class OMem:
                 )
 
         results = self.brain.rag(
-            query, top_k=top_k, namespace=search_namespace, type_boosts=type_boosts
+            query,
+            top_k=top_k,
+            namespace=search_namespace,
+            type_boosts=type_boosts,
+            mode=mode or "default",
+            level=level,
+            tiers=tiers,
+            explain=explain,
+            weight_overrides=weight_overrides,
+            include_archive=include_archive,
+            include_inactive=include_archive,
         )
 
         # Post-filter for namespace if we searched wide
@@ -323,9 +395,33 @@ class OMem:
         query: str,
         top_k: int = 5,
         namespace: Optional[str] = None,
+        mode: str = "default",
+        weight_overrides: Optional[Dict] = None,
     ) -> List[RetrievalExplanation]:
-        """Explain the scoring for a given query."""
-        return self.brain.inspect(query, top_k, namespace)
+        """Explain the fusion scoring breakdown for a given query."""
+        return self.brain.inspect(
+            query,
+            top_k,
+            namespace,
+            mode=mode,
+            weight_overrides=weight_overrides,
+        )
+
+    def get_explanations(self) -> List[RetrievalExplanation]:
+        """Return explanations from the last explain=True recall."""
+        return self.brain.get_last_explanations()
+
+    def set_fusion_weights(self, weights: Dict[str, float]) -> None:
+        """Set default fusion weights for retrieval scoring."""
+        from .core.retrieval.fusion import FusionWeights
+
+        current = self.brain.get_fusion_weights().as_dict()
+        current.update(weights)
+        self.brain.set_fusion_weights(FusionWeights(**current))
+
+    def get_fusion_weights(self) -> Dict[str, float]:
+        """Return current fusion weight configuration."""
+        return self.brain.get_fusion_weights().as_dict()
 
     def namespace_stats(self, namespace: str) -> Dict:
         """Get stats for a specific namespace."""

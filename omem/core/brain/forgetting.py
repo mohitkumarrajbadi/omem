@@ -83,7 +83,10 @@ def compute_health(memory: Memory, now: Optional[float] = None) -> float:
     utility = getattr(memory, "utility_score", 0.0)
     utility_factor = 1.0 + min(utility, 1.0) * (_MAX_UTILITY_BOOST - 1.0)
 
-    return base * recency * usage * utility_factor
+    confidence_factor = 0.5 + 0.5 * getattr(memory, "confidence_score", 1.0)
+    evidence_factor = min(1.0 + getattr(memory, "evidence_count", 1) * 0.05, 1.5)
+
+    return base * recency * usage * utility_factor * confidence_factor * evidence_factor
 
 
 @dataclass

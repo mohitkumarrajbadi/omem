@@ -13,14 +13,10 @@ import time
 from typing import Any, Dict, List
 
 from ..api import OMem
+from ..core.retrieval.fusion import fuse_score
+from ..core.retrieval.ranker import weights_for_mode
 
-# Default ranking weights – these can be tuned later via a config file.
-DEFAULT_WEIGHTS = {
-    "semantic": 0.5,
-    "graph": 0.2,
-    "recency": 0.15,
-    "importance": 0.15,
-}
+DEFAULT_WEIGHTS = weights_for_mode("coding").as_dict()
 
 class CodeRetriever:
     """Retrieve code symbols for a natural‑language query.
@@ -104,10 +100,13 @@ class CodeRetriever:
         # Pick the primary result (highest combined weight without graph yet)
         def combined(s):
             w = self.weights
-            return (
-                w["semantic"] * s["semantic"]
-                + w["recency"] * s["recency"]
-                + w["importance"] * s["importance"]
+            return fuse_score(
+                semantic=s["semantic"],
+                keyword=0.0,
+                recency=s["recency"],
+                importance=s["importance"],
+                graph=s["graph"],
+                weights=weights_for_mode("coding"),
             )
 
         scored.sort(key=combined, reverse=True)
@@ -120,11 +119,13 @@ class CodeRetriever:
                 entry["graph"] = 1.0 / (1 + self._graph_hops(primary_id, entry["mem"].id))
             # Re‑rank with graph component
             primary.sort(
-                key=lambda s: (
-                    self.weights["semantic"] * s["semantic"]
-                    + self.weights["graph"] * s["graph"]
-                    + self.weights["recency"] * s["recency"]
-                    + self.weights["importance"] * s["importance"]
+                key=lambda s: fuse_score(
+                    semantic=s["semantic"],
+                    keyword=0.0,
+                    recency=s["recency"],
+                    importance=s["importance"],
+                    graph=s["graph"],
+                    weights=weights_for_mode("coding"),
                 ),
                 reverse=True,
             )

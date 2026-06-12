@@ -356,3 +356,23 @@ def run_decay_sweep(memories: List[Memory], now: Optional[float] = None) -> List
             mem.active = False
             deactivated.append(mem.id)
     return deactivated
+
+
+def reinforce_on_access(memory: Memory, now: Optional[float] = None) -> None:
+    """Online learning signal: boost importance and confidence on successful retrieval."""
+    now = now or time.time()
+    memory.access_count += 1
+    memory.last_accessed = now
+    memory.freshness = now
+
+    # Diminishing boost — frequently accessed memories stabilize
+    boost = 0.02 / (1.0 + memory.access_count * 0.1)
+    memory.importance = min(memory.importance + boost, 1.0)
+    memory.base_score = min(memory.base_score + boost * 0.5, 2.0)
+    memory.confidence_score = min(
+        compute_confidence_score(memory) + boost * 0.5, 1.0
+    )
+
+    # Promote working → short_term on repeated access
+    if memory.level == "working" and memory.access_count >= 2:
+        memory.level = "short_term"
