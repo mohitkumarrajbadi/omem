@@ -1,239 +1,192 @@
-Reviewing the repo architecture to ground the implementation plan in current modules.
+# OMem V2 Implementation Planning
 
-Searched for regex `knowledge_graph|graph|consolidat|reason|self-evolve|dream|forget|tier|MemoryTier|vector_index|HNSW|belief|confidence|priority` (`**/omem/**/*.py`), 200 results
+This file tracks the practical implementation direction for OMem v2. The full public roadmap lives in `docs/V2_ROADMAP.md`; this file is the working engineering plan.
 
-Searched for files matching `**/omem/**/*.py`, 68 matches
+## Current Position
 
-I found the deeper architecture; now I’m verifying what existing graph/reasoning/consolidation engines already exist.
+OMem is no longer just an embedding table with search. The repo already includes:
 
-Read [](file:///Users/mbadi/Downloads/Personal%20/Projects/omem/omem/core/engine.py)
+- Graph-backed memory metadata: nodes, relation edges, evidence, provenance, confidence.
+- Graph-first ingestion through `AddMixin.add()` and `add_experience()`.
+- Multi-objective retrieval with semantic, keyword, recency, importance, confidence, graph, centrality, personalization, and frequency signals.
+- A sleep cycle with forgetting, reflection, compression, and dream consolidation.
+- Memory hierarchy fields and graph-aware tier scheduling.
+- MCP, CLI, dashboard, examples, codebase indexing, SQLite, and PostgreSQL support.
 
-Read [](file:///Users/mbadi/Downloads/Personal%20/Projects/omem/omem/core/brain/dream.py#1-1), lines 1 to 260
+That means the immediate v2 work should not rewrite the core. It should package the existing foundations into clear, team-owned layers and add the missing state infrastructure.
 
-Read [](file:///Users/mbadi/Downloads/Personal%20/Projects/omem/omem/core/brain/forgetting.py)
+## V2 North Star
 
-Read [](file:///Users/mbadi/Downloads/Personal%20/Projects/omem/omem/core/graph/knowledge.py#1-1), lines 1 to 260
+OMem becomes AI state infrastructure:
 
-Read [](file:///Users/mbadi/Downloads/Personal%20/Projects/omem/omem/codebase/retriever.py)
+```text
+Agents / Apps / MCP Clients
+        |
+        v
+OMem
+        |
+        +-- Memory
+        +-- State
+        +-- Knowledge
+        +-- Observability
+        +-- Evaluation
+        +-- Governance
+        +-- Provenance
+        +-- Runtime
+        +-- Integrations
+        +-- Backends
+```
 
-Created 5 todos
+## Phase 0: OSS Readiness
 
-I’m confirming the current retrieval and engine integration so the plan maps to real modules.
+Status: mostly done.
 
-Read [](file:///Users/mbadi/Downloads/Personal%20/Projects/omem/omem/core/engine/rag.py#1-1), lines 1 to 220
+- [x] Rewrite README for GitHub discovery and contributor onboarding.
+- [x] Add project structure guide.
+- [x] Add v2 roadmap.
+- [x] Add PR template.
+- [x] Add v2, docs, and good-first-issue templates.
+- [x] Add governance, maintainers, support, and code of conduct docs.
+- [ ] Add or verify GitHub labels.
+- [ ] Add social preview image.
+- [ ] Pin a `What are you building with OMem?` discussion.
 
-## Implementation Plan for OMem as a Memory Operating System
+## Phase 1: Stabilize V2 Package Boundaries
 
-You’re right: the core problem is not just hardcoded `MemoryType` values. The real shift is from “embedding table + search” to a living substrate of nodes, relations, weights, confidence, and evolution.
+Goal: make the repo easy for a team to extend without breaking the stable `OMem` API.
 
----
+Tasks:
 
-## 1. Build the substrate data model first
+- [ ] Define compatibility policy for `OMem`, `Memory`, `MemoryType`, `MemoryTier`, and retrieval explanations.
+- [ ] Add package-level docs for current modules.
+- [ ] Decide whether new v2 namespaces start as facades over current modules:
+  - `omem.memory`
+  - `omem.state`
+  - `omem.knowledge`
+  - `omem.observe`
+  - `omem.governance`
+  - `omem.provenance`
+  - `omem.runtime`
+- [ ] Add smoke tests proving old imports still work.
+- [ ] Add architecture decision records for major v2 choices.
 
-### What changes
-- Keep `Memory` for compatibility, but make it a graph-backed unit rather than a type bucket.
-- Create first-class graph types:
-  - `Node` / `EntityNode`
-  - `RelationEdge`
-  - `Evidence`
-  - `Confidence`
-  - `Provenance`
-  - `Time / freshness`
-  - `Strength / weight`
+Acceptance criteria:
 
-### Where
-- types.py
-  - Add `Node`, `Edge`, and `Evidence` dataclasses
-  - Turn `MemoryType` into a legacy compatibility label
-  - Add explicit `confidence_score`, `evidence_count`, `provenance`, `node_ids`, `edge_ids`
-- knowledge.py
-  - Harden this module into the canonical graph store
-  - Add node creation, merge, edge weighting, provenance tracking
+- Contributors know where to put new work.
+- Existing examples continue to pass.
+- Public API compatibility is tested.
 
-### Why
-This is the move from “type = Semantic/Episodic” to “memory is structured relational knowledge.”
+## Phase 2: State Layer
 
----
+Goal: preserve agent execution state, not just memory.
 
-## 2. Refactor ingestion into “Experience → Understand → Connect”
+Target APIs:
 
-### What changes
-- Replace the current `add()` pipeline with a graph-first ingestion pipeline.
-- Ingest should:
-  1. parse experience text
-  2. extract entities
-  3. detect relation types
-  4. build or update graph nodes
-  5. build or update typed edges
-  6. attach embeddings, confidence, recency, evidence, provenance
+```python
+brain.state.save(session_id, payload)
+brain.state.restore(session_id)
+brain.state.snapshot(session_id)
+brain.state.rollback(snapshot_id)
+brain.state.fork(snapshot_id)
+```
 
-### Where
-- add.py
-  - Refactor `AddMixin.add()` so it uses graph ingestion as the central flow
-- classify.py
-  - Move from hardcoded bucket classification to relation/entity extraction
-  - Keep type scoring as legacy fallback, but prioritize graph structure
-- knowledge.py
-  - Leverage edge extraction and expand it to support:
-    - relation strength
-    - evidence counts
-    - dynamic entity merging
-    - directed relations
-- api.py
-  - Add new entrypoints like:
-    - `add_experience(...)`
-    - `link_entities(...)`
-    - `assert_fact(...)`
-    - `query_graph(...)`
+Data model:
 
-### Why
-This makes OMem behave like a system that understands and connects experience, instead of merely tagging text with a bucket.
+- Goal state
+- Plan state
+- Workflow step state
+- Tool state
+- Session state
+- Agent state
+- Snapshot metadata
+- Rollback/fork lineage
 
----
+Tasks:
 
-## 3. Make retrieval truly multi-objective
+- [ ] Add typed state dataclasses.
+- [ ] Add SQLite persistence for state snapshots.
+- [ ] Add in-memory backend implementation.
+- [ ] Add public API facade.
+- [ ] Add tests for save, restore, snapshot, rollback, fork.
+- [ ] Add docs and example.
 
-### What changes
-- Replace the old “vector + keyword + type boost” model with a configurable scoring engine:
-  - semantic similarity
-  - recency/freshness
-  - importance
-  - confidence
-  - graph centrality / distance
-  - personalization / feedback
-- Expose a scoring formula like:
-  `score = αS + βR + γI + δC + εG + ζP`
+## Phase 3: Provenance and Confidence
 
-### Where
-- rag.py
-  - This is already the right place for retrieval evolution
-  - Add graph centrality and confidence into the scoring function
-- retriever.py
-  - Use this module as a prototype for multi-objective ranking
-- importance.py
-  - Add learned/online signal support
-- api.py
-  - Add query tuning options and explainability
+Goal: make every important memory and state transition traceable.
 
-### Why
-This turns retrieval from “vector search only” into “search over a living memory network”.
+Tasks:
 
----
+- [ ] Normalize provenance payloads across memory, graph, state, and codebase indexing.
+- [ ] Add source, timestamp, namespace, confidence, and lineage to public outputs.
+- [ ] Add provenance query API.
+- [ ] Track consolidation source IDs in a user-facing way.
+- [ ] Add tests for provenance retention across sleep cycles.
 
-## 4. Add continuous memory evolution
+## Phase 4: Observability
 
-### What changes
-- Turn `dream()` and `forget()` into a real sleep/consolidation cycle
-- Add:
-  - merge/summarize
-  - split/structure
-  - abstract/generalize
-  - reinforce based on use and feedback
-- Use `confidence_score` and evidence to avoid over-generalizing bad memory
+Goal: help teams understand what memory is doing for agents.
 
-### Where
-- dream.py
-  - Extend from simple cluster summarization to:
-    - abstracting repeated patterns
-    - creating new insight nodes
-    - generating higher-level concepts
-- forgetting.py
-  - Extend the lifecycle to support:
-    - STM → LTM → archive
-    - evidence-weighted retention
-    - confidence-aware pruning
-- api.py
-  - Add a `sleep()` / `consolidate()` API
-- agent_wrapper.py and mcp_server.py
-  - Expose periodic consolidation cycles and scheduled memory maintenance
+Metrics:
 
-### Why
-This is the key part of “Memory should self-evolve” and moves OMem toward a true substrate.
+- Recall hit rate
+- Recall latency
+- Context tokens saved
+- Memory freshness
+- Conflict count
+- Consolidation count
+- State restore success rate
+- Backend operation latency
 
----
+Tasks:
 
-## 5. Add a real memory hierarchy and tiered store
+- [ ] Add trace event schema.
+- [ ] Add memory decision replay format.
+- [ ] Expose metrics through SDK and CLI.
+- [ ] Add dashboard panels for recall and sleep cycle metrics.
+- [ ] Add benchmark report output.
 
-### What changes
-- Formalize tiers:
-  - Working memory
-  - Short-term memory
-  - Long-term memory
-  - Archive
-- Make tier transitions automated and graph-aware
-- Ensure retrieval can target different tiers
+## Phase 5: Governance
 
-### Where
-- types.py and lifecycle modules
-- forgetting.py
-- add.py
-- api.py
+Goal: make production memory controllable.
 
-### Why
-This reduces retrieval cost and provides the same architectural leverage as CPU memory hierarchies.
+Tasks:
 
----
+- [ ] Add retention policy primitives.
+- [ ] Add namespace deletion workflows.
+- [ ] Add user deletion workflow.
+- [ ] Add audit query APIs.
+- [ ] Add policy-aware recall filters.
+- [ ] Add tests for deletion, retention, and audit logs.
 
-## 6. Build the Memory OS architecture
+## Phase 6: Runtime Coordination
 
-### What changes
-- Separate core engines as modules:
-  - Storage Engine
-  - Graph Engine
-  - Retrieval Engine
-  - Consolidation Engine
-  - Reasoning Engine
-  - Memory Scheduler
-  - Forgetting Engine
-  - Learning / tuning Engine
+Goal: support multi-agent systems that share memory and state intentionally.
 
-### Where
-- Add new modules such as:
-  - `omem/core/brain/reasoning.py`
-  - `omem/core/retrieval/fusion.py`
-  - `omem/core/brain/scheduler.py`
-  - `omem/core/brain/self_tune.py`
-- Keep api.py as the OS interface
-- Add CLI commands around these cycles
+Tasks:
 
-### Why
-That’s how OMem becomes category-defining instead of “another vector memory library”.
+- [ ] Add agent registry.
+- [ ] Add scheduler hooks for sleep and maintenance.
+- [ ] Add namespace sharing policy.
+- [ ] Add recovery hooks.
+- [ ] Add MCP tools for state and runtime operations.
 
----
+## High-Priority Starter Issues
 
-## 7. Practical first milestone
+- Add CSV export to CLI.
+- Add `OMem.count(namespace=None)`.
+- Add namespace isolation regression tests.
+- Add docs recipe for Claude Desktop memory.
+- Add docs recipe for codebase indexing with Cursor.
+- Add benchmark report JSON output.
+- Add graph query examples.
+- Add LangGraph integration example.
 
-### Start with a minimal core substrate
-1. Redesign types.py to support node/edge and evidence metadata.
-2. Refactor add.py to ingest graph nodes and relations.
-3. Keep current `MemoryType` as compatibility, but make it non-essential.
-4. Enhance rag.py to score graph distance and confidence.
-5. Extend dream.py so consolidation creates abstract insight nodes instead of only bucketed summaries.
+## Quality Bar
 
-### Then iterate
-- Phase 1: graph-first ingest + multi-tier storage
-- Phase 2: multi-objective retrieval + explainability
-- Phase 3: merge/split/abstract + self-tuning
-- Phase 4: distributed backend + operational APIs
+Every v2 PR should include:
 
----
-
-## Why this is feasible in this repo
-
-You already have important pieces:
-- knowledge.py → graph engine foundation
-- dream.py → consolidation engine
-- forgetting.py → lifecycle manager
-- rag.py → retrieval scoring engine
-- types.py → richer memory metadata already exists
-- retriever.py → multi-factor scoring prototype
-
-So the correct path is not to throw everything away. It is to elevate those foundations into:
-- node/relation/evidence-first storage
-- graph-native retrieval
-- continuous consolidation
-- self-tuning importance/confidence
-
-If you want, I can next turn this into a concrete repo-level implementation roadmap with file-by-file tasks and a first PR plan.
-
-Completed: *Plan implementation for OMem improvements* (4/5)
+- A clear issue or roadmap link.
+- Typed public contracts.
+- Tests without external API calls.
+- Docs or examples for user-facing behavior.
+- Benchmark notes for retrieval, ingestion, lifecycle, or backend changes.

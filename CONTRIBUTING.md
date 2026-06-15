@@ -4,6 +4,19 @@ Thank you for your interest in contributing. This document covers everything you
 
 ---
 
+## Start Here
+
+OMem is moving toward v2 as AI state infrastructure. Before starting larger work, read:
+
+- [docs/PROJECT_STRUCTURE.md](./docs/PROJECT_STRUCTURE.md) for the code map
+- [docs/V2_ROADMAP.md](./docs/V2_ROADMAP.md) for roadmap lanes
+- [GOVERNANCE.md](./GOVERNANCE.md) for review and release standards
+- [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) for community expectations
+
+Small docs, tests, examples, and CLI improvements are welcome without a design discussion. Public API changes, persistence changes, retrieval scoring changes, security changes, and new backends should start with an issue or discussion.
+
+---
+
 ## Two Contributor Paths
 
 Choose the path that fits your goal:
@@ -22,7 +35,7 @@ pip install -e ".[dev]"
 pytest tests/ -v
 ```
 
-Done. All 133 tests should pass.
+Done. The full test suite should pass locally.
 
 ---
 
@@ -66,9 +79,26 @@ git push origin feat/your-feature-name
 
 ---
 
+## V2 Contributor Lanes
+
+| Lane | Good For | First Files |
+|---|---|---|
+| Memory core | Add, recall, lifecycle, scoring | `omem/core/engine/`, `omem/core/brain/` |
+| Knowledge graph | Entity extraction, relations, reasoning | `omem/core/graph/`, `omem/core/brain/reasoning.py` |
+| State infrastructure | Snapshots, restore, rollback, workflow state | `omem/core/utils/snapshot.py`, future `omem/state/` |
+| Observability | Metrics, traces, replay, context savings | `omem/core/utils/metrics.py`, `omem/core/utils/structured_logging.py` |
+| Evaluation | Benchmarks, scenarios, quality metrics | `omem/eval/`, `benchmarks/` |
+| Governance | Audit, retention, deletion, policy hooks | `omem/security/`, future `omem/governance/` |
+| Integrations | MCP, LangChain, LlamaIndex, CrewAI, agent SDKs | `omem/integrations/`, `examples/` |
+| Docs and examples | Onboarding, recipes, launch materials | `README.md`, `docs/`, `examples/` |
+
+For v2 roadmap tasks, use the `V2 roadmap task` issue template and include acceptance criteria.
+
+---
+
 ## Testing Requirements
 
-- All 133 tests must pass before a PR can merge: `pytest tests/ -v`
+- The full test suite must pass before a PR can merge: `pytest tests/ -v`
 - New logic in `omem/core/` must have unit tests in `tests/` matching the module path (e.g., `tests/test_tms.py`)
 - Tests must not make external API calls — mock any LLM or embedding calls
 - If you modify `rust/`, `omem/core/retrieval/`, or `omem/core/engine/add.py`, run the benchmark to confirm no regression:
@@ -97,6 +127,20 @@ These are well-scoped tasks that require no deep knowledge of the codebase:
 | Document all `OMem()` constructor args | `docs` | Add docstring examples to `omem/api.py` |
 
 Browse open issues at: https://github.com/mohitkumarrajbadi/omem/issues
+
+---
+
+## Pull Request Quality Bar
+
+Every PR should answer:
+
+- What problem does this solve?
+- What files changed and why?
+- How was it tested?
+- Does it change public API or persisted data?
+- Does it need docs, examples, or benchmark notes?
+
+Prefer smaller PRs. A focused PR is easier to review, merge, and release.
 
 ---
 
