@@ -1,0 +1,35 @@
+# Documentation
+
+OMem docs are grouped by purpose so contributors can find the right file quickly.
+
+## Architecture
+
+- [Project Structure](./architecture/PROJECT_STRUCTURE.md) - repo map, ownership areas, and where to change code
+
+## Guides
+
+- [Developer Guide](./guides/DEVELOPER.md) - technical usage and extension guide
+- [MCP Setup](./guides/MCP_SETUP.md) - Claude Desktop, Cursor, and MCP configuration
+
+## Roadmap
+
+- [V2 Roadmap](./roadmap/ROADMAP.md) - public v2 direction and milestone plan
+- [V2 Implementation Plan](./roadmap/IMPLEMENTATION_PLAN.md) - engineering work plan
+- [V2 Architecture Vision](./roadmap/V2_ARCHITECTURE.md) - long-term package and platform shape
+
+## Community
+
+- [GitHub Growth Checklist](./community/GITHUB_GROWTH.md) - ethical discovery and contributor-growth checklist
+
+## Root-Level Project Docs
+
+These stay at the repository root because GitHub and packaging tools expect them there:
+
+- [README](../README.md)
+- [Contributing](../CONTRIBUTING.md)
+- [Changelog](../CHANGELOG.md)
+- [Security](../SECURITY.md)
+- [Code of Conduct](../CODE_OF_CONDUCT.md)
+- [Governance](../GOVERNANCE.md)
+- [Support](../SUPPORT.md)
+- [License](../LICENSE)

@@ -1,4 +1,4 @@
-# OMem — Claude Desktop & MCP Setup
+# OMem - Claude Desktop & MCP Setup
 
 This guide covers connecting OMem to Claude Desktop, Cursor IDE, or any MCP-compatible client so your AI gets persistent memory across every session.
 

@@ -1,4 +1,4 @@
-# OMem OSS v2 Implementation Plan
+# OMem V2 Architecture Vision
 
 ## Vision
 OMem v2 becomes AI State Infrastructure, not just a memory library.

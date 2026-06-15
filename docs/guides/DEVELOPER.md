@@ -179,11 +179,11 @@ retriever = OMemRetriever(omem_instance=brain)
 
 ## Contributor Guide
 
-We welcome contributions! OMem is built to be fast, typed, and fully tested. See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full guide including a Python-only setup path that requires no Rust.
+We welcome contributions! OMem is built to be fast, typed, and fully tested. See [CONTRIBUTING.md](../../CONTRIBUTING.md) for the full guide including a Python-only setup path that requires no Rust.
 
 ### Environment Setup
 
-> **You do NOT need Rust to contribute.** Rust is only required for SIMD/performance work in the `rust/` directory. See [CONTRIBUTING.md](./CONTRIBUTING.md) for the Python-only setup path.
+> **You do NOT need Rust to contribute.** Rust is only required for SIMD/performance work in the `rust/` directory. See [CONTRIBUTING.md](../../CONTRIBUTING.md) for the Python-only setup path.
 
 1. **Clone & Virtual Env**:
    ```bash

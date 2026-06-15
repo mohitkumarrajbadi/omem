@@ -1,6 +1,6 @@
-# OMem V2 Implementation Planning
+# OMem V2 Implementation Plan
 
-This file tracks the practical implementation direction for OMem v2. The full public roadmap lives in `docs/V2_ROADMAP.md`; this file is the working engineering plan.
+This file tracks the practical implementation direction for OMem v2. The full public roadmap lives in [ROADMAP.md](./ROADMAP.md); this file is the working engineering plan.
 
 ## Current Position
 

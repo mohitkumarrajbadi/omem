@@ -8,8 +8,8 @@ Thank you for your interest in contributing. This document covers everything you
 
 OMem is moving toward v2 as AI state infrastructure. Before starting larger work, read:
 
-- [docs/PROJECT_STRUCTURE.md](./docs/PROJECT_STRUCTURE.md) for the code map
-- [docs/V2_ROADMAP.md](./docs/V2_ROADMAP.md) for roadmap lanes
+- [docs/architecture/PROJECT_STRUCTURE.md](./docs/architecture/PROJECT_STRUCTURE.md) for the code map
+- [docs/roadmap/ROADMAP.md](./docs/roadmap/ROADMAP.md) for roadmap lanes
 - [GOVERNANCE.md](./GOVERNANCE.md) for review and release standards
 - [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) for community expectations
 
@@ -204,7 +204,7 @@ def recall(self, query: str, k: int = 5, context_type: Optional[str] = None) -> 
 3. Implement the required interface: `save`, `load`, `delete`, `query`
 4. Register it in `omem/api.py` inside `_initialize_backend()`
 5. Add tests in `tests/test_backend_<name>.py`
-6. Document the new backend in `DEVELOPER.md` under "Storage Backends"
+6. Document the new backend in `docs/guides/DEVELOPER.md` under "Storage Backends"
 
 See `omem/backends/sqlite.py` as the reference implementation.
 

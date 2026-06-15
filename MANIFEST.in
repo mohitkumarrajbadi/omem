@@ -17,6 +17,9 @@ include rust/Cargo.lock
 # All Python source
 recursive-include omem *.py py.typed
 
+# Documentation referenced from the README
+recursive-include docs *.md
+
 # Exclude build artefacts that should never end up in the sdist
 global-exclude __pycache__
 global-exclude *.pyc

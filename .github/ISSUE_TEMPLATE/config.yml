@@ -4,5 +4,5 @@ contact_links:
     url: https://github.com/mohitkumarrajbadi/omem/discussions
     about: Use discussions for general questions and design ideas.
   - name: V2 roadmap
-    url: https://github.com/mohitkumarrajbadi/omem/blob/main/docs/V2_ROADMAP.md
+    url: https://github.com/mohitkumarrajbadi/omem/blob/main/docs/roadmap/ROADMAP.md
     about: Read the v2 roadmap before opening large design proposals.

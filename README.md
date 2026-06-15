@@ -4,7 +4,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/mohitkumarrajbadi/omem/ci.yml?branch=main&style=for-the-badge)](https://github.com/mohitkumarrajbadi/omem/actions)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue?style=for-the-badge&logo=python)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)](./LICENSE)
-[![MCP](https://img.shields.io/badge/MCP-Claude%20%2F%20Cursor-purple?style=for-the-badge)](./MCP_SETUP.md)
+[![MCP](https://img.shields.io/badge/MCP-Claude%20%2F%20Cursor-purple?style=for-the-badge)](./docs/guides/MCP_SETUP.md)
 [![GitHub Stars](https://img.shields.io/github/stars/mohitkumarrajbadi/omem?style=for-the-badge)](https://github.com/mohitkumarrajbadi/omem/stargazers)
 
 <br>
@@ -17,7 +17,7 @@ Persistent memory, Graph-RAG, sleep cycles, codebase memory, MCP, and local-firs
 
 **Zero config. Zero API costs. Local by default. Built for agents that should remember.**
 
-[Quick Start](#quick-start) · [Why OMem](#why-omem) · [MCP](#claude-desktop--cursor-mcp) · [Project Memory](#project-memory-for-codebases) · [Architecture](#architecture) · [V2 Roadmap](./docs/V2_ROADMAP.md) · [Contributing](./CONTRIBUTING.md)
+[Quick Start](#quick-start) · [Why OMem](#why-omem) · [MCP](#claude-desktop--cursor-mcp) · [Project Memory](#project-memory-for-codebases) · [Architecture](#architecture) · [V2 Roadmap](./docs/roadmap/ROADMAP.md) · [Contributing](./CONTRIBUTING.md)
 
 </div>
 
@@ -145,7 +145,7 @@ MCP tools include:
 | `sync_codebase` | Incrementally update project memory |
 | `query_codebase` | Ask natural-language questions about code |
 
-Full guide: [MCP_SETUP.md](./MCP_SETUP.md)
+Full guide: [docs/guides/MCP_SETUP.md](./docs/guides/MCP_SETUP.md)
 
 ## Project Memory for Codebases
 
@@ -200,7 +200,7 @@ Repository map:
 | `omem/codebase/` | Project memory and AST indexing |
 | `tests/` | Unit and integration tests |
 
-See [docs/PROJECT_STRUCTURE.md](./docs/PROJECT_STRUCTURE.md) for the contributor map.
+See [docs/architecture/PROJECT_STRUCTURE.md](./docs/architecture/PROJECT_STRUCTURE.md) for the contributor map.
 
 ## V2: AI State Infrastructure
 
@@ -219,7 +219,7 @@ V2 expands OMem into broader AI state infrastructure:
 | Provenance | Source lineage, versions, confidence, attribution |
 | Runtime | Agent registry, scheduling, sync, recovery |
 
-Read the roadmap: [docs/V2_ROADMAP.md](./docs/V2_ROADMAP.md)
+Read the roadmap: [docs/roadmap/ROADMAP.md](./docs/roadmap/ROADMAP.md)
 
 ## Integrations
 
@@ -270,8 +270,8 @@ Rust is only needed when changing the native acceleration layer in `rust/`.
 OMem is ready for team-based v2 work. Start here:
 
 - [CONTRIBUTING.md](./CONTRIBUTING.md) - setup, branch workflow, tests, good first issues
-- [docs/PROJECT_STRUCTURE.md](./docs/PROJECT_STRUCTURE.md) - where to make changes
-- [docs/V2_ROADMAP.md](./docs/V2_ROADMAP.md) - implementation lanes
+- [docs/architecture/PROJECT_STRUCTURE.md](./docs/architecture/PROJECT_STRUCTURE.md) - where to make changes
+- [docs/roadmap/ROADMAP.md](./docs/roadmap/ROADMAP.md) - implementation lanes
 - [GOVERNANCE.md](./GOVERNANCE.md) - review and release standards
 - [SUPPORT.md](./SUPPORT.md) - where to ask for help
 
