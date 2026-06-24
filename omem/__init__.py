@@ -25,8 +25,31 @@ from .state import (
     ToolResult,
 )
 
-# v2 top-level product facade
-from .agent_state import AgentState
+# v2 Phase 5 — unified facade + explicit config
+from .agent_config import AgentConfig
+from .agent_state import AgentState, ExplanationReport
+
+# Phase 6: Observability
+from .observe import ObserveOS, TraceEvent
+
+# Phase 7: Provenance
+from .provenance import ProvenanceChain, ProvenanceEvent, ProvenanceOS
+
+# Phase 8: Governance
+from .governance import (
+    DeletionPolicy,
+    DeletionReport,
+    GovernanceOS,
+    RetentionPolicy,
+    RetentionReport,
+    Role,
+)
+
+# Phase 9: Runtime
+from .runtime import AgentRegistration, RuntimeOS
+
+# Phase 10: Org Memory
+from .org import NamespaceInfo, NamespaceResolver, OrgMemoryOS, ShareResult
 
 from .types import (
     Evidence,
@@ -48,8 +71,10 @@ except PackageNotFoundError:
     __version__ = "0.0.0+dev"
 
 __all__ = [
-    # v2 product facade
+    # v2 unified facade (Phase 5)
     "AgentState",
+    "ExplanationReport",
+    "AgentConfig",
     # v2 knowledge layer
     "KnowledgeOS",
     "GraphSubgraph",
@@ -72,6 +97,28 @@ __all__ = [
     "StateBackend",
     "InMemoryStateBackend",
     "SQLiteStateBackend",
+    # Phase 6: observability
+    "ObserveOS",
+    "TraceEvent",
+    # Phase 7: provenance
+    "ProvenanceOS",
+    "ProvenanceEvent",
+    "ProvenanceChain",
+    # Phase 8: governance
+    "GovernanceOS",
+    "RetentionPolicy",
+    "DeletionPolicy",
+    "DeletionReport",
+    "RetentionReport",
+    "Role",
+    # Phase 9: runtime
+    "RuntimeOS",
+    "AgentRegistration",
+    # Phase 10: org memory
+    "OrgMemoryOS",
+    "NamespaceResolver",
+    "NamespaceInfo",
+    "ShareResult",
     # v1 stable API
     "OMem",
     # core types

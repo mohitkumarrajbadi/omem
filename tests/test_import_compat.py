@@ -174,22 +174,32 @@ def test_agent_state_shipped_layers_accessible():
     assert isinstance(nodes, list)
 
 
-def test_agent_state_future_layers_are_stubs():
-    """Phases 6–9 are still stubs — verify they exist but raise NotImplementedError
-    when their primary methods are called."""
-    import pytest
+def test_agent_state_phases_6_10_implemented():
+    """Phases 6–10 are now fully implemented — verify they return real values."""
     from omem import AgentState
-    agent = AgentState(session_id="test-future")
+    agent = AgentState(session_id="test-p6-10")
 
-    # Each future layer should be accessible but raise NotImplementedError
-    with pytest.raises(NotImplementedError):
-        agent.observe.traces("test-session")
+    # Phase 6: ObserveOS
+    m = agent.observe.metrics(session_id="test-p6-10")
+    assert isinstance(m, dict)
+    assert "recall_count" in m
 
-    with pytest.raises(NotImplementedError):
-        agent.governance.audit()
+    # Phase 7: ProvenanceOS
+    chain = agent.provenance.trace("nonexistent-id")
+    assert chain.root_id == "nonexistent-id"
+    assert chain.events == []
 
-    with pytest.raises(NotImplementedError):
-        agent.runtime.list_agents("default")
+    # Phase 8: GovernanceOS
+    entries = agent.governance.audit()
+    assert isinstance(entries, list)
+
+    # Phase 9: RuntimeOS
+    agents = agent.runtime.list_agents("default")
+    assert isinstance(agents, list)
+
+    # Phase 10: OrgMemoryOS
+    ns = agent.org.namespaces()
+    assert isinstance(ns, list)
 
 
 # ---------------------------------------------------------------------------

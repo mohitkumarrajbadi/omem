@@ -11,6 +11,6 @@ APIs (implemented in Phase 9):
 See: docs/roadmap/FULL_IMPLEMENTATION_PLAN.md — Phase 9
 """
 
-from .layer import RuntimeOS
+from .layer import AgentRegistration, RuntimeOS
 
-__all__ = ["RuntimeOS"]
+__all__ = ["RuntimeOS", "AgentRegistration"]

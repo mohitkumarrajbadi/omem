@@ -12,6 +12,26 @@ APIs (implemented in Phase 8):
 See: docs/roadmap/FULL_IMPLEMENTATION_PLAN.md — Phase 8
 """
 
-from .layer import GovernanceOS
+from .layer import (
+    DeletionPolicy,
+    DeletionReport,
+    GovernanceOS,
+    RetentionPolicy,
+    RetentionReport,
+    Role,
+    ROLE_ADMIN,
+    ROLE_EDITOR,
+    ROLE_VIEWER,
+)
 
-__all__ = ["GovernanceOS"]
+__all__ = [
+    "GovernanceOS",
+    "RetentionPolicy",
+    "DeletionPolicy",
+    "DeletionReport",
+    "RetentionReport",
+    "Role",
+    "ROLE_ADMIN",
+    "ROLE_EDITOR",
+    "ROLE_VIEWER",
+]
