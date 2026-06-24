@@ -237,6 +237,170 @@ class Memory:
         return f"Memory({self.type.name}{st}, score={self.score:.3f}, imp={self.importance:.2f}, util={self.utility_score:.2f}, '{preview}')"
 
 
+# ---------------------------------------------------------------------------
+# State layer types (Phase 2)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ToolResult:
+    """A single tool invocation result recorded in session state."""
+
+    tool: str
+    input: Dict[str, Any]
+    output: Any
+    timestamp: float = field(default_factory=time.time)
+    error: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "tool": self.tool,
+            "input": self.input,
+            "output": self.output,
+            "timestamp": self.timestamp,
+            "error": self.error,
+        }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "ToolResult":
+        return cls(
+            tool=d["tool"],
+            input=d.get("input", {}),
+            output=d.get("output"),
+            timestamp=d.get("timestamp", time.time()),
+            error=d.get("error"),
+        )
+
+
+@dataclass
+class StatePayload:
+    """Full execution state of an agent session.
+
+    Stores everything an agent needs to continue after a restart, rollback,
+    or branch: goal, plan, current step, recent tool outputs, and arbitrary
+    workflow state.
+    """
+
+    session_id: str
+    goal: Optional[str] = None
+    plan: List[str] = field(default_factory=list)
+    step: int = 0
+    status: str = "idle"  # idle | running | paused | failed | done
+    workflow_state: Dict[str, Any] = field(default_factory=dict)
+    tool_outputs: List[ToolResult] = field(default_factory=list)
+    agent_metadata: Dict[str, Any] = field(default_factory=dict)
+    namespace: str = "default"
+    updated_at: float = field(default_factory=time.time)
+    version: int = 1
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "session_id": self.session_id,
+            "goal": self.goal,
+            "plan": self.plan,
+            "step": self.step,
+            "status": self.status,
+            "workflow_state": self.workflow_state,
+            "tool_outputs": [t.to_dict() for t in self.tool_outputs],
+            "agent_metadata": self.agent_metadata,
+            "namespace": self.namespace,
+            "updated_at": self.updated_at,
+            "version": self.version,
+        }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "StatePayload":
+        return cls(
+            session_id=d["session_id"],
+            goal=d.get("goal"),
+            plan=d.get("plan", []),
+            step=d.get("step", 0),
+            status=d.get("status", "idle"),
+            workflow_state=d.get("workflow_state", {}),
+            tool_outputs=[ToolResult.from_dict(t) for t in d.get("tool_outputs", [])],
+            agent_metadata=d.get("agent_metadata", {}),
+            namespace=d.get("namespace", "default"),
+            updated_at=d.get("updated_at", time.time()),
+            version=d.get("version", 1),
+        )
+
+
+@dataclass
+class StateSnapshot:
+    """Immutable point-in-time copy of a session's state.
+
+    Snapshots are append-only. Rolling back to a snapshot never deletes
+    other snapshots — it only updates the live session record.
+    """
+
+    id: str
+    session_id: str
+    payload: StatePayload
+    label: Optional[str] = None
+    parent_id: Optional[str] = None   # set when this snapshot is forked from another
+    memory_snapshot_ref: Optional[str] = None
+    created_at: float = field(default_factory=time.time)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "session_id": self.session_id,
+            "payload": self.payload.to_dict(),
+            "label": self.label,
+            "parent_id": self.parent_id,
+            "memory_snapshot_ref": self.memory_snapshot_ref,
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "StateSnapshot":
+        return cls(
+            id=d["id"],
+            session_id=d["session_id"],
+            payload=StatePayload.from_dict(d["payload"]),
+            label=d.get("label"),
+            parent_id=d.get("parent_id"),
+            memory_snapshot_ref=d.get("memory_snapshot_ref"),
+            created_at=d.get("created_at", time.time()),
+        )
+
+
+@dataclass
+class StateCheckpoint:
+    """Lightweight crash-recovery marker.
+
+    Checkpoints are cheaper than full snapshots: they store the payload
+    as-is without branching logic or labels. Agents write checkpoints
+    frequently (e.g. after every tool call); they write snapshots when
+    they want a named, fork-able save point.
+    """
+
+    id: str
+    session_id: str
+    payload_hash: str
+    payload: StatePayload
+    created_at: float = field(default_factory=time.time)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "session_id": self.session_id,
+            "payload_hash": self.payload_hash,
+            "payload": self.payload.to_dict(),
+            "created_at": self.created_at,
+        }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "StateCheckpoint":
+        return cls(
+            id=d["id"],
+            session_id=d["session_id"],
+            payload_hash=d["payload_hash"],
+            payload=StatePayload.from_dict(d["payload"]),
+            created_at=d.get("created_at", time.time()),
+        )
+
+
 @dataclass
 class RetrievalExplanation:
     """Breakdown of why a memory was retrieved — for observability."""

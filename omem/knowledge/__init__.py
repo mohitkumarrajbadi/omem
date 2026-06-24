@@ -1,18 +1,27 @@
-"""V2 knowledge layer — Phase 4 of the implementation plan.
+"""V2 knowledge layer — clean public API over the graph substrate (Phase 4).
 
-Purpose: clean public API over the existing omem.core.graph substrate.
-This package wraps knowledge.py, causal.py, and dependency.py behind
-memory-native verbs without touching the engine.
+This package wraps ``omem.core.graph`` (KnowledgeGraph, CausalGraph,
+DependencyGraph) behind memory-native verbs without exposing internals.
 
-APIs (implemented in Phase 4):
-    KnowledgeOS.link()     — add a typed relation between entities
-    KnowledgeOS.query()    — retrieve entity subgraph to given depth
-    KnowledgeOS.reason()   — simple inference over known facts
-    KnowledgeOS.entities() — list all known entities in a namespace
+Quick start::
+
+    from omem.knowledge import KnowledgeOS
+
+    knowledge = KnowledgeOS()
+    knowledge.link("FastAPI", "uses", "Pydantic")
+    subgraph = knowledge.query("FastAPI", depth=2)
+    facts = knowledge.reason("What does FastAPI use?")
 
 See: docs/roadmap/FULL_IMPLEMENTATION_PLAN.md — Phase 4
 """
 
 from .layer import KnowledgeOS
+from .types import EdgeRecord, GraphSubgraph, InferenceResult, KnowledgeStats
 
-__all__ = ["KnowledgeOS"]
+__all__ = [
+    "KnowledgeOS",
+    "EdgeRecord",
+    "GraphSubgraph",
+    "InferenceResult",
+    "KnowledgeStats",
+]

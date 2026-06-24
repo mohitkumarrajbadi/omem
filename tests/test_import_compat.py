@@ -154,20 +154,42 @@ def test_agent_state_memory_layer_works():
     assert len(mem_id) > 0
 
 
-def test_agent_state_unimplemented_layers_raise():
-    """Unbuilt phases raise NotImplementedError — not AttributeError or ImportError."""
-    import pytest
+def test_agent_state_shipped_layers_accessible():
+    """Phases 1–4 are fully implemented — verify they are accessible."""
     from omem import AgentState
     agent = AgentState(session_id="test-stub")
 
+    # Phase 1 — memory layer
+    assert agent.memory is not None
+
+    # Phase 2 — state layer (session was created in __init__)
+    payload = agent.state.load("test-stub")
+    assert payload is not None
+
+    # Phase 3 — context engine
+    assert agent.context is not None
+
+    # Phase 4 — knowledge layer
+    nodes = agent.knowledge.entities()
+    assert isinstance(nodes, list)
+
+
+def test_agent_state_future_layers_are_stubs():
+    """Phases 6–9 are still stubs — verify they exist but raise NotImplementedError
+    when their primary methods are called."""
+    import pytest
+    from omem import AgentState
+    agent = AgentState(session_id="test-future")
+
+    # Each future layer should be accessible but raise NotImplementedError
     with pytest.raises(NotImplementedError):
-        agent.state.load("test-session")
+        agent.observe.traces("test-session")
 
     with pytest.raises(NotImplementedError):
-        agent.context.build(None)  # type: ignore
+        agent.governance.audit()
 
     with pytest.raises(NotImplementedError):
-        agent.knowledge.entities()
+        agent.runtime.list_agents("default")
 
 
 # ---------------------------------------------------------------------------

@@ -1,15 +1,30 @@
-"""V2 context layer — Phase 3 of the implementation plan.
+"""V2 context layer — Phase 3 (fully implemented).
 
-Purpose: select the optimal set of memories, state, and knowledge to send
-to the LLM within a token budget. This is where token savings come from.
+``ContextEngine`` selects the optimal subset of memory + state + knowledge
+to send to the LLM within a given token budget.
 
-APIs (implemented in Phase 3):
-    ContextEngine.build()            — assemble ContextBundle from budget
-    ContextEngine.estimate_savings() — preview tokens saved vs naive recall
+Quickstart::
+
+    from omem.context import ContextEngine, ContextRequest
+
+    engine = ContextEngine(memory=agent.memory, state=agent.state)
+    ctx = engine.build(ContextRequest(
+        task="continue the auth refactor",
+        budget_tokens=6000,
+        session_id="agent-1",
+    ))
+    print(f"Tokens saved: {ctx.savings_vs_naive:.0%}")
+    llm.chat(ctx.text + user_message)
 
 See: docs/roadmap/FULL_IMPLEMENTATION_PLAN.md — Phase 3
 """
 
 from .engine import ContextBundle, ContextEngine, ContextRequest
+from .tokenizer import TokenCounter
 
-__all__ = ["ContextEngine", "ContextRequest", "ContextBundle"]
+__all__ = [
+    "ContextEngine",
+    "ContextRequest",
+    "ContextBundle",
+    "TokenCounter",
+]

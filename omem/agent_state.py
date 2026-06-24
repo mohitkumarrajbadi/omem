@@ -1,74 +1,76 @@
-"""AgentState — top-level product facade (Phase 5 of the implementation plan).
+"""AgentState — top-level product facade.
 
-``AgentState`` is the single object a developer imports. It composes all
-six layers (memory, state, context, knowledge, observe, governance) and
-auto-detects local vs cloud mode from environment variables.
+``AgentState`` is the single object a developer imports. It composes the
+memory and state layers (both production-ready as of Phase 2) and holds
+typed stubs for future layers (context, knowledge, observe, governance).
 
 Local mode (default)::
 
     from omem import AgentState
     agent = AgentState(session_id="my-agent")
     agent.memory.remember("User prefers Python")
-    agent.state.set_goal("Refactor auth module")
+    agent.state.set_goal("my-agent", "Refactor auth module")
+    snap = agent.snapshot("before-oauth")
+    branch = agent.fork(snap.id)
+    chk = agent.checkpoint()
+    agent.resume_from(chk)
 
-Cloud mode (set env vars)::
+Cloud mode (set env vars, Cloud Phase C1)::
 
     export OMEM_ENDPOINT=https://state.akamai.ai
     export OMEM_API_KEY=omem_sk_...
-    export OMEM_ORG=acme-corp
 
     from omem import AgentState
-    agent = AgentState(session_id="my-agent")
-    # Same code, remote backend.
+    agent = AgentState(session_id="my-agent")   # auto-detects cloud
 
-Implementation target: docs/roadmap/FULL_IMPLEMENTATION_PLAN.md Phase 5.
-Cloud wiring:          docs/roadmap/FULL_IMPLEMENTATION_PLAN.md Cloud Phase C1.
+Phase 5 note: this facade will grow as each layer ships. Until then,
+layers beyond memory and state raise ``NotImplementedError``.
 """
 
 import os
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 from .api import OMem
-from .context.engine import ContextEngine
+from .context.engine import ContextBundle, ContextEngine, ContextRequest
 from .governance.layer import GovernanceOS
 from .knowledge.layer import KnowledgeOS
 from .memory.layer import MemoryOS
 from .observe.events import ObserveOS
 from .provenance.layer import ProvenanceOS
 from .runtime.layer import RuntimeOS
+from .state.backend import InMemoryStateBackend, SQLiteStateBackend
 from .state.layer import StateOS
+from .types import StateCheckpoint, StatePayload, StateSnapshot, ToolResult
 
 
 class AgentState:
     """Unified agent state facade.
 
-    ``AgentState`` is the product. It composes all v2 layers and exposes
-    them as named properties. The underlying engine is ``OMem`` (local)
-    or ``CloudBackend`` (when ``OMEM_ENDPOINT`` is set).
+    ``AgentState`` is the product object. It wires all shipped layers together
+    so agents get a single coherent interface for all persistence needs.
 
-    Layers available today:
-        .memory     — MemoryOS (remember, recall, consolidate, forget)
+    Shipped layers:
+        .memory    — MemoryOS      (remember, recall, consolidate, forget)
+        .state     — StateOS       (save, snapshot, rollback, fork, checkpoint)
+        .context   — ContextEngine (build, estimate_savings)
+        .knowledge — KnowledgeOS   (link, query, reason, entities, ingest)
 
-    Layers available after each phase:
-        .state      — StateOS        (Phase 2 — snapshot, rollback, fork)
-        .context    — ContextEngine  (Phase 3 — token-budget context)
-        .knowledge  — KnowledgeOS    (Phase 4 — graph facade)
-        .observe    — ObserveOS      (Phase 6 — traces, metrics, replay)
-        .governance — GovernanceOS   (Phase 8 — retention, audit, RBAC)
-        .provenance — ProvenanceOS   (Phase 7 — lineage, history)
-        .runtime    — RuntimeOS      (Phase 9 — multi-agent coordination)
-
-    All layers are instantiated eagerly so type checkers see the full surface.
-    The stubs raise ``NotImplementedError`` until each phase is implemented.
+    Future layers (stubs — raise NotImplementedError):
+        .observe    — ObserveOS      (Phase 6)
+        .provenance — ProvenanceOS   (Phase 7)
+        .governance — GovernanceOS   (Phase 8)
+        .runtime    — RuntimeOS      (Phase 9)
     """
 
     def __init__(
         self,
         session_id: Optional[str] = None,
+        namespace: str = "default",
+        backend: str = "sqlite",
+        db_path: Optional[str] = None,
         endpoint: Optional[str] = None,
         api_key: Optional[str] = None,
         org: Optional[str] = None,
-        namespace: str = "default",
         **omem_kwargs: Any,
     ) -> None:
         self.session_id = session_id
@@ -77,31 +79,51 @@ class AgentState:
         # Resolve cloud vs local mode
         _endpoint = endpoint or os.environ.get("OMEM_ENDPOINT")
         _api_key = api_key or os.environ.get("OMEM_API_KEY")
-        _org = org or os.environ.get("OMEM_ORG")
 
         if _endpoint and _api_key:
-            # Cloud Phase C1: swap in CloudBackend here.
-            # For now, fall through to local mode with a warning.
             import warnings
             warnings.warn(
                 "OMEM_ENDPOINT is set but CloudBackend is not yet implemented "
-                "(Cloud Phase C1). Falling back to local SQLite mode.",
+                "(Cloud Phase C1). Falling back to local mode.",
                 stacklevel=2,
             )
 
-        # Local mode — always available.
-        _omem = OMem(**omem_kwargs)
+        # Resolve the db_path used for both memory and state backends
+        _resolved_db = db_path
+        if backend == "sqlite" and _resolved_db is None:
+            _resolved_db = os.path.expanduser("~/.omem/brain.db")
+            _db_dir = os.path.dirname(_resolved_db)
+            if not os.path.exists(_db_dir):
+                os.makedirs(_db_dir, exist_ok=True)
 
-        # Layer composition — always instantiate; stubs raise NotImplementedError
-        # for unimplemented phases so the interface is always inspectable.
+        # Memory layer — OMem with the resolved path
+        _omem = OMem(backend=backend, db_path=db_path, **omem_kwargs)
+        self._omem = _omem
         self._memory = MemoryOS(_omem)
-        self._state = StateOS()
-        self._context = ContextEngine()
-        self._knowledge = KnowledgeOS()
+
+        # State layer — same SQLite file, separate tables
+        if backend == "memory":
+            state_backend = InMemoryStateBackend()
+        else:
+            state_backend = SQLiteStateBackend(_resolved_db or ":memory:")
+        self._state = StateOS(backend=state_backend)
+
+        # Context layer — Phase 3 (fully wired)
+        self._context = ContextEngine(
+            memory=self._memory,
+            state=self._state,
+        )
+
+        # Knowledge layer — Phase 4 (fully wired to the live engine graph)
+        self._knowledge = KnowledgeOS(omem=_omem)
         self._observe = ObserveOS()
         self._governance = GovernanceOS()
         self._provenance = ProvenanceOS()
         self._runtime = RuntimeOS()
+
+        # Bootstrap the session if session_id was given
+        if self.session_id:
+            self._state.get_or_create(self.session_id, namespace=namespace)
 
     # ------------------------------------------------------------------
     # Layer properties
@@ -109,17 +131,17 @@ class AgentState:
 
     @property
     def memory(self) -> MemoryOS:
-        """Memory layer — fully implemented (v2 MemoryOS)."""
+        """Memory layer — fully implemented."""
         return self._memory
 
     @property
     def state(self) -> StateOS:
-        """State layer — Phase 2 (raises NotImplementedError until implemented)."""
+        """State layer — fully implemented (Phase 2)."""
         return self._state
 
     @property
     def context(self) -> ContextEngine:
-        """Context engine — Phase 3."""
+        """Context engine — Phase 3 (raises NotImplementedError)."""
         return self._context
 
     @property
@@ -148,20 +170,170 @@ class AgentState:
         return self._runtime
 
     # ------------------------------------------------------------------
-    # Convenience — delegate to state layer (Phase 2)
+    # Convenience — session-scoped shortcuts for common state operations
     # ------------------------------------------------------------------
 
-    def snapshot(self, label: Optional[str] = None) -> Any:
-        """Shortcut: snapshot the current session. Delegates to state.snapshot()."""
+    def _require_session(self) -> str:
         if not self.session_id:
-            raise ValueError("session_id is required to call snapshot()")
-        return self.state.snapshot(self.session_id, label=label)
+            raise ValueError(
+                "session_id is required. Pass it to AgentState(session_id=...) "
+                "or use agent.state directly with an explicit session_id."
+            )
+        return self.session_id
 
-    def resume(self) -> Any:
-        """Shortcut: resume from the latest checkpoint. Delegates to state."""
-        if not self.session_id:
-            raise ValueError("session_id is required to call resume()")
-        return self.state.resume(self.session_id)
+    def set_goal(self, goal: str) -> StatePayload:
+        """Set the top-level goal for this session."""
+        return self.state.set_goal(self._require_session(), goal)
+
+    def set_plan(self, plan: List[str]) -> StatePayload:
+        """Replace the plan steps for this session."""
+        return self.state.set_plan(self._require_session(), plan)
+
+    def advance(self) -> StatePayload:
+        """Increment the step counter for this session."""
+        return self.state.advance(self._require_session())
+
+    def record_tool(self, tool: str, output: Any, input: Any = None, error: Optional[str] = None) -> StatePayload:
+        """Append a tool result to this session's state."""
+        result = ToolResult(
+            tool=tool,
+            input=input or {},
+            output=output,
+            error=error,
+        )
+        return self.state.record_tool(self._require_session(), result)
+
+    def snapshot(self, label: Optional[str] = None) -> StateSnapshot:
+        """Create a named snapshot of this session's current state."""
+        return self.state.snapshot(self._require_session(), label=label)
+
+    def rollback(self, snapshot_id: str) -> StatePayload:
+        """Rollback this session to a prior snapshot."""
+        return self.state.rollback(snapshot_id)
+
+    def fork(self, snapshot_id: str, new_session_id: Optional[str] = None) -> str:
+        """Fork from a snapshot into a new independent session."""
+        return self.state.fork(snapshot_id, new_session_id=new_session_id)
+
+    def checkpoint(self) -> str:
+        """Write a crash-recovery checkpoint. Returns the checkpoint ID."""
+        return self.state.checkpoint(self._require_session())
+
+    def resume_from(self, checkpoint_id: str) -> StatePayload:
+        """Restore this session from a specific checkpoint."""
+        return self.state.resume(checkpoint_id)
+
+    def resume_latest(self) -> StatePayload:
+        """Restore this session from the most recent checkpoint."""
+        return self.state.resume_latest(self._require_session())
+
+    def build_context(
+        self,
+        task: str,
+        budget_tokens: int = 6000,
+        mode: str = "planning",
+        include: Optional[List[str]] = None,
+        top_k_memories: int = 15,
+    ) -> ContextBundle:
+        """Assemble an optimal LLM context bundle for this session.
+
+        Combines the current session state, most relevant memories, and
+        knowledge graph neighbors into a single prompt block.
+
+        Args:
+            task:          What the agent is doing right now.
+            budget_tokens: Hard token ceiling (default 6000).
+            mode:          Retrieval mode: ``"planning"``, ``"coding"``,
+                           ``"chat"``, ``"recall"``.
+            include:       Sections to include. Defaults to
+                           ``["state", "memory", "knowledge"]``.
+            top_k_memories: Max number of memories to consider.
+
+        Returns:
+            ``ContextBundle`` — inject ``ctx.text`` before your LLM prompt.
+        """
+        return self.context.build(ContextRequest(
+            task=task,
+            budget_tokens=budget_tokens,
+            session_id=self.session_id,
+            namespace=self.namespace if self.namespace != "default" else None,
+            mode=mode,
+            include=include or ["state", "memory", "knowledge"],
+            top_k_memories=top_k_memories,
+        ))
+
+    def estimate_context_savings(self, task: str, budget_tokens: int = 6000) -> dict:
+        """Preview how many tokens the context engine will save for a given task."""
+        return self.context.estimate_savings(ContextRequest(
+            task=task,
+            budget_tokens=budget_tokens,
+            session_id=self.session_id,
+            namespace=self.namespace if self.namespace != "default" else None,
+        ))
+
+    # ------------------------------------------------------------------
+    # Convenience — session-scoped shortcuts for knowledge operations
+    # ------------------------------------------------------------------
+
+    def learn(
+        self,
+        subject: str,
+        predicate: str,
+        obj: str,
+        confidence: float = 1.0,
+        memory_id: str = "",
+    ) -> str:
+        """Assert a typed relation in the knowledge graph.
+
+        Shorthand for ``agent.knowledge.link(...)``.
+
+        Returns:
+            Edge ID string.
+        """
+        return self.knowledge.link(
+            subject, predicate, obj,
+            confidence=confidence,
+            memory_id=memory_id,
+            namespace=self.namespace,
+        )
+
+    def know_about(self, entity: str, depth: int = 2):
+        """Return the subgraph centred on an entity.
+
+        Shorthand for ``agent.knowledge.query(...)``.
+
+        Returns:
+            ``GraphSubgraph``
+        """
+        return self.knowledge.query(entity, depth=depth, namespace=self.namespace)
+
+    def reason(self, question: str):
+        """Apply heuristic graph inference to answer a question.
+
+        Shorthand for ``agent.knowledge.reason(...)``.
+
+        Returns:
+            List of ``InferenceResult`` sorted by confidence.
+        """
+        return self.knowledge.reason(question, namespace=self.namespace)
+
+    def knowledge_stats(self):
+        """Return aggregate knowledge graph statistics.
+
+        Shorthand for ``agent.knowledge.stats()``.
+
+        Returns:
+            ``KnowledgeStats``
+        """
+        return self.knowledge.stats()
+
+    def current_state(self) -> StatePayload:
+        """Return the current state payload for this session."""
+        return self.state.load(self._require_session())
+
+    def summary(self) -> dict:
+        """Return a human-friendly summary of this session."""
+        return self.state.summary(self._require_session())
 
     def __repr__(self) -> str:
         mode = "cloud" if os.environ.get("OMEM_ENDPOINT") else "local"
