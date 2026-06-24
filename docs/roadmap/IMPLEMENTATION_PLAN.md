@@ -1,6 +1,11 @@
 # OMem V2 Implementation Plan
 
-This file tracks the practical implementation direction for OMem v2. The full public roadmap lives in [ROADMAP.md](./ROADMAP.md); this file is the working engineering plan.
+This file tracks the practical implementation direction for OMem v2. The full public roadmap lives in [ROADMAP.md](./ROADMAP.md); this file is the working engineering checklist.
+
+For the complete phased plan including framework architecture, cloud phases, Akamai/Linode deployment, and enterprise roadmap, see:
+
+- [Full Implementation Plan](./FULL_IMPLEMENTATION_PLAN.md)
+- [Akamai / Linode Deployment Plan](./AKAMAI_LINODE_DEPLOYMENT.md)
 
 ## Current Position
 
@@ -169,6 +174,67 @@ Tasks:
 - [ ] Add namespace sharing policy.
 - [ ] Add recovery hooks.
 - [ ] Add MCP tools for state and runtime operations.
+
+## Phase 7: Context Engine
+
+Goal: select optimal LLM input from memory + state + knowledge within a token budget.
+
+Target APIs:
+
+```python
+context = agent.context.build(task="continue refactor", budget_tokens=6000)
+```
+
+Tasks:
+
+- [ ] Add `ContextRequest` and `ContextBundle` dataclasses.
+- [ ] Implement token-budget packing in `omem/context/engine.py`.
+- [ ] Reuse ranker mode profiles and existing RAG pipeline.
+- [ ] Add CLI `omem context build` and MCP tool `build_context`.
+- [ ] Add `benchmarks/context_efficiency.py` for token savings measurement.
+
+## Phase 8: AgentState Unified Facade
+
+Goal: single developer-facing object composing memory, state, context, and knowledge.
+
+Target API:
+
+```python
+from omem import AgentState
+agent = AgentState(session_id="my-agent")
+```
+
+Tasks:
+
+- [ ] Add `omem/agent_state.py` composing all layer facades.
+- [ ] Auto-detect cloud mode from `OMEM_ENDPOINT` env var.
+- [ ] Update top-level exports in `omem/__init__.py`.
+- [ ] Rewrite quickstart examples to use `AgentState`.
+
+## Phase 9: Shared Organizational Memory
+
+Goal: knowledge compounds across agents and teams via namespace hierarchy.
+
+Tasks:
+
+- [ ] Define namespace hierarchy: `personal/`, `team/`, `org/`.
+- [ ] Add recall scope parameter (`scope="team"` searches up the tree).
+- [ ] Add memory promotion API (`share` / `promote`).
+- [ ] Add governance write policies per namespace level.
+
+## Cloud Phase: Managed Service (Akamai / Linode)
+
+Goal: prove OMem as Agent State Cloud with `export OMEM_ENDPOINT=...`.
+
+Tasks:
+
+- [ ] Add `omem/cloud/backend.py` remote HTTP adapter.
+- [ ] Add FastAPI service in `omem/cloud/server.py`.
+- [ ] Add auth middleware and multi-tenant org isolation.
+- [ ] Add `deploy/` scripts: provision, deploy, teardown, health-check.
+- [ ] Deploy to Linode (see [Akamai / Linode Deployment Plan](./AKAMAI_LINODE_DEPLOYMENT.md)).
+- [ ] Add remote MCP and CLI `--endpoint` support.
+- [ ] Onboard 3–5 internal pilot teams.
 
 ## High-Priority Starter Issues
 

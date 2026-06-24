@@ -51,6 +51,21 @@ omem.runtime      # scheduler, agent registry, coordination, recovery
 
 Add compatibility facades gradually. The stable `from omem import OMem` path should continue to work through the v2 transition.
 
+Target top-level facade:
+
+```text
+omem/agent_state.py   # AgentState — composes memory + state + context + knowledge
+```
+
+Cloud connector:
+
+```text
+omem/cloud/           # HTTP client, remote backend, FastAPI server
+deploy/               # Linode provision, deploy, teardown scripts
+```
+
+See [Full Implementation Plan](../roadmap/FULL_IMPLEMENTATION_PLAN.md) and [Akamai / Linode Deployment Plan](../roadmap/AKAMAI_LINODE_DEPLOYMENT.md) for phased delivery.
+
 ## Design Rules
 
 - Keep `OMem` as the friendly entrypoint.

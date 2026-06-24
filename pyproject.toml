@@ -11,7 +11,7 @@ include = ["omem*"]
 [project]
 name = "omem-os"
 dynamic = ["version"]
-description = "AI Memory Operating System — Graph-RAG, temporal truth maintenance, actionable schemas, selective encryption, sub-200ms hybrid retrieval."
+description = "Persistent State Infrastructure for AI Systems — memory, state, context, knowledge, observability, and governance for agents at scale."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
@@ -19,8 +19,9 @@ authors = [
     {name = "Mohit Kumar Rajbadi", email = "mohitkumarrajbadi@gmail.com"}
 ]
 keywords = [
-    "ai", "memory", "rag", "vector-search", "embeddings", "llm", "agents",
-    "memory-os", "compression", "reflection", "importance", "multi-agent",
+    "ai", "agent-state", "memory", "rag", "vector-search", "embeddings",
+    "llm", "agents", "state-management", "checkpointing", "memory-os",
+    "multi-agent", "agentic-ai", "context-optimization",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
