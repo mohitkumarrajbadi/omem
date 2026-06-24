@@ -1,0 +1,43 @@
+# Dockerfile.cloud — OMem Cloud API service
+# Implements: docs/roadmap/FULL_IMPLEMENTATION_PLAN.md Cloud Phase C2
+#
+# Build:
+#   docker build -f deploy/docker/Dockerfile.cloud -t omem-cloud:latest .
+#
+# Run:
+#   docker run -p 8080:8080 --env-file .env.cloud omem-cloud:latest
+
+FROM python:3.11-slim
+
+LABEL org.opencontainers.image.title="OMem Cloud API"
+LABEL org.opencontainers.image.description="Akamai Agent State Cloud — FastAPI service"
+
+WORKDIR /app
+
+# System deps for numpy + faiss
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential libgomp1 && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml setup.py ./
+COPY rust/ ./rust/
+COPY omem/ ./omem/
+
+RUN pip install --no-cache-dir -e ".[fast,embeddings,postgres]"
+
+# Cloud-specific dependencies (FastAPI, uvicorn, httpx for client)
+RUN pip install --no-cache-dir \
+    fastapi>=0.110.0 \
+    uvicorn[standard]>=0.29.0 \
+    httpx>=0.27.0 \
+    python-jose[cryptography]>=3.3.0 \
+    passlib>=1.7.4
+
+EXPOSE 8080
+
+ENV OMEM_CLOUD_MODE=1 \
+    OMEM_LOG_LEVEL=INFO \
+    OMEM_BACKEND=postgres
+
+# Cloud Phase C2: replace with actual server module path when implemented
+CMD ["uvicorn", "omem.cloud.server:app", "--host", "0.0.0.0", "--port", "8080"]

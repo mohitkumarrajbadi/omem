@@ -1,18 +1,30 @@
 # OMem V2 Architecture Vision
 
 ## Vision
-OMem v2 becomes AI State Infrastructure, not just a memory library.
+
+OMem v2 becomes **Persistent State Infrastructure for AI Systems** — not just a memory library.
 
 Positioning:
-- Agents
-- ↓
-- OMem
-- ↓
-- LLMs
-- ↓
-- Storage
 
-OMem should be the foundational layer that provides memory, persistent state, knowledge, observability, evaluation, governance, provenance, runtime coordination, and integrations.
+```text
+Agents / Apps / MCP Clients
+        │
+        ▼
+     OMem (Agent State)
+        │
+        ├── Memory
+        ├── State
+        ├── Context
+        ├── Knowledge
+        ├── Observability
+        ├── Governance
+        └── Cloud (Akamai Agent State Cloud)
+        │
+        ▼
+     LLMs + Storage
+```
+
+**Implementation details:** [Full Implementation Plan](./FULL_IMPLEMENTATION_PLAN.md) · [Akamai / Linode Deployment](./AKAMAI_LINODE_DEPLOYMENT.md)
 
 ## Architecture
 
@@ -70,7 +82,8 @@ omem.state
 ├── Agent State
 ├── Snapshots
 ├── Rollbacks
-└── Forks
+├── Forks
+└── Checkpoints
 ```
 
 APIs:
@@ -79,6 +92,26 @@ APIs:
 - `omem.state.snapshot()`
 - `omem.state.rollback()`
 - `omem.state.fork()`
+- `omem.state.checkpoint()`
+- `omem.state.resume()`
+
+### 2b. Context
+Purpose: Select what actually gets sent to the LLM.
+
+Structure:
+```
+omem.context
+├── Context Engine
+├── Token Budget Packer
+├── Memory + State + Knowledge Fusion
+└── Savings Metrics
+```
+
+APIs:
+- `omem.context.build(task, budget_tokens)`
+- `omem.context.estimate_savings()`
+
+Without this layer: great memory, poor context.
 
 Example state payload:
 ```json
@@ -268,11 +301,40 @@ omem.backends
 └── Neo4j
 ```
 
+### 10. Cloud
+Managed Agent State Cloud on Akamai / Linode.
+
+Structure:
+```
+omem.cloud
+├── HTTP Client
+├── Remote Backend
+├── FastAPI Server
+├── Auth Middleware
+└── Tenancy
+
+deploy/
+├── linode/terraform
+├── linode/ansible
+├── docker/Dockerfile.cloud
+└── scripts/provision|deploy|teardown
+```
+
+Developer experience:
+```bash
+pip install omem
+export OMEM_ENDPOINT=https://state.akamai.ai
+export OMEM_API_KEY=omem_sk_...
+```
+
+See [Akamai / Linode Deployment Plan](./AKAMAI_LINODE_DEPLOYMENT.md).
+
 ## CLI structure
 
 ```
 omem memory ...
 omem state ...
+omem context ...
 omem knowledge ...
 omem observe ...
 omem eval ...
@@ -362,8 +424,12 @@ Focus:
 
 ## Product positioning statement
 
-> OMem is the AI State Infrastructure layer that provides memory, persistent state, observability, evaluation, provenance, and governance for AI agents across sessions, workflows, and organizations.
+> OMem is the AI State Infrastructure layer that provides memory, persistent state, context optimization, observability, evaluation, provenance, and governance for AI agents across sessions, workflows, and organizations.
+
+**Cloud product:** Akamai Agent State Cloud — one endpoint, no customer-managed databases.
 
 ## Notes
 
-This plan preserves the repository's current memory and graph strengths while shifting the narrative and architecture to become a larger AI state platform. It is intentionally designed to support an OSS-first v2 product that can be extended into paid observability and enterprise governance.
+This plan preserves the repository's current memory and graph strengths while shifting the narrative and architecture to become a larger AI state platform. It is intentionally designed to support an OSS-first v2 product that extends into Akamai Cloud via Linode tech preview, then paid observability and enterprise governance.
+
+**Detailed phased delivery:** [Full Implementation Plan](./FULL_IMPLEMENTATION_PLAN.md)

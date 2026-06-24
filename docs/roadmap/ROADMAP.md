@@ -2,6 +2,11 @@
 
 OMem v2 turns the current memory library into AI state infrastructure: memory, state, knowledge, observability, evaluation, governance, provenance, runtime coordination, and integrations.
 
+**Detailed plans:**
+
+- [Full Implementation Plan](./FULL_IMPLEMENTATION_PLAN.md) — all OSS, cloud, and enterprise phases with APIs, schemas, and timeline
+- [Akamai / Linode Deployment Plan](./AKAMAI_LINODE_DEPLOYMENT.md) — managed service tech preview on Linode
+
 ## Current Status
 
 | Area | Status | Notes |
@@ -75,6 +80,30 @@ Goal: coordinate multiple agents around shared state safely.
 - Scheduler hooks
 - Recovery hooks
 - Namespace and policy-aware sharing
+
+## Milestone 6: Akamai Cloud Tech Preview
+
+Goal: prove OMem as managed Agent State Cloud on Linode.
+
+- Remote backend via `OMEM_ENDPOINT`
+- FastAPI state API service
+- Multi-tenant auth and org isolation
+- Linode deployment (API + worker + DBaaS + Object Storage)
+- SDK cloud mode and remote MCP
+- 3–5 internal pilot teams
+
+See [Akamai / Linode Deployment Plan](./AKAMAI_LINODE_DEPLOYMENT.md) for infrastructure details.
+
+## Milestone 7: Enterprise Product
+
+Goal: production-grade Akamai Cloud offering.
+
+- RBAC and SSO
+- Multi-region HA
+- Edge integration (state-aware routing, policy enforcement)
+- Billing and marketplace listing
+
+See [Full Implementation Plan — Part C](./FULL_IMPLEMENTATION_PLAN.md#part-c--enterprise-phases-post-preview).
 
 ## Contributor Lanes
 

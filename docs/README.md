@@ -13,8 +13,10 @@ OMem docs are grouped by purpose so contributors can find the right file quickly
 
 ## Roadmap
 
+- [Full Implementation Plan](./roadmap/FULL_IMPLEMENTATION_PLAN.md) - master plan: OSS phases, cloud phases, framework, timeline
+- [Akamai / Linode Deployment Plan](./roadmap/AKAMAI_LINODE_DEPLOYMENT.md) - tech preview infrastructure on Linode
 - [V2 Roadmap](./roadmap/ROADMAP.md) - public v2 direction and milestone plan
-- [V2 Implementation Plan](./roadmap/IMPLEMENTATION_PLAN.md) - engineering work plan
+- [V2 Implementation Plan](./roadmap/IMPLEMENTATION_PLAN.md) - engineering work checklist
 - [V2 Architecture Vision](./roadmap/V2_ARCHITECTURE.md) - long-term package and platform shape
 
 ## Community

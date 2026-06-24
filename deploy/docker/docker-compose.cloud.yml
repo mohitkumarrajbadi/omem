@@ -1,0 +1,80 @@
+version: "3.9"
+
+# OMem Cloud tech preview — local Docker stack
+# Mirrors the Linode topology (API + Worker + Postgres).
+#
+# Usage:
+#   cp .env.cloud.example .env.cloud
+#   docker compose -f deploy/docker/docker-compose.cloud.yml up
+#
+# See: docs/roadmap/AKAMAI_LINODE_DEPLOYMENT.md
+
+services:
+  omem-api:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.cloud
+    image: omem-cloud:latest
+    container_name: omem-cloud-api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file: ../../.env.cloud
+    environment:
+      - OMEM_CLOUD_MODE=1
+      - OMEM_BACKEND=postgres
+      - OMEM_DB_URL=postgresql://omem:omem@omem-db:5432/omem
+      - OMEM_LOG_LEVEL=INFO
+    depends_on:
+      omem-db:
+        condition: service_healthy
+    networks:
+      - omem-cloud-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  omem-worker:
+    image: omem-cloud:latest
+    container_name: omem-cloud-worker
+    restart: unless-stopped
+    env_file: ../../.env.cloud
+    environment:
+      - OMEM_CLOUD_MODE=1
+      - OMEM_WORKER_MODE=1
+      - OMEM_BACKEND=postgres
+      - OMEM_DB_URL=postgresql://omem:omem@omem-db:5432/omem
+      - OMEM_LOG_LEVEL=INFO
+    depends_on:
+      - omem-db
+    networks:
+      - omem-cloud-net
+    # Cloud Phase C2: replace with actual worker entrypoint
+    command: ["python", "-m", "omem.cloud.worker"]
+
+  omem-db:
+    image: postgres:16-alpine
+    container_name: omem-cloud-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=omem
+      - POSTGRES_PASSWORD=omem
+      - POSTGRES_DB=omem
+    volumes:
+      - omem-cloud-db-data:/var/lib/postgresql/data
+    networks:
+      - omem-cloud-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U omem"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  omem-cloud-db-data:
+
+networks:
+  omem-cloud-net:
+    driver: bridge
