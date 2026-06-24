@@ -9,6 +9,6 @@ APIs (implemented in Phase 7):
 See: docs/roadmap/FULL_IMPLEMENTATION_PLAN.md — Phase 7
 """
 
-from .layer import ProvenanceOS
+from .layer import ProvenanceChain, ProvenanceEvent, ProvenanceOS
 
-__all__ = ["ProvenanceOS"]
+__all__ = ["ProvenanceOS", "ProvenanceEvent", "ProvenanceChain"]

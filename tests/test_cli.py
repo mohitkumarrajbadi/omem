@@ -19,7 +19,7 @@ class TestCLI:
         for help_flag in ["-h", "--help"]:
             result = self.runner.invoke(cli, [help_flag])
             assert result.exit_code == 0
-            assert "OMem — AI Memory Operating System" in result.output
+            assert "Agent State Infrastructure SDK" in result.output
 
     def test_demo(self):
         result = self.runner.invoke(cli, ["demo"])
