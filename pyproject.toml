@@ -106,7 +106,7 @@ Changelog = "https://github.com/mohitkumarrajbadi/omem/releases"
 # Used when building from a git checkout without a version tag, or in
 # editable installs.  The real version is always embedded into the wheel /
 # sdist at publish time via SETUPTOOLS_SCM_PRETEND_VERSION in CI.
-fallback_version = "0.1.0"
+fallback_version = "3.0.0"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

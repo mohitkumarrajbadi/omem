@@ -178,7 +178,7 @@ Cloud mode
 | RBAC roles | `governance/layer.py` | Local: definitions only; cloud: gateway-enforced |
 | Retention / deletion | `governance/layer.py` | Cascade across memory + state + audit |
 
-Deprecated shims (`omem.security`, `omem.org`, `omem.codebase`, `omem.viz`, `omem.classify`) re-export from canonical locations. New code must use canonical paths.
+All security modules live under `governance/`. Legacy paths (`omem.security`, `omem.org`, etc.) raise `ImportError` in v3.0 — see ADR-003.
 
 ---
 
@@ -230,14 +230,11 @@ omem/
 ├── cloud/                      # Client + server
 ├── backends/                   # sqlite | postgres
 ├── core/                       # Private engine
-├── integrations/               # MCP, LangChain, CrewAI, LlamaIndex
-│
-├── org/                        # ⚠ deprecated shim → memory.org
-├── security/                   # ⚠ deprecated shim → governance
-├── codebase/                   # ⚠ deprecated shim → knowledge.codebase
-├── viz/                        # ⚠ deprecated shim → observe.dashboard
-└── classify.py                 # ⚠ deprecated shim → core.brain.classify
+└── integrations/               # MCP, LangChain, CrewAI, LlamaIndex
 ```
+
+Guard modules at package root (raise `ImportError` with migration hints — not importable):
+`org.py`, `security.py`, `codebase.py`, `viz.py`, `classify.py`
 
 Dev-only (not product layers): `benchmarks/eval/`, `benchmarks/`, `examples/`, `tests/`.
 
@@ -263,5 +260,6 @@ Current state: monolithic `server.py`. Split when Cloud C2–C3 land.
 
 - [ADR-001: Facade Pattern](./adr/001-facade-pattern.md)
 - [ADR-002: Canonical Package Layout](./adr/002-canonical-package-layout.md)
+- [ADR-003: v3.0 Release](./adr/003-v3-release.md)
 - [Project Structure](./PROJECT_STRUCTURE.md) — contributor quick reference
 - [Full Implementation Plan](../roadmap/FULL_IMPLEMENTATION_PLAN.md) — phased delivery

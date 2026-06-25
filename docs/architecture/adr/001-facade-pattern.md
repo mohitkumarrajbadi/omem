@@ -38,7 +38,7 @@ All v2 layers are implemented as **thin facades** over the existing engine:
 | `omem.context` | Phase 3 | `rag.py` + `ranker.py` + `StateOS` |
 | `omem.knowledge` | Phase 4 | `core/graph/knowledge.py` |
 | `omem.observe` | Phase 6 | `core/utils/metrics.py` + new trace tables |
-| `omem.governance` | Phase 8 | `security/audit.py` + `brain/quotas.py` |
+| `omem.governance` | Phase 8 | `governance/audit.py` + `brain/quotas.py` |
 | `omem.provenance` | Phase 7 | `types.Provenance` + new lineage tables |
 | `omem.runtime` | Phase 9 | new agent registry + scheduler hooks |
 | `omem.cloud` | Cloud C1–C5 | HTTP adapter + FastAPI service |
@@ -54,13 +54,11 @@ All v2 layers are implemented as **thin facades** over the existing engine:
 **Trade-off:**
 - Stub `NotImplementedError` methods require discipline — every new phase
   must replace stubs with real code and tests before merging.
-- Two public entry points (`OMem` and `AgentState`) exist during the transition.
-  `OMem` will be deprecated (not removed) once Phase 5 is complete.
+- Two public entry points (`OMem` and `AgentState`) coexist during the v2 transition.
+  As of v3.0, `AgentState` is the recommended product entry; `OMem` remains stable.
 
-## Compatibility policy
+## Compatibility policy (v3.0)
 
-- `OMem`, `Memory`, `MemoryType`, `MemoryTier`, `MemoryLevel`, `MemoryPriority`,
-  `RetrievalExplanation` — **stable**, no breaking changes in v2.x.
-- `MemoryOS`, `MemoryQuery` — **stable** as of v2 MemoryOS launch.
-- `AgentState` — **unstable** until Phase 5 is complete; may change.
-- All other v2 layer classes — **unstable** until their phase ships.
+- `OMem`, `Memory`, core enums, `RetrievalExplanation` — **stable** (v1 contract preserved).
+- `AgentState`, all six layer facades — **stable** as of v3.0.
+- Legacy shim packages (`omem.org`, `omem.security`, `omem.codebase`, `omem.viz`, `omem.classify`) — **removed in v3.0** (see ADR-003).
