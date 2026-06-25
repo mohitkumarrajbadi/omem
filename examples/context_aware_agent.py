@@ -18,8 +18,6 @@ Uses in-memory backends — no disk I/O, no external services.
 import time
 
 from omem import AgentState, ContextEngine, ContextRequest
-from omem.context.tokenizer import TokenCounter
-from omem.state import InMemoryStateBackend, StateOS
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -126,7 +124,7 @@ def main() -> None:
         mode="planning",
     )
 
-    step(f"Context assembled in planning mode")
+    step("Context assembled in planning mode")
     info(f"Token count:    {ctx.token_count:,} of 3,000")
     info(f"Memories used:  {len(ctx.memories_used)} of {mem_count}")
     info(f"State included: {ctx.state_included}")
@@ -152,7 +150,6 @@ def main() -> None:
     header("Mode comparison — coding vs planning mode")
     # ──────────────────────────────────────────────────────────────────────
 
-    counter = TokenCounter.create()
     for mode in ["planning", "coding", "chat"]:
         ctx_m = agent.build_context(
             task="Implement the PKCE code challenge in Python",
@@ -169,8 +166,6 @@ def main() -> None:
     header("Standalone ContextEngine (without AgentState)")
     # ──────────────────────────────────────────────────────────────────────
 
-    from omem.memory.layer import MemoryOS
-    from omem.state.layer import StateOS
 
     engine = ContextEngine(
         memory=agent.memory,
@@ -188,9 +183,9 @@ def main() -> None:
         ctx2 = engine.build(req)
         elapsed = (time.perf_counter() - t0) * 1000
 
-    step(f"First call: fresh build | Subsequent calls: cached")
+    step("First call: fresh build | Subsequent calls: cached")
     info(f"Last build latency: {elapsed:.2f}ms | cached: {ctx2.assembled_at == engine.build(req).assembled_at}")
-    step(f"Cache hit confirmed — same assembled_at timestamp")
+    step("Cache hit confirmed — same assembled_at timestamp")
 
     print(f"\n{GREEN}{BOLD}Phase 3 complete!{RESET} "
           f"The context engine delivered {ctx.savings_vs_naive:.0%} token savings "

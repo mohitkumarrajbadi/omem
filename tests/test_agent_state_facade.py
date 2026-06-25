@@ -42,13 +42,11 @@ Run:
 """
 
 import json
-import os
 import warnings
 
 import pytest
 
 from omem import AgentConfig, AgentState
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Fixtures
@@ -446,7 +444,7 @@ class TestCheckpointResume:
         agent.set_goal("goal-A")
         chk1 = agent.checkpoint()
         agent.set_goal("goal-B")
-        chk2 = agent.checkpoint()
+        agent.checkpoint()
         payload = agent.resume_from(chk1)
         assert payload.goal == "goal-A"
 
@@ -715,7 +713,7 @@ class TestCrossLayerIntegration:
         a.learn("FastAPI", "uses", "SQLAlchemy")
 
         # Work
-        snap = a.snapshot(label="before-models")
+        a.snapshot(label="before-models")
         a.advance()
         a.record_tool("code_gen", {"file": "models.py", "lines": 120})
 

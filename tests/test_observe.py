@@ -13,11 +13,9 @@ import pytest
 from omem.observe.events import (
     ObserveOS,
     TraceEvent,
-    _compute_metrics,
     _percentile,
     new_trace_id,
 )
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Fixtures

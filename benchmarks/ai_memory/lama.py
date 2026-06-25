@@ -17,7 +17,7 @@ def run_lama(dataset: str = "open_lama", model_name: str = "all-MiniLM-L6-v2", n
             "error": str(exc),
         }
 
-    engine = OMem(backend="memory", model=model_name)
+    _engine = OMem(backend="memory", model=model_name)
 
     return {
         "benchmark": "lama",

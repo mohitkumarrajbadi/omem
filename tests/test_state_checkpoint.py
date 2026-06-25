@@ -133,12 +133,12 @@ class TestCrashSimulation:
         # Step 1: Load data
         state.advance(session)
         state.record_tool(session, ToolResult(tool="read_csv", input={}, output={"rows": 500}))
-        chk1 = state.checkpoint(session)
+        state.checkpoint(session)
 
         # Step 2: Clean data
         state.advance(session)
         state.record_tool(session, ToolResult(tool="clean", input={}, output={"dropped": 10}))
-        chk2 = state.checkpoint(session)
+        state.checkpoint(session)
 
         # Step 3 starts but crashes — simulate by NOT checkpointing
         state.advance(session)

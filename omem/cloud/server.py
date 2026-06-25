@@ -61,7 +61,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from .. import __version__
@@ -836,8 +836,8 @@ async def mcp_sse(request: Request):
           "url": "http://<your-ip>:8080/mcp/sse"
         }
     """
-    import json as _json
     import asyncio
+    import json as _json
 
     async def event_stream():
         # Initial MCP handshake — emit server capabilities

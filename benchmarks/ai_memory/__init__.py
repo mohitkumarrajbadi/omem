@@ -4,8 +4,8 @@ This package hosts schema and runner helpers for the core AI memory
 benchmarks: MTEB, BEIR, LongBench/SCROLLS, and LAMA/LAMA-UHN.
 """
 
-from .config import AVAILABLE_BENCHMARKS, DEFAULT_DATASETS, DEFAULT_MODEL
 from .beir import run_beir
+from .config import AVAILABLE_BENCHMARKS, DEFAULT_DATASETS, DEFAULT_MODEL
 from .lama import run_lama
 from .longbench import run_longbench
 from .mteb import run_mteb

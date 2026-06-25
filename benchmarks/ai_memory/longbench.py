@@ -17,7 +17,7 @@ def run_longbench(dataset: str = "wiki_long_doc", model_name: str = "all-MiniLM-
             "error": str(exc),
         }
 
-    engine = OMem(backend="memory", model=model_name)
+    _engine = OMem(backend="memory", model=model_name)
 
     return {
         "benchmark": "longbench",

@@ -21,7 +21,7 @@ Usage::
 """
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 

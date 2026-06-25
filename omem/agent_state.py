@@ -43,12 +43,11 @@ See: docs/roadmap/FULL_IMPLEMENTATION_PLAN.md — Phase 5
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import time
-from dataclasses import dataclass, field
-from typing import Any, Dict, Iterator, List, Optional, TYPE_CHECKING
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from .agent_config import AgentConfig
 from .api import OMem
@@ -143,7 +142,6 @@ class ExplanationReport:
 
     def format(self) -> str:
         """Return a human-readable multi-line explanation."""
-        W = _ansi_dim   # for structured output
         lines: List[str] = [
             f"╔══ Explain: {self.query!r}",
             f"║  session={self.session_id or '(none)'}  "
@@ -1404,7 +1402,7 @@ class AgentState:
 
     def __str__(self) -> str:
         lines = [
-            f"AgentState",
+            "AgentState",
             f"  session   : {self.session_id or '(none)'}",
             f"  namespace : {self.namespace}",
             f"  backend   : {self.backend_type}",

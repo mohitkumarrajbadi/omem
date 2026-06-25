@@ -12,15 +12,14 @@ from unittest.mock import MagicMock
 import pytest
 
 from omem.governance.layer import (
+    ROLE_ADMIN,
+    ROLE_EDITOR,
+    ROLE_VIEWER,
     DeletionReport,
     GovernanceOS,
     RetentionPolicy,
     Role,
-    ROLE_ADMIN,
-    ROLE_EDITOR,
-    ROLE_VIEWER,
 )
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Fixtures

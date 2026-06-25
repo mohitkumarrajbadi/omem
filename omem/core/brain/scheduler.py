@@ -5,7 +5,6 @@ from typing import Dict, List, Optional
 
 from ...types import Memory, MemoryTier
 
-
 _STM_PROMOTE_ACCESSES = 3
 _STM_MAX_AGE_SECONDS = 3600.0
 _LTM_MIN_ACCESSES = 5

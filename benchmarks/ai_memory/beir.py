@@ -1,6 +1,6 @@
 """BEIR-style domain robustness benchmark runner."""
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from omem import OMem
 
@@ -17,7 +17,7 @@ def run_beir(dataset: str = "ms_marco", model_name: str = "all-MiniLM-L6-v2", n_
             "error": str(exc),
         }
 
-    engine = OMem(backend="memory", model=model_name)
+    _engine = OMem(backend="memory", model=model_name)
 
     return {
         "benchmark": "beir",

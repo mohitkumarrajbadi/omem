@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional, Set
 
-from ...types import GraphNode, NodeKind, Provenance, RelationEdge
+from ...types import GraphNode, NodeKind, Provenance
 
 logger = logging.getLogger(__name__)
 

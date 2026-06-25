@@ -2,7 +2,7 @@
 
 import pytest
 
-from omem import OMem, MemoryType
+from omem import MemoryType, OMem
 from omem.core.graph.knowledge import EdgeType, KnowledgeGraph
 from omem.core.retrieval.fusion import fuse_score, normalize_graph_distance
 

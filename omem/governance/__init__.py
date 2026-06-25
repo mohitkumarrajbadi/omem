@@ -13,15 +13,15 @@ See: docs/roadmap/FULL_IMPLEMENTATION_PLAN.md — Phase 8
 """
 
 from .layer import (
+    ROLE_ADMIN,
+    ROLE_EDITOR,
+    ROLE_VIEWER,
     DeletionPolicy,
     DeletionReport,
     GovernanceOS,
     RetentionPolicy,
     RetentionReport,
     Role,
-    ROLE_ADMIN,
-    ROLE_EDITOR,
-    ROLE_VIEWER,
 )
 
 __all__ = [

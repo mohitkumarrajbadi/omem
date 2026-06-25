@@ -31,7 +31,6 @@ from omem.knowledge import (
     KnowledgeStats,
 )
 
-
 # ──────────────────────────────────────────────────────────────────────────────
 # Fixtures
 # ──────────────────────────────────────────────────────────────────────────────
@@ -591,7 +590,7 @@ class TestCentrality:
         # Python is connected to many entities — should have high centrality
         python_c = kg_populated.entity_centrality("Python")
         # OMem has fewer direct connections to other nodes in depth
-        omo_c = kg_populated.entity_centrality("OMem")
+        _omo_c = kg_populated.entity_centrality("OMem")
         # Python should have equal or higher centrality
         assert python_c >= 0.0
 

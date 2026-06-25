@@ -99,7 +99,6 @@ class CodeRetriever:
 
         # Pick the primary result (highest combined weight without graph yet)
         def combined(s):
-            w = self.weights
             return fuse_score(
                 semantic=s["semantic"],
                 keyword=0.0,

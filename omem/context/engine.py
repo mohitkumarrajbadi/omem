@@ -583,7 +583,6 @@ class ContextEngine:
     def _make_state_sections(self, session_id: str) -> List[_ContextSection]:
         """Load state and split into header + tools sections."""
         try:
-            from ..state.exceptions import SessionNotFoundError
             payload = self._state.load(session_id)
         except Exception:
             return []
