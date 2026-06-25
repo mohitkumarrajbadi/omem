@@ -20,7 +20,19 @@ deploy/
 docker compose -f deploy/docker/docker-compose.local.yml up --build
 ```
 
-## Quick start (Cloud Phase C4)
+## Quick start (Akamai cloud proof on Linode)
+
+Deploy the **`cloud`** branch to a Linode VM for wizard / leadership demos:
+
+```bash
+export OMEM_LINODE_IP=<your-linode-ip>
+ssh root@$OMEM_LINODE_IP 'bash -s' < deploy/scripts/linode-setup.sh   # first time only
+./deploy/scripts/cloud-proof-deploy.sh --host "$OMEM_LINODE_IP" --branch cloud
+```
+
+Playbook: [docs/guides/CLOUD_PROOF.md](../docs/guides/CLOUD_PROOF.md)
+
+## Quick start (Cloud Phase C4 — full Terraform)
 
 ```bash
 # 1. Set credentials

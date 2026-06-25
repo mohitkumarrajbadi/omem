@@ -29,11 +29,14 @@ A PR should be mergeable when it:
 
 | Branch | Purpose |
 |---|---|
-| `main` | Stable releases |
+| `main` | Stable OSS releases |
 | `dev` | Active development |
-| `staging` | Release candidate validation |
+| `staging` | Pre-release integration testing |
+| `cloud` | Akamai/Linode tech-preview demo (deployable proof) |
 
 Patch releases should be boring. Minor releases may add APIs. Breaking changes require a migration guide.
+
+**Cloud proof:** merge `staging` → `cloud`, deploy with `./deploy/scripts/cloud-proof-deploy.sh`. See [docs/guides/CLOUD_PROOF.md](./docs/guides/CLOUD_PROOF.md).
 
 ## Security
 

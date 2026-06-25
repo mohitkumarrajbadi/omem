@@ -65,9 +65,10 @@ pytest tests/ -v
 |---|---|
 | `dev` | All active development. PRs target `dev`. |
 | `staging` | Pre-release integration testing. |
-| `main` | Stable releases only. |
+| `main` | Stable OSS releases (PyPI tags). |
+| `cloud` | **Akamai/Linode demo** — merge from `staging`, deploy to Linode. |
 
-**Workflow:**
+**Daily workflow:**
 
 ```bash
 git checkout dev
@@ -77,6 +78,16 @@ git checkout -b feat/your-feature-name
 git push origin feat/your-feature-name
 # Open a PR targeting dev
 ```
+
+**Promote to live demo (`cloud` branch):**
+
+```bash
+git checkout staging && git merge dev && git push origin staging
+git checkout cloud && git merge staging && git push origin cloud
+./deploy/scripts/cloud-proof-deploy.sh --host "$OMEM_LINODE_IP"
+```
+
+Full playbook: [docs/guides/CLOUD_PROOF.md](./docs/guides/CLOUD_PROOF.md)
 
 ---
 

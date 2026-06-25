@@ -4,7 +4,7 @@
 set -euo pipefail
 
 OMEM_REPO="${OMEM_REPO:-https://github.com/mohitkumarrajbadi/omem.git}"
-OMEM_BRANCH="${OMEM_BRANCH:-main}"
+OMEM_BRANCH="${OMEM_BRANCH:-cloud}"   # Akamai proof branch; override with OMEM_BRANCH=main if needed
 OMEM_API_KEY="${OMEM_API_KEY:-}"   # optional: set env var before running
 OMEM_PORT="${OMEM_PORT:-8080}"
 

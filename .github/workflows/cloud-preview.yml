@@ -1,0 +1,48 @@
+name: Cloud Preview
+
+# Runs on the `cloud` branch — keeps the Akamai/Linode demo deployable.
+# Does NOT auto-deploy to Linode (no secrets required for CI).
+# Manual deploy: ./deploy/scripts/cloud-proof-deploy.sh
+
+on:
+  push:
+    branches: ["cloud"]
+  pull_request:
+    branches: ["cloud"]
+  workflow_dispatch:
+
+jobs:
+  test-and-build:
+    name: Test + Docker build (cloud branch)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Rust + package
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          source "$HOME/.cargo/env"
+          python -m pip install --upgrade pip
+          pip install "setuptools-rust>=1.8.0"
+          pip install -e ".[dev,fast]"
+
+      - name: Run tests
+        run: pytest tests/ -q --tb=short
+
+      - name: Build cloud Docker image
+        run: docker build -f deploy/docker/Dockerfile.local -t omem-cloud-preview:ci .
+
+      - name: Smoke test container
+        run: |
+          docker run -d --name omem-smoke -p 18080:8080 \
+            -e OMEM_BACKEND=sqlite \
+            -e OMEM_DB_PATH=/data/omem.db \
+            omem-cloud-preview:ci
+          sleep 6
+          curl -sf http://localhost:18080/v1/health
+          docker rm -f omem-smoke

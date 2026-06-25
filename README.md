@@ -335,6 +335,8 @@ from omem import AgentState
 
 See [docs/architecture/ARCHITECTURE.md](./docs/architecture/ARCHITECTURE.md) and [CHANGELOG.md](./CHANGELOG.md#300---2026-06-25) for v3 migration notes.
 
+**Akamai cloud proof (Linode demo):** deploy the `cloud` branch with [docs/guides/CLOUD_PROOF.md](./docs/guides/CLOUD_PROOF.md).
+
 ## Integrations
 
 ```python
