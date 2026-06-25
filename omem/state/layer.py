@@ -528,7 +528,10 @@ class StateOS:
             raise CheckpointNotFoundError(
                 f"No checkpoints found for session {session_id!r}"
             )
-        latest = max(checkpoints, key=lambda c: c.created_at)
+        # Use insertion order, not max(created_at). On Windows (and in tight
+        # loops elsewhere) several checkpoints can share the same time.time()
+        # value; max() would then return the *first* tie, not the latest.
+        latest = checkpoints[-1]
         return self.resume(latest.id)
 
     def list_checkpoints(self, session_id: str) -> List[StateCheckpoint]:

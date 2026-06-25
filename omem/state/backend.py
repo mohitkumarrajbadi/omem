@@ -425,7 +425,7 @@ class SQLiteStateBackend(StateBackend):
     def list_checkpoints(self, session_id: str) -> List[StateCheckpoint]:
         rows = self._query(
             "SELECT id, session_id, payload_hash, payload_json, created_at "
-            "FROM state_checkpoints WHERE session_id = ? ORDER BY created_at ASC",
+            "FROM state_checkpoints WHERE session_id = ? ORDER BY rowid ASC",
             (session_id,),
         )
         return [self._row_to_checkpoint(r) for r in rows]
