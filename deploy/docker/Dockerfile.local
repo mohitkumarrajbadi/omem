@@ -1,0 +1,39 @@
+# Dockerfile.local — OMem local dev / test image (SQLite, no Postgres)
+#
+# Build:
+#   docker build -f deploy/docker/Dockerfile.local -t omem-local .
+#
+# Run:
+#   docker run -p 8080:8080 -v omem-data:/data omem-local
+
+FROM python:3.11-slim
+
+LABEL org.opencontainers.image.title="OMem Local API"
+LABEL org.opencontainers.image.description="OMem Agent State Infrastructure — local SQLite mode"
+
+WORKDIR /app
+
+# System deps for numpy + faiss (CPU)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential libgomp1 curl && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy project
+COPY pyproject.toml setup.py ./
+COPY omem/ ./omem/
+
+# Install base + server deps
+RUN pip install --no-cache-dir -e ".[embeddings]" && \
+    pip install --no-cache-dir fastapi "uvicorn[standard]" httpx python-multipart
+
+# Data volume for persistent SQLite db
+VOLUME ["/data"]
+
+EXPOSE 8080
+
+ENV OMEM_BACKEND=sqlite \
+    OMEM_DB_PATH=/data/omem.db \
+    OMEM_NAMESPACE=default \
+    OMEM_LOG_LEVEL=INFO
+
+CMD ["uvicorn", "omem.cloud.server:app", "--host", "0.0.0.0", "--port", "8080"]
