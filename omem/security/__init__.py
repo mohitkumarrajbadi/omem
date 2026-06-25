@@ -1,5 +1,0 @@
-"""Deprecated compatibility shim — security lives under ``omem.governance``."""
-
-from omem.governance.encryption import EncryptionManager
-
-__all__ = ["EncryptionManager"]
