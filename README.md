@@ -325,24 +325,15 @@ Repository map:
 
 See [docs/architecture/ARCHITECTURE.md](./docs/architecture/ARCHITECTURE.md) for the full layout.
 
-## V2: AI State Infrastructure
+## V3: Persistent State Infrastructure
 
-The current repo already has the memory core: persistent memory, graph substrate, multi-objective retrieval, sleep cycles, MCP, and codebase memory.
+OMem v3 is the six-layer Agent State platform. Use `AgentState` as the single entry point:
 
-V2 expands OMem into broader AI state infrastructure:
+```python
+from omem import AgentState
+```
 
-| Layer | Goal |
-|---|---|
-| Memory | Store, retrieve, consolidate, forget, explain |
-| State | Save, restore, rollback, fork agent execution state |
-| Knowledge | Facts, concepts, graph reasoning |
-| Observability | Metrics, traces, replay, context efficiency |
-| Evaluation | Recall quality, agent continuity, benchmark reports |
-| Governance | Policies, retention, deletion, audit |
-| Provenance | Source lineage, versions, confidence, attribution |
-| Runtime | Agent registry, scheduling, sync, recovery |
-
-Read the roadmap: [docs/roadmap/ROADMAP.md](./docs/roadmap/ROADMAP.md)
+See [docs/architecture/ARCHITECTURE.md](./docs/architecture/ARCHITECTURE.md) and [CHANGELOG.md](./CHANGELOG.md#300---2026-06-25) for v3 migration notes.
 
 ## Integrations
 

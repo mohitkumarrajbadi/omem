@@ -5,6 +5,40 @@ All notable changes to OMem will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-06-25
+
+### Added
+
+- **Six-layer product architecture** — `memory`, `state`, `context`, `knowledge`, `observe`, `governance`
+- **`AgentState`** — unified product facade composing all layers
+- Cross-cutting packages: `provenance`, `runtime`, `cloud`
+- Layer extensions: `memory/org/`, `knowledge/codebase/`, `observe/dashboard/`
+- Governance modules consolidated: `governance/audit.py`, `governance/encryption.py`
+- Architecture docs: `docs/architecture/ARCHITECTURE.md`, ADR-002, ADR-003
+- Eval harness relocated to `benchmarks/eval/`
+
+### Changed
+
+- **Breaking:** Removed v2 compatibility shims — update imports before upgrading:
+  - `omem.org` → `omem.memory.org`
+  - `omem.security` → `omem.governance`
+  - `omem.codebase` → `omem.knowledge.codebase`
+  - `omem.viz` → `omem.observe.dashboard`
+  - `omem.classify` → `omem.core.brain.classify`
+- Docker: root `Dockerfile` / `docker-compose.yml` removed; use `deploy/docker/`
+- Design notes moved from `issues/` to `docs/ideas/`
+- `AgentState` and all layer facades marked **stable**
+
+### Removed
+
+- `omem/org/`, `omem/security/`, `omem/codebase/`, `omem/viz/` packages (directories deleted)
+- Legacy imports now raise `ImportError` with migration hints via guard modules (`org.py`, `security.py`, …)
+- `omem/eval/` (use `benchmarks/eval/` for dev benchmarks)
+
+[3.0.0]: https://github.com/mohitkumarrajbadi/omem/releases/tag/v3.0.0
+
+---
+
 ## [0.1.0] - 2026-05-16
 
 ### Stable

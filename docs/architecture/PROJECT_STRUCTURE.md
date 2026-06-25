@@ -40,9 +40,7 @@ omem/
 └── integrations/           # MCP, LangChain, CrewAI, LlamaIndex
 ```
 
-### Deprecated shims (remove in v3.0)
-
-`org/`, `security/`, `codebase/`, `viz/`, `classify.py` — re-export from canonical paths. Do not add new code here.
+Legacy import guard modules (raise `ImportError` in v3.0): `org.py`, `security.py`, `codebase.py`, `viz.py`, `classify.py`
 
 ---
 
@@ -107,4 +105,5 @@ docker compose -f deploy/docker/docker-compose.local.yml up --build
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — full system design
 - [ADR-001: Facade Pattern](./adr/001-facade-pattern.md)
 - [ADR-002: Canonical Package Layout](./adr/002-canonical-package-layout.md)
+- [ADR-003: v3.0 Release](./adr/003-v3-release.md)
 - [Full Implementation Plan](../roadmap/FULL_IMPLEMENTATION_PLAN.md)

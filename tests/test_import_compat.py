@@ -224,10 +224,12 @@ def test_canonical_paths_importable():
     from omem.observe.dashboard import serve  # noqa: F401
 
 
-def test_deprecated_shim_paths_still_importable():
-    """Backward-compat shims remain until v3.0."""
-    from omem.classify import auto_classify  # noqa: F401
-    from omem.codebase import ProjectGraph  # noqa: F401
-    from omem.org import OrgMemoryOS  # noqa: F401
-    from omem.security.audit import AuditLogger  # noqa: F401
-    from omem.viz.server import serve  # noqa: F401
+def test_v3_legacy_shim_paths_raise_import_error():
+    """v3.0 — legacy import paths raise ImportError with migration hint (ADR-003)."""
+    import importlib
+
+    import pytest
+
+    for mod in ("omem.org", "omem.security", "omem.codebase", "omem.viz", "omem.classify"):
+        with pytest.raises(ImportError, match="removed in v3.0"):
+            importlib.import_module(mod)
