@@ -323,10 +323,10 @@ class AgentState:
         self._provenance = ProvenanceOS()
 
         # ── Governance (Phase 8) — wired with omem + state ───────────
-        _audit_db = (
-            None if _cfg.db_path is None
-            else _cfg.db_path.replace(".db", "_audit.db").replace(":memory:", None)
-        ) if isinstance(_cfg.db_path, str) and _cfg.db_path != ":memory:" else None
+        if isinstance(_cfg.db_path, str) and _cfg.db_path not in (":memory:", None):
+            _audit_db = _cfg.db_path.replace(".db", "_audit.db").replace(":memory:", ":memory:")
+        else:
+            _audit_db = None
         self._governance = GovernanceOS(
             omem=_omem,
             state=self._state,

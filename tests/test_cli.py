@@ -30,7 +30,7 @@ class TestCLI:
     def test_benchmark(self):
         result = self.runner.invoke(cli, ["benchmark", "--n", "50"])
         assert result.exit_code == 0
-        assert "Initiating benchmark profile routines" in result.output
+        assert "Benchmarking" in result.output
         assert "ms" in result.output
 
     def test_init(self):
@@ -42,4 +42,17 @@ class TestCLI:
     def test_stats(self):
         result = self.runner.invoke(cli, ["stats"])
         assert result.exit_code == 0
-        assert "Total Index Nodes" in result.output
+        assert "Memory statistics" in result.output
+        assert "Total" in result.output
+
+    def test_unknown_command_suggests(self):
+        result = self.runner.invoke(cli, ["recal", "x"])
+        assert result.exit_code != 0
+        assert "Did you mean" in result.output
+        assert "recall" in result.output
+
+    def test_no_color_strips_ansi(self, monkeypatch):
+        monkeypatch.setenv("NO_COLOR", "1")
+        result = self.runner.invoke(cli, ["health"])
+        assert result.exit_code == 0
+        assert "\x1b[" not in result.output  # no ANSI escape codes

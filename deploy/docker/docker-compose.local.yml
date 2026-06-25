@@ -1,0 +1,46 @@
+version: "3.9"
+
+# OMem — local Docker stack for development and testing
+# Uses SQLite (no Postgres needed). Boots in under 30 seconds.
+#
+# Usage:
+#   docker compose -f deploy/docker/docker-compose.local.yml up --build
+#
+# Then test:
+#   curl http://localhost:8080/v1/health
+#   curl -X POST http://localhost:8080/v1/remember \
+#        -H 'Content-Type: application/json' \
+#        -d '{"content":"FastAPI uses Pydantic v2","importance":0.9}'
+#
+# MCP endpoint (for Claude Desktop / Cursor):
+#   http://localhost:8080/mcp/messages
+#   http://localhost:8080/mcp/sse
+
+services:
+  omem-api:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.local
+    image: omem-local:latest
+    container_name: omem-local-api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - OMEM_BACKEND=sqlite
+      - OMEM_DB_PATH=/data/omem.db
+      - OMEM_NAMESPACE=default
+      - OMEM_LOG_LEVEL=INFO
+      # Set OMEM_API_KEY to require auth (leave empty for open dev mode)
+      - OMEM_API_KEY=${OMEM_API_KEY:-}
+    volumes:
+      - omem-local-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/v1/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  omem-local-data:
