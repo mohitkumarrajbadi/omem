@@ -1,12 +1,13 @@
-"""omem.codebase package – Project Memory (Codebase Cognition) layer.
-Provides AST ingestion, graph construction, incremental sync, and hybrid retrieval.
-"""
+"""Deprecated compatibility shim — codebase cognition lives under ``omem.knowledge.codebase``."""
 
-from .graph import ProjectGraph
-from .ingester import ProjectIngester
-from .retriever import CodeRetriever
-from .sync import ProjectSync
-from .types import CodeSymbol, SymbolType
+from omem.knowledge.codebase import (
+    CodeRetriever,
+    CodeSymbol,
+    ProjectGraph,
+    ProjectIngester,
+    ProjectSync,
+    SymbolType,
+)
 
 __all__ = [
     "CodeSymbol",

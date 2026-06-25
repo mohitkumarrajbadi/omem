@@ -1,11 +1,6 @@
-"""Phase 10 — Shared Organizational Memory.
+"""Deprecated compatibility shim — org memory lives under ``omem.memory.org``."""
 
-Namespace hierarchy (personal → team → org → global) with scope-aware
-recall and explicit memory promotion.
-"""
-
-from .layer import NamespaceInfo, OrgMemoryOS, ShareResult
-from .namespace import NamespaceNode, NamespaceResolver
+from omem.memory.org import NamespaceInfo, NamespaceNode, NamespaceResolver, OrgMemoryOS, ShareResult
 
 __all__ = [
     "OrgMemoryOS",

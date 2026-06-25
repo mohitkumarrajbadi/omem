@@ -1,4 +1,4 @@
-"""Deprecated compatibility shim — security lives under ``omem.governance``."""
+"""Deprecated: use ``omem.governance.encryption``."""
 
 from omem.governance.encryption import EncryptionManager
 

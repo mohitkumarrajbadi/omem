@@ -12,6 +12,8 @@ APIs (implemented in Phase 8):
 See: docs/roadmap/FULL_IMPLEMENTATION_PLAN.md — Phase 8
 """
 
+from .audit import AuditLogger
+from .encryption import EncryptionManager
 from .layer import (
     ROLE_ADMIN,
     ROLE_EDITOR,
@@ -25,6 +27,8 @@ from .layer import (
 )
 
 __all__ = [
+    "AuditLogger",
+    "EncryptionManager",
     "GovernanceOS",
     "RetentionPolicy",
     "DeletionPolicy",

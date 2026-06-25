@@ -245,7 +245,7 @@ class TestLayerProperties:
 
     def test_org_accessible(self, agent):
         """Phase 10: OrgMemoryOS is now fully implemented."""
-        from omem.org.layer import OrgMemoryOS
+        from omem.memory.org.layer import OrgMemoryOS
         assert isinstance(agent.org, OrgMemoryOS)
 
 

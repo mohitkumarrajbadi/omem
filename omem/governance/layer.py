@@ -8,7 +8,7 @@ Makes OMem safe for enterprise deployments:
   - Compliance-safe namespace export
 
 Builds on existing foundations:
-  - ``omem/security/audit.py`` — AuditLogger (async WAL-mode SQLite)
+  - ``omem/governance/audit.py`` — AuditLogger (async WAL-mode SQLite)
   - ``omem/core/brain/quotas.py`` — MemoryQuota (namespace quota checks)
   - ``omem/core/brain/forgetting.py`` — ForgetResult (forgetting engine hooks)
 
@@ -251,7 +251,7 @@ class GovernanceOS:
 
         # Lazy import to avoid import cycles — AuditLogger is already initialised
         # on the OMem side; we create a separate read handle for GovernanceOS.
-        from omem.security.audit import AuditLogger
+        from omem.governance.audit import AuditLogger
 
         self._audit = AuditLogger(db_path=audit_db_path)
 

@@ -1049,7 +1049,7 @@ def benchmark(ctx: click.Context, n: int):
 @click.pass_context
 def dashboard(ctx: click.Context, port: int):
     """Open the web dashboard in your browser."""
-    from .viz.server import serve as start_dashboard
+    from .observe.dashboard.server import serve as start_dashboard
 
     m = _get_omem(ctx)
     note(f"Dashboard running at http://localhost:{port}  (Ctrl+C to stop)")

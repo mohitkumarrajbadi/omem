@@ -1,6 +1,6 @@
 """AST-based ingestion for the Project Memory layer.
 Parses Python files, extracts modules, classes, functions/methods and their
-relationships, and returns a list of :class:`~omem.codebase.types.CodeSymbol`.
+relationships, and returns a list of :class:`~omem.knowledge.codebase.types.CodeSymbol`.
 """
 
 import ast

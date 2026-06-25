@@ -36,6 +36,11 @@ htmlcov/
 # Rust build artifacts
 rust/target/
 
+# Native extension (editable install)
+*.so
+*.dylib
+omem_rust*.so
+
 # Linter cache
 .ruff_cache/
 

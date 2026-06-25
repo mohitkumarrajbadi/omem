@@ -1,12 +1,12 @@
 """Graph construction utilities for the Project Memory layer.
-Creates OMem memories for each :class:`~omem.codebase.types.CodeSymbol` and
+Creates OMem memories for each :class:`~omem.knowledge.codebase.types.CodeSymbol` and
 establishes hierarchical and dependency edges.
 """
 
 from typing import List
 
-from ..api import OMem
-from ..types import MemoryType
+from ...api import OMem
+from ...types import MemoryType
 from .types import CodeSymbol
 
 

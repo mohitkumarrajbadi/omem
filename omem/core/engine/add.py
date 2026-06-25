@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 
 import numpy as np
 
-from ...classify import auto_classify_multi
+from ..brain.classify import auto_classify_multi
 from ...types import PRIORITY_MULTIPLIER, Memory, MemoryPriority, MemoryTier, MemoryType
 from ..brain.importance import estimate_importance, estimate_priority
 from ..brain.ingestion import apply_ingest_to_memory, ingest_experience

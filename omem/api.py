@@ -10,7 +10,7 @@ from typing import Callable, Dict, List, Optional
 
 from .backends.sqlite import SQLiteBackend
 from .core.engine import BrainTrace, DreamResult, ForgetResult
-from .security.audit import AuditLogger
+from .governance.audit import AuditLogger
 from .types import Memory, MemoryTier, MemoryType, RetrievalExplanation
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,7 @@ class OMem:
         encryption_key: Optional[str] = None,
     ):
         # Resolve encryption
-        from .security.encryption import EncryptionManager
+        from .governance.encryption import EncryptionManager
         _raw = encryption_key or os.environ.get("OMEM_ENCRYPTION_KEY")
         _enc = EncryptionManager(base64.urlsafe_b64decode(_raw + "==")) if _raw else None
 
@@ -583,8 +583,8 @@ class OMem:
         """Ingest an entire Python project into the Project Memory.
         Returns the number of symbols added.
         """
-        from .codebase.graph import ProjectGraph
-        from .codebase.ingester import ProjectIngester
+        from .knowledge.codebase.graph import ProjectGraph
+        from .knowledge.codebase.ingester import ProjectIngester
 
         ingester = ProjectIngester(path)
         symbols = ingester.crawl()
@@ -596,7 +596,7 @@ class OMem:
         """Incrementally sync a project using Git diff.
         Returns the count of symbols processed (added/updated + deletions).
         """
-        from .codebase.sync import ProjectSync
+        from .knowledge.codebase.sync import ProjectSync
 
         sync = ProjectSync(self, path, namespace)
         return sync.sync()
@@ -614,7 +614,7 @@ class OMem:
         Returns enriched dicts with file path, line numbers, type, summary,
         and optionally related symbols.
         """
-        from .codebase.retriever import CodeRetriever
+        from .knowledge.codebase.retriever import CodeRetriever
 
         retriever = CodeRetriever(self, namespace)
         return retriever.retrieve(

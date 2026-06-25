@@ -5,5 +5,6 @@ memory-native verbs while preserving the existing engine, storage, and tests.
 """
 
 from .layer import MemoryOS, MemoryQuery
+from .org import NamespaceInfo, NamespaceResolver, OrgMemoryOS, ShareResult
 
-__all__ = ["MemoryOS", "MemoryQuery"]
+__all__ = ["MemoryOS", "MemoryQuery", "OrgMemoryOS", "NamespaceResolver", "NamespaceInfo", "ShareResult"]

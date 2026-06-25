@@ -1,8 +1,8 @@
-"""Tests for omem.types and omem.classify."""
+"""Tests for omem.types and core brain classification."""
 
 import numpy as np
 
-from omem.classify import auto_classify
+from omem.core.brain.classify import auto_classify
 from omem.types import (
     PRIORITY_MULTIPLIER,
     Memory,

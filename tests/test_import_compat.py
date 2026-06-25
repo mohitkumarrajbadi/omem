@@ -209,3 +209,25 @@ def test_top_level_all_resolvable():
     import omem
     for name in omem.__all__:
         assert hasattr(omem, name), f"omem.__all__ contains {name!r} but it is not importable"
+
+
+# ---------------------------------------------------------------------------
+# Canonical package paths (preferred — see ADR-002)
+# ---------------------------------------------------------------------------
+
+def test_canonical_paths_importable():
+    from omem.core.brain.classify import auto_classify  # noqa: F401
+    from omem.governance.audit import AuditLogger  # noqa: F401
+    from omem.governance.encryption import EncryptionManager  # noqa: F401
+    from omem.knowledge.codebase import ProjectGraph  # noqa: F401
+    from omem.memory.org import OrgMemoryOS  # noqa: F401
+    from omem.observe.dashboard import serve  # noqa: F401
+
+
+def test_deprecated_shim_paths_still_importable():
+    """Backward-compat shims remain until v3.0."""
+    from omem.classify import auto_classify  # noqa: F401
+    from omem.codebase import ProjectGraph  # noqa: F401
+    from omem.org import OrgMemoryOS  # noqa: F401
+    from omem.security.audit import AuditLogger  # noqa: F401
+    from omem.viz.server import serve  # noqa: F401
