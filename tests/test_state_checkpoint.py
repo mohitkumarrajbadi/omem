@@ -111,6 +111,21 @@ class TestResume:
         with pytest.raises(CheckpointNotFoundError):
             state.resume_latest(session)
 
+    def test_resume_latest_with_identical_timestamps(self, state: StateOS, session: str):
+        """Regression: equal created_at must not pick the first checkpoint (Windows CI)."""
+        from unittest.mock import patch
+
+        fixed_ts = 1_700_000_000.0
+        with patch("omem.state.layer.time.time", return_value=fixed_ts):
+            state.advance(session)  # step 1
+            state.checkpoint(session)
+            state.advance(session)  # step 2
+            state.checkpoint(session)
+        state.advance(session)  # step 3 — should not be recovered
+
+        recovered = state.resume_latest(session)
+        assert recovered.step == 2
+
     def test_resume_preserves_tool_outputs(self, state: StateOS, session: str):
         state.record_tool(session, ToolResult(tool="load", input={}, output={"rows": 100}))
         chk_id = state.checkpoint(session)
@@ -160,6 +175,6 @@ class TestCrashSimulation:
 
         chks = state.list_checkpoints(session)
         assert len(chks) == 4
-        # Latest checkpoint has all 4 tool outputs
-        latest = max(chks, key=lambda c: c.created_at)
+        # Latest checkpoint has all 4 tool outputs (last in insertion order)
+        latest = chks[-1]
         assert len(latest.payload.tool_outputs) == 4
