@@ -12,7 +12,6 @@ import pytest
 
 from omem.provenance.layer import ProvenanceChain, ProvenanceEvent, ProvenanceOS
 
-
 # ──────────────────────────────────────────────────────────────────────────────
 # Fixtures
 # ──────────────────────────────────────────────────────────────────────────────
@@ -136,7 +135,6 @@ class TestProvenanceOS:
         assert len(history) <= 5
 
     def test_history_since(self, prov):
-        before = time.time()
         prov.record("old", "memory", "create", namespace="time-test")
         after = time.time() + 0.001
         prov.record("new", "memory", "create", namespace="time-test")

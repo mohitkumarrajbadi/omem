@@ -18,7 +18,6 @@ No external services needed — uses in-memory backend.
 import time
 
 from omem.state import InMemoryStateBackend, StateOS, StatePayload, ToolResult
-from omem.state.exceptions import CheckpointNotFoundError
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 

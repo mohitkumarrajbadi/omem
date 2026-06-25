@@ -32,12 +32,21 @@ def run_benchmark():
     vectors = np.random.rand(N_CANDIDATES, DIM).astype(np.float32)
     base_scores = np.random.rand(N_CANDIDATES).astype(np.float32)
     recencies = np.random.rand(N_CANDIDATES).astype(np.float32)
+    mem_types = np.zeros(N_CANDIDATES, dtype=np.uint8)
 
     weights = [0.6, 0.2, 0.15, 0.05]  # vector, importance, recency, keyword
+    type_boosts = np.ones(10, dtype=np.float32)
 
     print("Warming up Rust SIMD engine...")
     _ = omem_rust.rag_score_batch(
-        query, vectors[:100], base_scores[:100], recencies[:100], weights, TOP_K
+        query,
+        vectors[:100],
+        base_scores[:100],
+        recencies[:100],
+        mem_types[:100],
+        weights,
+        type_boosts,
+        TOP_K,
     )
 
     print(
@@ -49,7 +58,14 @@ def run_benchmark():
     t0 = time.time()
     for _ in range(ITERATIONS):
         omem_rust.rag_score_batch(
-            query, vectors, base_scores, recencies, weights, TOP_K
+            query,
+            vectors,
+            base_scores,
+            recencies,
+            mem_types,
+            weights,
+            type_boosts,
+            TOP_K,
         )
     t1 = time.time()
 

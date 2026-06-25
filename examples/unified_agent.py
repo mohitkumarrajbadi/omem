@@ -166,7 +166,7 @@ def main() -> None:
 
     sub("reason()")
     results = agent.reason("What does AgentState compose?")
-    print(f"  Q: 'What does AgentState compose?'")
+    print("  Q: 'What does AgentState compose?'")
     for r in results[:4]:
         tag = "⬥" if r.inference_type == "direct" else "◇"
         print(f"    {tag} [{r.confidence:.2f}] {r.statement}")
@@ -190,7 +190,7 @@ def main() -> None:
     print(f"  Savings      : {ctx.savings_vs_naive:.0%} vs naive dump")
     print(f"  Memories used: {len(ctx.memories_used)}")
     print(f"  State incl.  : {ctx.state_included}")
-    print(f"\n  --- Context bundle preview (first 300 chars) ---")
+    print("\n  --- Context bundle preview (first 300 chars) ---")
     print(f"  {ctx.text[:300]}...")
 
     sub("estimate_context_savings()")

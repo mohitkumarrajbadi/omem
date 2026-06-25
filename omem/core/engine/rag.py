@@ -27,7 +27,7 @@ from ..utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
 
-from .utils import _W_FREQUENCY, _W_IMPORTANCE, _W_KEYWORD, _W_RECENCY, _W_VECTOR  # noqa: E402
+from .utils import _W_IMPORTANCE, _W_KEYWORD, _W_RECENCY, _W_VECTOR  # noqa: E402
 
 
 def _passes_tier_filter(

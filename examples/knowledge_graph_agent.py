@@ -17,8 +17,8 @@ Run:
 """
 
 import json
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -109,7 +109,7 @@ def main():
             f"  memories={len(sg.related_memory_ids)}"
         )
         if sg.edges:
-            print(f"  Sample edges:")
+            print("  Sample edges:")
             for edge in sg.edges[:5]:
                 print(f"    {edge.source} —[{edge.predicate}]→ {edge.target}")
 

@@ -1,6 +1,7 @@
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
-use numpy::{PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
+use pyo3::types::IntoPyDict;
+use numpy::{PyArray2, PyReadonlyArray1, PyReadonlyArray2};
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::cmp::Ordering;
 use rayon::prelude::*;
@@ -81,6 +82,7 @@ fn lower_tokens(text: &str, stopwords: &HashSet<String>, min_len: usize, max_len
 }
 
 #[pyfunction]
+#[pyo3(signature = (text, stopwords=None, min_len=2, max_len=64))]
 fn tokenize_bm25(
     text: &str,
     stopwords: Option<Vec<String>>,
@@ -238,10 +240,12 @@ fn sleep_cycle(
     let imp = importances.as_slice()?;
     let ts = timestamps.as_slice()?;
     let counts = access_counts.as_slice()?;
-    let archived_at = if let Some(arr) = last_archived {
-        Some(arr.as_slice()?)
-    } else {
-        None
+    // Keep the owning `PyReadonlyArray1` alive for the whole function so the
+    // borrowed slice below does not outlive its source.
+    let archived_owner = last_archived;
+    let archived_at = match &archived_owner {
+        Some(arr) => Some(arr.as_slice()?),
+        None => None,
     };
 
     let log_base = 5.0f64;
@@ -283,6 +287,7 @@ fn sleep_cycle(
 }
 
 #[pyfunction]
+#[pyo3(signature = (texts, model_name=None))]
 fn embed_local_model(
     py: Python,
     texts: Vec<String>,
@@ -299,22 +304,95 @@ fn embed_local_model(
         .call_method1("SentenceTransformer", (model_name.as_str(),))
         .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
 
+    let kwargs = [("convert_to_numpy", true), ("show_progress_bar", false)].into_py_dict(py);
     let encoded = model
-        .call_method(
-            "encode",
-            (texts, ),
-            Some([("convert_to_numpy", true), ("show_progress_bar", false)].into_py_dict(py)),
-        )
+        .call_method("encode", (texts,), Some(kwargs))
         .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
 
     let numpy = py.import("numpy").map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
     let array = numpy
         .getattr("array")?
         .call1((encoded,))?
-        .cast_as::<PyArray2<f32>>()?
-        .to_owned();
+        .downcast::<PyArray2<f32>>()
+        .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
 
-    Ok(array.into_py(py))
+    Ok(Py::from(array))
+}
+
+// ── RAG: batched hybrid scoring (vector + importance + recency + type boost) ──
+
+/// Score a batch of candidate memories against a query and return the
+/// top-k `(index, score)` pairs, best first.
+///
+/// This is the hot path used by `omem.core.engine.rag`. Heavy lifting (the
+/// per-row dot products) runs in parallel via rayon; top-k selection uses a
+/// bounded min-heap so we never sort the full candidate set.
+#[pyfunction]
+#[pyo3(signature = (query, vectors, base_scores, recencies, mem_types, weights, type_boosts, top_k))]
+fn rag_score_batch(
+    query: PyReadonlyArray1<f32>,
+    vectors: PyReadonlyArray2<f32>,
+    base_scores: PyReadonlyArray1<f32>,
+    recencies: PyReadonlyArray1<f32>,
+    mem_types: PyReadonlyArray1<u8>,
+    weights: Vec<f32>,
+    type_boosts: Vec<f32>,
+    top_k: usize,
+) -> PyResult<Vec<(usize, f32)>> {
+    let query = query.as_slice()?;
+    let flat = vectors.as_slice()?;
+    let base = base_scores.as_slice()?;
+    let recency = recencies.as_slice()?;
+    let types = mem_types.as_slice()?;
+
+    let n = base.len();
+    let dim = query.len();
+    if n == 0 || dim == 0 || top_k == 0 {
+        return Ok(Vec::new());
+    }
+    if flat.len() != n * dim {
+        return Err(PyRuntimeError::new_err(
+            "rag_score_batch: vectors shape does not match query dim / candidate count",
+        ));
+    }
+
+    // Pack the dynamic weight/boost vectors into the fixed-size arrays the
+    // SIMD scorer expects, tolerating shorter inputs gracefully.
+    let mut w = [0.0f32; 4];
+    for (slot, value) in w.iter_mut().zip(weights.iter()) {
+        *slot = *value;
+    }
+    let mut boosts = [1.0f32; 10];
+    for (slot, value) in boosts.iter_mut().zip(type_boosts.iter()) {
+        *slot = *value;
+    }
+
+    let scores: Vec<f32> = (0..n)
+        .into_par_iter()
+        .map(|i| {
+            let vector = &flat[i * dim..(i + 1) * dim];
+            score_memory_simd(query, vector, base[i], recency[i], types[i], &w, &boosts)
+        })
+        .collect();
+
+    // Bounded min-heap keeps only the top-k highest scores.
+    let mut heap: BinaryHeap<ScoredIndex> = BinaryHeap::with_capacity(top_k + 1);
+    for (index, &score) in scores.iter().enumerate() {
+        heap.push(ScoredIndex { index, score });
+        if heap.len() > top_k {
+            heap.pop();
+        }
+    }
+
+    // `ScoredIndex` orders smallest-score-first, so a sorted drain yields
+    // best-first ordering for the caller.
+    let result = heap
+        .into_sorted_vec()
+        .into_iter()
+        .map(|scored| (scored.index, scored.score))
+        .collect();
+
+    Ok(result)
 }
 
 // ── COGNITION: Forgetting Engine ──
@@ -455,7 +533,6 @@ fn cognition_detect_conflicts(
             let mut conflicts = Vec::new();
             for i in 0..indices.len() {
                 for j in (i + 1)..indices.len() {
-                    let c1 = &contents[indices[i]].to_lowercase();
                     let c2 = &contents[indices[j]].to_lowercase();
                     let mut has_conflict = false;
                     for kw in &conflict_keywords {

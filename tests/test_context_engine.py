@@ -6,9 +6,7 @@ because all external dependencies are injected via constructor.
 """
 
 import time
-from typing import Any, Dict, List, Optional
-
-import pytest
+from typing import Any, List, Optional
 
 from omem.context.engine import (
     ContextBundle,
@@ -20,9 +18,7 @@ from omem.context.engine import (
 )
 from omem.context.tokenizer import TokenCounter, WordBasedCounter
 from omem.state import InMemoryStateBackend, StateOS, StatePayload, ToolResult
-from omem.state.exceptions import SessionNotFoundError
 from omem.types import MemoryStatus, MemoryTier, MemoryType
-
 
 # ---------------------------------------------------------------------------
 # Stubs
@@ -37,7 +33,6 @@ def _make_memory(
     importance: float = 0.7,
 ) -> Any:
     """Build a minimal Memory-like object without numpy dependencies."""
-    from dataclasses import dataclass, field
 
     class _FakeMemory:
         def __init__(self):

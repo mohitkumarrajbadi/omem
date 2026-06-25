@@ -31,13 +31,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
-import os
 import statistics
 import sys
 import time
 import uuid
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -106,20 +104,28 @@ class SuiteResult:
 def _grade(value: float, thresholds: Tuple[float, float, float, float]) -> str:
     """Map a value to S/A/B/C/F using ascending thresholds (higher = better)."""
     s, a, b, c = thresholds
-    if value >= s:  return "S"
-    if value >= a:  return "A"
-    if value >= b:  return "B"
-    if value >= c:  return "C"
+    if value >= s:
+        return "S"
+    if value >= a:
+        return "A"
+    if value >= b:
+        return "B"
+    if value >= c:
+        return "C"
     return "F"
 
 
 def _grade_latency(ms: float, thresholds: Tuple[float, float, float, float]) -> str:
     """Map a latency to S/A/B/C/F using descending thresholds (lower = better)."""
     s, a, b, c = thresholds
-    if ms <= s:  return "S"
-    if ms <= a:  return "A"
-    if ms <= b:  return "B"
-    if ms <= c:  return "C"
+    if ms <= s:
+        return "S"
+    if ms <= a:
+        return "A"
+    if ms <= b:
+        return "B"
+    if ms <= c:
+        return "C"
     return "F"
 
 
@@ -306,7 +312,7 @@ def bench_state(agent) -> SuiteResult:
     agent_s.set_goal("Pre-checkpoint goal")
     agent_s.set_plan(["cp-step-1", "cp-step-2"])
     t0 = _timer()
-    chk_id = agent_s.checkpoint()
+    agent_s.checkpoint()
     checkpoint_write_ms = _timer() - t0
 
     agent_s.set_goal("Mutated after checkpoint")
@@ -574,6 +580,7 @@ def bench_explainability(agent) -> SuiteResult:
 def bench_concurrency() -> SuiteResult:
     """Throughput under parallel agent workloads."""
     import threading
+
     from omem.agent_state import AgentState
 
     suite = SuiteResult(suite="concurrency")

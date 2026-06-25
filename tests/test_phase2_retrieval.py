@@ -1,9 +1,7 @@
 """Phase 2 tests: multi-objective retrieval, explainability, tier filtering."""
 
-import pytest
 
-from omem import OMem, MemoryLevel, MemoryTier, RetrievalExplanation
-from omem.core.retrieval.fusion import FusionWeights
+from omem import MemoryLevel, MemoryTier, OMem, RetrievalExplanation
 from omem.core.retrieval.ranker import MODE_WEIGHT_PROFILES, weights_for_mode
 
 

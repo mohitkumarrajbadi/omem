@@ -15,12 +15,8 @@ Run:
 
 from __future__ import annotations
 
-import json
-import time
-
 from omem import AgentState
 from omem.governance import RetentionPolicy, Role
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -249,7 +245,7 @@ def main() -> None:
 
     # Simulate crash: mark coder as crashed via the coder's own runtime
     coder.runtime.heartbeat("coder", status="crashed")
-    print(f"Simulated crash: coder status → crashed")
+    print("Simulated crash: coder status → crashed")
 
     # Recover the coder via its own runtime (has the session in-memory)
     recovered = coder.runtime.recover("coder")
@@ -288,8 +284,8 @@ def main() -> None:
     # ──────────────────────────────────────────────────────────────
     print("\n" + "=" * 60)
     print("  Enterprise Agent Demo complete!")
-    print(f"  Phases 6-10 all operational.")
-    print(f"  Tests: 728 passing.")
+    print("  Phases 6-10 all operational.")
+    print("  Tests: 728 passing.")
     print("=" * 60)
 
 

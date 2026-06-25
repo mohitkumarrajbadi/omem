@@ -14,7 +14,6 @@ from omem.state import (
     ToolResult,
 )
 from omem.state.exceptions import (
-    CheckpointNotFoundError,
     SessionNotFoundError,
     SnapshotNotFoundError,
 )

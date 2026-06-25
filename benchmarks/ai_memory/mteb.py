@@ -1,6 +1,6 @@
 """MTEB-style embedding/retrieval benchmark runner."""
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from omem import OMem
 
@@ -17,7 +17,7 @@ def run_mteb(dataset: str = "msmarco-passage", model_name: str = "all-MiniLM-L6-
             "error": str(exc),
         }
 
-    engine = OMem(backend="memory", model=model_name)
+    _engine = OMem(backend="memory", model=model_name)
 
     return {
         "benchmark": "mteb",

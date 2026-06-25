@@ -144,9 +144,9 @@ class KnowledgeOS:
             self._cg = omem.brain.graph
             self._dg = omem.brain.dependency_graph
         else:
-            from ..core.graph.knowledge import KnowledgeGraph
             from ..core.graph.causal import CausalGraph
             from ..core.graph.dependency import DependencyGraph
+            from ..core.graph.knowledge import KnowledgeGraph
             self._kg = _kg if _kg is not None else KnowledgeGraph()
             self._cg = _cg if _cg is not None else CausalGraph()
             self._dg = _dg if _dg is not None else DependencyGraph()
@@ -484,7 +484,6 @@ class KnowledgeOS:
 
     def stats(self) -> KnowledgeStats:
         """Return aggregate statistics about the knowledge graph."""
-        from ..core.graph.knowledge import extract_entities
 
         all_entities = self._kg.all_entities()
         all_edges = self._kg.all_edges()

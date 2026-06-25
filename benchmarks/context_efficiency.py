@@ -24,7 +24,7 @@ Exit criteria for Phase 3: 40–70% savings on real memory stores.
 
 import sys
 import time
-from typing import Any, List, Optional
+from typing import List
 
 sys.path.insert(0, ".")
 
@@ -32,7 +32,6 @@ from omem.context.engine import ContextEngine, ContextRequest
 from omem.context.tokenizer import TokenCounter
 from omem.state import InMemoryStateBackend, StateOS, StatePayload, ToolResult
 from omem.types import MemoryStatus, MemoryTier, MemoryType
-
 
 # ---------------------------------------------------------------------------
 # Stub memory corpus

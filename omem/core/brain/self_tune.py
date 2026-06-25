@@ -1,7 +1,6 @@
 """Online tuning of retrieval weights from agent feedback."""
 
 from dataclasses import replace
-from typing import Optional
 
 from ..retrieval.fusion import FusionWeights
 

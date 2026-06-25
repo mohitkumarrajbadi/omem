@@ -8,8 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from omem.org.namespace import NamespaceResolver, NamespaceNode
-
+from omem.org.namespace import NamespaceResolver
 
 # ──────────────────────────────────────────────────────────────────────────────
 # NamespaceResolver

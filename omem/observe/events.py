@@ -26,7 +26,7 @@ import time
 import uuid
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional
 
 logger = logging.getLogger(__name__)
 

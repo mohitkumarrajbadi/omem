@@ -6,7 +6,7 @@ import sys
 import time
 from collections import OrderedDict
 from difflib import get_close_matches
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import click
 
@@ -1174,8 +1174,8 @@ def state_group():
 
 def _get_state_os(db_path: Optional[str] = None):
     """Resolve a production-ready StateOS from an optional db_path."""
-    from .state.layer import StateOS
     from .state.backend import SQLiteStateBackend
+    from .state.layer import StateOS
     resolved = db_path or os.path.expanduser("~/.omem/brain.db")
     return StateOS(backend=SQLiteStateBackend(resolved))
 
@@ -1188,7 +1188,6 @@ def _get_state_os(db_path: Optional[str] = None):
 @click.option("--db", default=None, envvar="OMEM_DB", help="Path to brain.db.")
 def state_save(session_id: str, goal: Optional[str], plan: Optional[str], namespace: str, db: Optional[str]):
     """Create or update a session's state."""
-    from .types import StatePayload
     state = _get_state_os(db)
     payload = state.get_or_create(session_id, namespace=namespace)
     if goal:
@@ -1231,7 +1230,7 @@ def state_snapshot(session_id: str, label: Optional[str], db: Optional[str]):
     except SessionNotFoundError as exc:
         click.echo(click.style(str(exc), fg="red"), err=True)
         sys.exit(1)
-    click.echo(click.style(f"✓ Snapshot created", fg="green"))
+    click.echo(click.style("✓ Snapshot created", fg="green"))
     click.echo(f"  id:    {snap.id}")
     click.echo(f"  label: {snap.label or '(none)'}")
 
@@ -1275,14 +1274,14 @@ def state_rollback(snapshot_id: str, db: Optional[str]):
 @click.option("--db", default=None, envvar="OMEM_DB", help="Path to brain.db.")
 def state_fork(snapshot_id: str, session: Optional[str], db: Optional[str]):
     """Branch a new session from a snapshot."""
-    from .state.exceptions import SnapshotNotFoundError, ForkError
+    from .state.exceptions import ForkError, SnapshotNotFoundError
     state = _get_state_os(db)
     try:
         child_id = state.fork(snapshot_id, new_session_id=session)
     except (SnapshotNotFoundError, ForkError) as exc:
         click.echo(click.style(str(exc), fg="red"), err=True)
         sys.exit(1)
-    click.echo(click.style(f"✓ Forked into new session", fg="green"))
+    click.echo(click.style("✓ Forked into new session", fg="green"))
     click.echo(f"  child session: {child_id}")
     click.echo(f"  parent snap:   {snapshot_id}")
 
@@ -1299,7 +1298,7 @@ def state_checkpoint(session_id: str, db: Optional[str]):
     except SessionNotFoundError as exc:
         click.echo(click.style(str(exc), fg="red"), err=True)
         sys.exit(1)
-    click.echo(click.style(f"✓ Checkpoint created", fg="green"))
+    click.echo(click.style("✓ Checkpoint created", fg="green"))
     click.echo(f"  id: {chk_id}")
 
 
@@ -1325,7 +1324,7 @@ def state_resume(checkpoint_id: str, db: Optional[str]):
 @click.option("--db", default=None, envvar="OMEM_DB", help="Path to brain.db.")
 def state_merge(winner: str, loser: str, db: Optional[str]):
     """Merge a winning branch back to base and retire the loser."""
-    from .state.exceptions import SessionNotFoundError, MergeError
+    from .state.exceptions import MergeError, SessionNotFoundError
     state = _get_state_os(db)
     try:
         payload = state.merge(winner, loser)
@@ -1396,9 +1395,9 @@ def context_group():
 
 def _get_context_engine(db: Optional[str] = None, session_id: Optional[str] = None):
     """Resolve a fully-wired ContextEngine from on-disk OMem state."""
-    from .state.layer import StateOS
-    from .state.backend import SQLiteStateBackend
     from .memory.layer import MemoryOS
+    from .state.backend import SQLiteStateBackend
+    from .state.layer import StateOS
 
     resolved_db = db or os.path.expanduser("~/.omem/brain.db")
 
@@ -2373,8 +2372,9 @@ def observe_group():
 @click.option("--db", default=None, envvar="OMEM_DB")
 def observe_metrics(session: Optional[str], namespace: Optional[str], db: Optional[str]):
     """Print aggregated metrics for a session or namespace."""
-    from .agent_state import AgentState
     import json as _json
+
+    from .agent_state import AgentState
     agent = AgentState(session_id=session, namespace=namespace or "default", db_path=db)
     m = agent.observe.metrics(session_id=session, namespace=namespace)
     click.echo(_json.dumps(m, indent=2, default=str))
@@ -2417,8 +2417,9 @@ def observe_replay(session: str, db: Optional[str]):
 @click.option("--out", default=None, help="Output file (default: stdout).")
 def observe_export_otel(session: Optional[str], db: Optional[str], out: Optional[str]):
     """Export traces as OpenTelemetry-compatible OTLP JSON."""
-    from .agent_state import AgentState
     import json as _json
+
+    from .agent_state import AgentState
     agent = AgentState(session_id=session, db_path=db)
     data = agent.observe.export_otel(session_id=session)
     payload = _json.dumps(data, indent=2, default=str)
@@ -2455,8 +2456,8 @@ def provenance_group():
 @click.option("--db", default=None, envvar="OMEM_DB")
 def provenance_trace(entity: str, session: Optional[str], db: Optional[str]):
     """Print the full lineage chain for an entity."""
+
     from .agent_state import AgentState
-    import json as _json
     agent = AgentState(session_id=session, db_path=db)
     chain = agent.provenance.trace(entity)
     click.echo(f"Entity: {chain.root_id}  ({len(chain.events)} events)")
@@ -2487,8 +2488,9 @@ def provenance_history(namespace: str, limit: int, since: Optional[str], session
 @click.option("--db", default=None, envvar="OMEM_DB")
 def provenance_summary(namespace: Optional[str], session: Optional[str], db: Optional[str]):
     """Print aggregate provenance statistics."""
-    from .agent_state import AgentState
     import json as _json
+
+    from .agent_state import AgentState
     agent = AgentState(session_id=session, db_path=db)
     s = agent.provenance.summary(namespace=namespace)
     click.echo(_json.dumps(s, indent=2, default=str))
@@ -2539,8 +2541,8 @@ def governance_policy_add(pattern: str, max_age_days: Optional[int], max_count: 
 @click.option("--db", default=None, envvar="OMEM_DB")
 def governance_enforce(db: Optional[str]):
     """Apply all active retention policies immediately."""
+
     from .agent_state import AgentState
-    import json as _json
     agent = AgentState(db_path=db)
     report = agent.governance.enforce_retention()
     click.echo(click.style(
@@ -2650,8 +2652,9 @@ def runtime_list(namespace: str, status: Optional[str], db: Optional[str]):
 @click.option("--db", default=None, envvar="OMEM_DB")
 def runtime_recover(agent_id: str, db: Optional[str]):
     """Recover state for a crashed agent."""
-    from .agent_state import AgentState
     import json as _json
+
+    from .agent_state import AgentState
     agent = AgentState(db_path=db)
     payload = agent.runtime.recover(agent_id)
     if payload is None:
@@ -2680,8 +2683,9 @@ def runtime_deregister(agent_id: str, db: Optional[str]):
 @click.option("--db", default=None, envvar="OMEM_DB")
 def runtime_summary(namespace: str, db: Optional[str]):
     """Print a health summary for all agents in a namespace."""
-    from .agent_state import AgentState
     import json as _json
+
+    from .agent_state import AgentState
     agent = AgentState(namespace=namespace, db_path=db)
     s = agent.runtime.namespace_summary(namespace)
     click.echo(_json.dumps(s, indent=2, default=str))

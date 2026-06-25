@@ -1,17 +1,43 @@
 from importlib.metadata import PackageNotFoundError, version
 
+# v2 Phase 5 — unified facade + explicit config
+from .agent_config import AgentConfig
+from .agent_state import AgentState, ExplanationReport
+
 # Stable v1 API — backwards compatible forever
 from .api import OMem
+
+# v2 Context layer (Phase 3 — shipped)
+from .context import ContextBundle, ContextEngine, ContextRequest
 from .core.engine import DreamResult, ForgetResult
+
+# Phase 8: Governance
+from .governance import (
+    DeletionPolicy,
+    DeletionReport,
+    GovernanceOS,
+    RetentionPolicy,
+    RetentionReport,
+    Role,
+)
+
+# v2 Knowledge layer (Phase 4 — shipped)
+from .knowledge import EdgeRecord, GraphSubgraph, InferenceResult, KnowledgeOS, KnowledgeStats
 
 # v2 Memory layer (Phase 1 — shipped)
 from .memory import MemoryOS, MemoryQuery
 
-# v2 Context layer (Phase 3 — shipped)
-from .context import ContextBundle, ContextEngine, ContextRequest
+# Phase 6: Observability
+from .observe import ObserveOS, TraceEvent
 
-# v2 Knowledge layer (Phase 4 — shipped)
-from .knowledge import EdgeRecord, GraphSubgraph, InferenceResult, KnowledgeOS, KnowledgeStats
+# Phase 10: Org Memory
+from .org import NamespaceInfo, NamespaceResolver, OrgMemoryOS, ShareResult
+
+# Phase 7: Provenance
+from .provenance import ProvenanceChain, ProvenanceEvent, ProvenanceOS
+
+# Phase 9: Runtime
+from .runtime import AgentRegistration, RuntimeOS
 
 # v2 State layer (Phase 2 — shipped)
 from .state import (
@@ -24,33 +50,6 @@ from .state import (
     StateSnapshot,
     ToolResult,
 )
-
-# v2 Phase 5 — unified facade + explicit config
-from .agent_config import AgentConfig
-from .agent_state import AgentState, ExplanationReport
-
-# Phase 6: Observability
-from .observe import ObserveOS, TraceEvent
-
-# Phase 7: Provenance
-from .provenance import ProvenanceChain, ProvenanceEvent, ProvenanceOS
-
-# Phase 8: Governance
-from .governance import (
-    DeletionPolicy,
-    DeletionReport,
-    GovernanceOS,
-    RetentionPolicy,
-    RetentionReport,
-    Role,
-)
-
-# Phase 9: Runtime
-from .runtime import AgentRegistration, RuntimeOS
-
-# Phase 10: Org Memory
-from .org import NamespaceInfo, NamespaceResolver, OrgMemoryOS, ShareResult
-
 from .types import (
     Evidence,
     GraphNode,

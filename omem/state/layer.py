@@ -35,7 +35,6 @@ from .backend import InMemoryStateBackend, SQLiteStateBackend, StateBackend
 from .exceptions import (
     CheckpointNotFoundError,
     ForkError,
-    MergeError,
     SessionNotFoundError,
     SnapshotNotFoundError,
 )

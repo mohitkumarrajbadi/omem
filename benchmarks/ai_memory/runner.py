@@ -1,10 +1,10 @@
 """Entrypoint for the OMem AI memory benchmark suite."""
 
 import argparse
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
-from .config import AVAILABLE_BENCHMARKS, DEFAULT_DATASETS, DEFAULT_MODEL
 from .beir import run_beir
+from .config import AVAILABLE_BENCHMARKS, DEFAULT_DATASETS, DEFAULT_MODEL
 from .lama import run_lama
 from .longbench import run_longbench
 from .mteb import run_mteb
