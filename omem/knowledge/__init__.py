@@ -15,6 +15,7 @@ Quick start::
 See: docs/roadmap/FULL_IMPLEMENTATION_PLAN.md — Phase 4
 """
 
+from .codebase import CodeRetriever, CodeSymbol, ProjectGraph, ProjectIngester, ProjectSync, SymbolType
 from .layer import KnowledgeOS
 from .types import EdgeRecord, GraphSubgraph, InferenceResult, KnowledgeStats
 
@@ -24,4 +25,10 @@ __all__ = [
     "GraphSubgraph",
     "InferenceResult",
     "KnowledgeStats",
+    "CodeSymbol",
+    "SymbolType",
+    "ProjectIngester",
+    "ProjectGraph",
+    "ProjectSync",
+    "CodeRetriever",
 ]

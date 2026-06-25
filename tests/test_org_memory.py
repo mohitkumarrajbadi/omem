@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from omem.org.namespace import NamespaceResolver
+from omem.memory.org.namespace import NamespaceResolver
 
 # ──────────────────────────────────────────────────────────────────────────────
 # NamespaceResolver
@@ -155,7 +155,7 @@ class TestOrgMemoryOS:
         return AgentState(session_id="org-test", backend="memory")
 
     def test_org_accessible(self, agent):
-        from omem.org.layer import OrgMemoryOS
+        from omem.memory.org.layer import OrgMemoryOS
         assert isinstance(agent.org, OrgMemoryOS)
 
     def test_remember_personal_scope(self, agent):

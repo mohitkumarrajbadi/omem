@@ -56,7 +56,7 @@ from .governance.layer import GovernanceOS
 from .knowledge.layer import KnowledgeOS
 from .memory.layer import MemoryOS
 from .observe.events import ObserveOS, TraceEvent, new_trace_id
-from .org.layer import OrgMemoryOS
+from .memory.org.layer import OrgMemoryOS
 from .provenance.layer import ProvenanceOS
 from .runtime.layer import RuntimeOS
 from .state.backend import InMemoryStateBackend, SQLiteStateBackend

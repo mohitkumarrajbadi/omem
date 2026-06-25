@@ -43,8 +43,8 @@ Memory remains **Layer 1**. State, context, and cloud are the product differenti
 | Knowledge graph substrate | `omem/core/graph/` |
 | SQLite + Postgres backends | `omem/backends/` |
 | Partial snapshots (memory only) | `omem/core/utils/snapshot.py` |
-| Audit log + encryption | `omem/security/` |
-| MCP + CLI + dashboard | `omem/integrations/`, `omem/cli.py`, `omem/viz/` |
+| Audit log + encryption | `omem/governance/` |
+| MCP + CLI + dashboard | `omem/integrations/`, `omem/cli.py`, `omem/observe/dashboard/` |
 | v2 Memory facade (started) | `omem/memory/layer.py` → `MemoryOS` |
 
 **Rule for every phase:** extend via facades and new tables/APIs. Do not rewrite `BrainTrace`.
@@ -561,7 +561,7 @@ class ObserveOS:
 
 ### Dashboard + CLI
 
-Extend `omem/viz/server.py` with state timeline, context savings chart, recall quality.
+Extend `omem/observe/dashboard/server.py` with state timeline, context savings chart, recall quality.
 
 ```bash
 omem observe metrics
@@ -620,7 +620,7 @@ class GovernanceOS:
     def enforce_retention(self) -> RetentionReport: ...
 ```
 
-Builds on: `omem/security/audit.py`, `quotas.py`, `forgetting.py`.
+Builds on: `omem/governance/audit.py`, `quotas.py`, `forgetting.py`.
 
 ### RBAC (basic, cloud-ready)
 

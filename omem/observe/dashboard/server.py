@@ -6,7 +6,7 @@ Serves a single-page web app that shows:
 - Namespace browser
 - Live retrieval inspector
 
-Run: python -m omem.viz.server
+Run: python -m omem.observe.dashboard.server
 Or:  omem dashboard
 """
 
@@ -19,7 +19,7 @@ import webbrowser
 from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
-from ..api import OMem
+from ...api import OMem
 
 logger = logging.getLogger(__name__)
 

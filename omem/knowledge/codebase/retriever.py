@@ -12,9 +12,9 @@ of the system.
 import time
 from typing import Any, Dict, List
 
-from ..api import OMem
-from ..core.retrieval.fusion import fuse_score
-from ..core.retrieval.ranker import weights_for_mode
+from ...api import OMem
+from ...core.retrieval.fusion import fuse_score
+from ...core.retrieval.ranker import weights_for_mode
 
 DEFAULT_WEIGHTS = weights_for_mode("coding").as_dict()
 

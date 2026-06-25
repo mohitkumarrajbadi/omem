@@ -12,7 +12,7 @@ Improvements A+B from v0.5.0 production hardening.
 import re
 from typing import Dict, List, Tuple
 
-from .types import MemoryType
+from ...types import MemoryType
 
 # ── Confidence threshold ──
 _MIN_REGEX_CONFIDENCE = 0.1  # Lowered to avoid premature fallback to SEMANTIC

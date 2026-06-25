@@ -8,7 +8,8 @@ Thank you for your interest in contributing. This document covers everything you
 
 OMem is moving toward v2 as AI state infrastructure. Before starting larger work, read:
 
-- [docs/architecture/PROJECT_STRUCTURE.md](./docs/architecture/PROJECT_STRUCTURE.md) for the code map
+- [docs/architecture/ARCHITECTURE.md](./docs/architecture/ARCHITECTURE.md) for the canonical layout
+- [docs/architecture/PROJECT_STRUCTURE.md](./docs/architecture/PROJECT_STRUCTURE.md) for the contributor map
 - [docs/roadmap/ROADMAP.md](./docs/roadmap/ROADMAP.md) for roadmap lanes
 - [GOVERNANCE.md](./GOVERNANCE.md) for review and release standards
 - [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) for community expectations
@@ -85,10 +86,10 @@ git push origin feat/your-feature-name
 |---|---|---|
 | Memory core | Add, recall, lifecycle, scoring | `omem/core/engine/`, `omem/core/brain/` |
 | Knowledge graph | Entity extraction, relations, reasoning | `omem/core/graph/`, `omem/core/brain/reasoning.py` |
-| State infrastructure | Snapshots, restore, rollback, workflow state | `omem/core/utils/snapshot.py`, future `omem/state/` |
-| Observability | Metrics, traces, replay, context savings | `omem/core/utils/metrics.py`, `omem/core/utils/structured_logging.py` |
-| Evaluation | Benchmarks, scenarios, quality metrics | `omem/eval/`, `benchmarks/` |
-| Governance | Audit, retention, deletion, policy hooks | `omem/security/`, future `omem/governance/` |
+| State infrastructure | Snapshots, restore, rollback, workflow state | `omem/state/` |
+| Observability | Metrics, traces, replay, context savings | `omem/observe/` |
+| Evaluation | Benchmarks, scenarios, quality metrics | `benchmarks/eval/`, `benchmarks/` |
+| Governance | Audit, retention, deletion, RBAC | `omem/governance/` |
 | Integrations | MCP, LangChain, LlamaIndex, CrewAI, agent SDKs | `omem/integrations/`, `examples/` |
 | Docs and examples | Onboarding, recipes, launch materials | `README.md`, `docs/`, `examples/` |
 

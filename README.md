@@ -309,17 +309,21 @@ Repository map:
 
 | Path | Purpose |
 |---|---|
-| `omem/api.py` | Public SDK facade |
-| `omem/core/engine/` | Add, retrieval, lifecycle, maintenance |
-| `omem/core/brain/` | Cognitive memory engines |
-| `omem/core/graph/` | Knowledge graph substrate |
-| `omem/core/retrieval/` | Fusion, ranking, vector and KV retrieval |
-| `omem/backends/` | Storage backends |
+| `omem/agent_state.py` | Product facade (`AgentState`) |
+| `omem/memory/` | Layer 1 — memory + org namespaces |
+| `omem/state/` | Layer 2 — checkpoints, fork, rollback |
+| `omem/context/` | Layer 3 — token-budget context assembly |
+| `omem/knowledge/` | Layer 4 — graph + codebase cognition |
+| `omem/observe/` | Layer 5 — traces + dashboard |
+| `omem/governance/` | Layer 6 — audit, encryption, RBAC |
+| `omem/core/` | Private engine (BrainTrace) |
+| `omem/backends/` | SQLite, PostgreSQL storage |
 | `omem/integrations/` | MCP, LangChain, LlamaIndex, CrewAI |
-| `omem/codebase/` | Project memory and AST indexing |
+| `benchmarks/eval/` | Evaluation scenarios (dev tooling) |
 | `tests/` | Unit and integration tests |
+| `deploy/docker/` | Docker images and compose files |
 
-See [docs/architecture/PROJECT_STRUCTURE.md](./docs/architecture/PROJECT_STRUCTURE.md) for the contributor map.
+See [docs/architecture/ARCHITECTURE.md](./docs/architecture/ARCHITECTURE.md) for the full layout.
 
 ## V2: AI State Infrastructure
 

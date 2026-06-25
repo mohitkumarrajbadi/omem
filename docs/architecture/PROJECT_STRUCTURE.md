@@ -1,76 +1,110 @@
 # Project Structure
 
-OMem is organized around a small public API and modular internal engines. Keep new work close to the layer it belongs to, and avoid adding top-level modules unless they represent a durable v2 package boundary.
+Quick reference for contributors. For the full architecture (layers, dependency rules, security model), see [ARCHITECTURE.md](./ARCHITECTURE.md).
+
+---
+
+## Canonical Layout
 
 ```text
 omem/
-├── api.py                  # Public OMem SDK facade
+├── agent_state.py          # Product facade (Memory + State + Context + …)
+├── agent_config.py         # Validated configuration
+├── api.py                  # v1 OMem SDK (stable forever)
 ├── cli.py                  # CLI entrypoint
-├── types.py                # Public dataclasses, enums, retrieval explanations
-├── backends/               # SQLite, PostgreSQL, and future storage engines
-├── codebase/               # Project memory and AST-based code indexing
-├── core/
-│   ├── engine/             # Add, RAG, lifecycle, maintenance mixins
-│   ├── brain/              # Cognitive engines: dream, forget, TMS, scheduling
-│   ├── graph/              # Knowledge graph substrate
-│   ├── retrieval/          # Vector, fusion, ranking, KV cache
-│   └── utils/              # Metrics, logging, retry, snapshots, concurrency
-├── eval/                   # Evaluation scenarios and benchmark runner
-├── integrations/           # MCP, LangChain, LlamaIndex, CrewAI adapters
-├── security/               # Audit logging and encryption helpers
-└── viz/                    # Local dashboard
+├── types.py                # Shared public contracts
+│
+├── memory/                 # Layer 1 — facts, experiences
+│   ├── layer.py            # MemoryOS
+│   └── org/                # Namespace hierarchy, scoped recall
+├── state/                  # Layer 2 — goals, plans, checkpoints
+├── context/                # Layer 3 — LLM context assembly
+├── knowledge/              # Layer 4 — graph query facade
+│   └── codebase/           # Project Memory (AST + code graph)
+├── observe/                # Layer 5 — traces, replay, cost
+│   └── dashboard/          # Local web UI (`omem dashboard`)
+├── governance/             # Layer 6 — RBAC, retention, compliance
+│   ├── layer.py            # GovernanceOS
+│   ├── audit.py            # Audit trail
+│   └── encryption.py       # AES-256-GCM field encryption
+├── provenance/             # Cross-cutting lineage
+├── runtime/                # Multi-agent coordination
+├── cloud/                  # HTTP client + remote backend + server
+├── backends/               # sqlite | postgres | (future) cloud
+├── core/                   # Private engine — BrainTrace (do not import directly)
+│   ├── engine/             # add, RAG, lifecycle, maintenance
+│   ├── brain/              # dream, forget, TMS, classify, secrets
+│   ├── graph/              # knowledge, causal, dependency
+│   ├── retrieval/          # vector, fusion, ranker, embeddings
+│   └── utils/              # metrics, logging, retry, snapshots
+└── integrations/           # MCP, LangChain, CrewAI, LlamaIndex
 ```
+
+### Deprecated shims (remove in v3.0)
+
+`org/`, `security/`, `codebase/`, `viz/`, `classify.py` — re-export from canonical paths. Do not add new code here.
+
+---
 
 ## Contribution Map
 
 | Goal | Start Here | Tests |
-|---|---|---|
-| Public SDK behavior | `omem/api.py` | `tests/test_api.py` |
-| Add/ingestion pipeline | `omem/core/engine/add.py` | `tests/test_graph_substrate.py`, `tests/test_memory_os.py` |
-| Retrieval quality | `omem/core/engine/rag.py`, `omem/core/retrieval/` | `tests/test_phase2_retrieval.py` |
-| Memory lifecycle | `omem/core/engine/lifecycle.py`, `omem/core/brain/forgetting.py` | `tests/test_v070_cognitive.py` |
-| Graph substrate | `omem/core/graph/knowledge.py` | `tests/test_graph_substrate.py` |
-| MCP tools | `omem/integrations/mcp_server.py` | `tests/test_cli.py` plus manual MCP smoke test |
-| CLI | `omem/cli.py` | `tests/test_cli.py`, `tests/test_cli.sh` |
-| Backend support | `omem/backends/` | `tests/test_backends.py` |
+|------|------------|-------|
+| Product facade | `omem/agent_state.py` | `tests/test_agent_state_facade.py` |
+| Public SDK (v1) | `omem/api.py` | `tests/test_api.py` |
+| Memory layer | `omem/memory/layer.py` | `tests/test_memory_os.py` |
+| Org / namespace memory | `omem/memory/org/` | `tests/test_org_memory.py` |
+| State checkpoints | `omem/state/layer.py` | `tests/test_state_engine.py` |
+| Context assembly | `omem/context/engine.py` | `tests/test_context_engine.py` |
+| Knowledge graph | `omem/knowledge/layer.py` | `tests/test_knowledge_os.py` |
+| Codebase cognition | `omem/knowledge/codebase/` | manual + MCP smoke |
+| Observability | `omem/observe/events.py` | `tests/test_observe.py` |
+| Dashboard | `omem/observe/dashboard/` | `omem dashboard` |
+| Governance | `omem/governance/layer.py` | `tests/test_governance.py` |
+| Audit / encryption | `omem/governance/audit.py` | governance tests |
+| Add / ingestion | `omem/core/engine/add.py` | `tests/test_memory_os.py` |
+| Retrieval | `omem/core/engine/rag.py` | `tests/test_phase2_retrieval.py` |
+| MCP tools | `omem/integrations/mcp_server.py` | `tests/test_cli.py` |
+| Cloud server | `omem/cloud/server.py` | manual |
+| Backends | `omem/backends/` | backend tests |
 
-## V2 Package Direction
-
-The current repo keeps v2 functionality in the existing package layout to avoid a disruptive migration. New v2 modules should converge toward these package boundaries:
-
-```text
-omem.memory       # remember, recall, consolidate, forget, explain
-omem.state        # snapshots, restore, rollback, fork, session state
-omem.knowledge    # entities, facts, graph query, reasoning
-omem.observe      # metrics, traces, replay, cost/context accounting
-omem.eval         # memory, state, retrieval, and agent benchmarks
-omem.governance   # policies, audit, retention, deletion workflows
-omem.provenance   # source lineage, versions, confidence, attribution
-omem.runtime      # scheduler, agent registry, coordination, recovery
-```
-
-Add compatibility facades gradually. The stable `from omem import OMem` path should continue to work through the v2 transition.
-
-Target top-level facade:
-
-```text
-omem/agent_state.py   # AgentState — composes memory + state + context + knowledge
-```
-
-Cloud connector:
-
-```text
-omem/cloud/           # HTTP client, remote backend, FastAPI server
-deploy/               # Linode provision, deploy, teardown scripts
-```
-
-See [Full Implementation Plan](../roadmap/FULL_IMPLEMENTATION_PLAN.md) and [Akamai / Linode Deployment Plan](../roadmap/AKAMAI_LINODE_DEPLOYMENT.md) for phased delivery.
+---
 
 ## Design Rules
 
-- Keep `OMem` as the friendly entrypoint.
-- Prefer small, typed dataclasses for cross-layer contracts.
-- Keep external services optional. Base install must remain local-first and zero-config.
-- Do not add network calls to tests.
-- Put public behavior in docs and examples before announcing it in README.
-- Add a focused test for every change in `omem/core/`.
+1. **One front door** — `AgentState` for new users; `OMem` for v1 compat.
+2. **Extend facades, not BrainTrace callers** — layers delegate to `core/`.
+3. **No new top-level packages** without an ADR.
+4. **Local-first** — base install must work offline with zero config.
+5. **Security in governance** — audit, encryption, RBAC, retention.
+6. **Tests stay offline** — no network calls in `tests/`.
+7. **Rust for batch math** — array scoring in `rust/`, not Python hot loops.
+
+---
+
+## Repo Root (non-package)
+
+```text
+benchmarks/eval/     Evaluation scenarios (dev tooling — not shipped)
+benchmarks/          Performance and research harnesses
+deploy/docker/       Canonical Dockerfiles and compose files
+docs/                Architecture, roadmap, guides
+examples/            User-facing recipes
+rust/                PyO3 native extension
+tests/               Pytest suite
+```
+
+Docker (use `deploy/docker/` only — no root-level Dockerfile):
+
+```bash
+docker compose -f deploy/docker/docker-compose.local.yml up --build
+```
+
+---
+
+## Related
+
+- [ARCHITECTURE.md](./ARCHITECTURE.md) — full system design
+- [ADR-001: Facade Pattern](./adr/001-facade-pattern.md)
+- [ADR-002: Canonical Package Layout](./adr/002-canonical-package-layout.md)
+- [Full Implementation Plan](../roadmap/FULL_IMPLEMENTATION_PLAN.md)

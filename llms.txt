@@ -1,36 +1,60 @@
-# OMem - AI Agent Memory System
+# OMem — Persistent State Infrastructure for AI Systems
 
-OMem is a fast, cognitive memory framework for AI agents. It goes beyond standard Vector DB architectures by modeling memory lifecycles—supporting concepts like importance heuristics, forgetting curves, and consolidation (or "dreaming").
+OMem gives AI agents human-like memory and persistent state: importance scoring, consolidation, forgetting, checkpoints, context assembly, and governance.
 
 ## Core Principles
-1. **Speed**: Retrieval happens via a sub-millisecond Rust core using SIMD instructions.
-2. **Intelligence**: OMem natively scores importance, auto-classifies facts, and groups insights.
-3. **Ergonomics**: Developers use a unified `OMem` class with simple `.add()`, `.recall()`, and `.dream()` methods. 
 
-## Project Layout
-- `omem/api.py`: Main `OMem` interface exposing RAG, adding, and maintenance.
-- `omem/core/engine/`: Handling of vectors, ingestion standardizations, and caching.
-- `omem/core/brain/`: The "cognitive" logic. Importance scoring, context prefetching, and clustering/summarization (dreaming).
-- `omem/integrations/`: Hooks and tools for Frameworks. Includes:
-  - `CrewAI` tool wrappers
-  - `LangChain` retrievers
-  - `MCP Server` for connecting to local IDEs (Claude Code, Cursor, Copilot)
-- `rust/`: PyO3 Rust extension (`omem_rust`) for the actual hybrid match ranking.
-- `tests/`: Comprehensive test coverage suite.
+1. **One import** — `from omem import AgentState` composes all layers.
+2. **Local-first** — SQLite default; cloud via `OMEM_ENDPOINT`.
+3. **Thin facades** — six product layers delegate to `omem/core/` (BrainTrace).
+4. **Secure by default** — audit, encryption, RBAC under `omem/governance/`.
 
-## Integrating LLMs with OMem via MCP
-OMem natively acts as an MCP (Model Context Protocol) server. Any LLM client (Claude Code, Cursor IDE, etc.) that supports MCP can connect to this repository's capabilities.
-Start the server using the CLI:
-`omem serve`
+## Package Layout (canonical)
+
+```text
+omem/
+├── agent_state.py · agent_config.py · api.py · cli.py · types.py
+├── memory/          Layer 1 (+ memory/org/ for namespace hierarchy)
+├── state/           Layer 2
+├── context/         Layer 3
+├── knowledge/       Layer 4 (+ knowledge/codebase/ for project memory)
+├── observe/         Layer 5 (+ observe/dashboard/ for local UI)
+├── governance/      Layer 6 (audit, encryption, retention, RBAC)
+├── provenance/ · runtime/ · cloud/ · backends/ · integrations/
+└── core/            Private engine — do not import from application code
+```
+
+Full reference: `docs/architecture/ARCHITECTURE.md`
+
+## Key Entry Points
+
+```python
+from omem import AgentState, OMem  # AgentState = product; OMem = stable v1
+
+with AgentState(session_id="demo") as agent:
+    agent.remember("User prefers dark mode")
+    agent.set_goal("Ship v2")
+    ctx = agent.build_context("continue work", budget_tokens=4000)
+```
+
+## Integrations
+
+- MCP: `omem serve` — Cursor, Claude Desktop
+- LangChain, LlamaIndex, CrewAI: `omem/integrations/`
 
 ## Tech Stack
-- Python 3.9+ 
-- Rust (PyO3)
-- Pydantic
-- SQLite / FAISS
-- Sentence Transformers
 
-## How AI Should Help with this Codebase
-- If asked about speed optimizations, consider writing them in `rust/`.
-- If asked about new memory logics, add heuristics to `omem/core/brain/`.
-- When writing tests or examples, use the `omem.api.OMem` class interface.
+- Python 3.9+, Rust (PyO3 `omem_rust`), SQLite / PostgreSQL, optional FAISS
+
+## Docker
+
+```bash
+docker compose -f deploy/docker/docker-compose.local.yml up --build
+```
+
+## How AI Should Help
+
+- Speed / batch scoring → `rust/`
+- Memory heuristics → `omem/core/brain/`
+- New product APIs → layer facades (`memory/`, `state/`, …), not raw `core/`
+- Tests → use `AgentState` or `OMem`; run `pytest tests/ -v`

@@ -9,9 +9,15 @@ Full details: [AKAMAI_LINODE_DEPLOYMENT.md](../docs/roadmap/AKAMAI_LINODE_DEPLOY
 ```text
 deploy/
 ├── scripts/         # One-command provision, deploy, teardown, health-check
-├── docker/          # Dockerfile.cloud + docker-compose.cloud.yml
+├── docker/          # Dockerfile.local, Dockerfile.cloud, compose files
 └── linode/
     └── terraform/   # Linode resource definitions (API, worker, DB, storage, VLAN)
+```
+
+## Quick start (local Docker)
+
+```bash
+docker compose -f deploy/docker/docker-compose.local.yml up --build
 ```
 
 ## Quick start (Cloud Phase C4)

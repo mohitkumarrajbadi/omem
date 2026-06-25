@@ -7,7 +7,7 @@ import os
 import subprocess
 from typing import Set
 
-from ..api import OMem
+from ...api import OMem
 from .graph import ProjectGraph
 from .ingester import ProjectIngester
 from .utils import default_ignore_dirs

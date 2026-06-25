@@ -30,17 +30,22 @@ Agents / Apps / MCP Clients
 
 ```
 omem
-├── memory
+├── agent_state.py
+├── memory          (+ org/)
 ├── state
-├── knowledge
-├── observe
-├── eval
+├── context
+├── knowledge       (+ codebase/)
+├── observe         (+ dashboard/)
 ├── governance
 ├── provenance
 ├── runtime
-├── integrations
-└── backends
+├── cloud
+├── backends
+├── core
+└── integrations
 ```
+
+Dev tooling (not shipped on PyPI): `benchmarks/eval/`, `benchmarks/`, `tests/`, `examples/`.
 
 ## Layer definitions
 
@@ -404,7 +409,7 @@ Focus:
 - `omem/core/brain/dream.py`
 - `omem/core/brain/forgetting.py`
 - `omem/core/graph/knowledge.py`
-- `omem/codebase/retriever.py`
+- `omem/knowledge/codebase/retriever.py`
 - `omem/cli.py`
 - `omem/types.py`
 

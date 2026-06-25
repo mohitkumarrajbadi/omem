@@ -31,7 +31,7 @@ from .memory import MemoryOS, MemoryQuery
 from .observe import ObserveOS, TraceEvent
 
 # Phase 10: Org Memory
-from .org import NamespaceInfo, NamespaceResolver, OrgMemoryOS, ShareResult
+from .memory.org import NamespaceInfo, NamespaceResolver, OrgMemoryOS, ShareResult
 
 # Phase 7: Provenance
 from .provenance import ProvenanceChain, ProvenanceEvent, ProvenanceOS
