@@ -1,39 +1,39 @@
-# Dockerfile.local — OMem local dev / test image (SQLite, no Postgres)
+# Dockerfile.local — OMem local dev image (Postgres-backed, same as cloud)
 #
 # Build:
 #   docker build -f deploy/docker/Dockerfile.local -t omem-local .
 #
-# Run:
-#   docker run -p 8080:8080 -v omem-data:/data omem-local
+# Run (prefer docker-compose.local.yml for Postgres):
+#   docker compose -f deploy/docker/docker-compose.local.yml up --build
 
 FROM python:3.11-slim
 
 LABEL org.opencontainers.image.title="OMem Local API"
-LABEL org.opencontainers.image.description="OMem Agent State Infrastructure — local SQLite mode"
+LABEL org.opencontainers.image.description="OMem Agent State Infrastructure — local Postgres mode"
 
 WORKDIR /app
 
-# System deps for numpy + faiss (CPU)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential libgomp1 curl && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy project
 COPY pyproject.toml setup.py ./
+COPY rust/ ./rust/
 COPY omem/ ./omem/
 
-# Install base + server deps
-RUN pip install --no-cache-dir -e ".[embeddings]" && \
-    pip install --no-cache-dir fastapi "uvicorn[standard]" httpx python-multipart
+RUN pip install --no-cache-dir -e ".[fast,embeddings,postgres]" && \
+    pip install --no-cache-dir \
+    fastapi>=0.110.0 \
+    "uvicorn[standard]>=0.29.0" \
+    httpx>=0.27.0 \
+    python-multipart
 
-# Data volume for persistent SQLite db
 VOLUME ["/data"]
 
 EXPOSE 8080
 
-ENV OMEM_BACKEND=sqlite \
-    OMEM_DB_PATH=/data/omem.db \
-    OMEM_NAMESPACE=default \
+ENV OMEM_CLOUD_MODE=1 \
+    OMEM_BACKEND=postgres \
     OMEM_LOG_LEVEL=INFO
 
 CMD ["uvicorn", "omem.cloud.server:app", "--host", "0.0.0.0", "--port", "8080"]

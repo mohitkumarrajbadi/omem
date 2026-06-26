@@ -83,6 +83,17 @@ class TestAgentConfig:
         with pytest.raises(ValueError, match="backend"):
             AgentConfig(backend="redis")
 
+    def test_postgres_backend_requires_dsn(self):
+        with pytest.raises(ValueError, match="requires db_path"):
+            AgentConfig(backend="postgres")
+
+    def test_postgres_backend_accepts_dsn(self):
+        cfg = AgentConfig(
+            backend="postgres",
+            db_path="postgresql://omem:omem@localhost:5432/omem",
+        )
+        assert cfg.resolved_db_path == "postgresql://omem:omem@localhost:5432/omem"
+
     def test_budget_below_100_raises(self):
         with pytest.raises(ValueError):
             AgentConfig(context_budget_tokens=50)
@@ -94,9 +105,9 @@ class TestAgentConfig:
         cfg = AgentConfig(endpoint="https://state.akamai.ai", api_key="sk-test")
         assert cfg.is_cloud is True
 
-    def test_is_cloud_false_with_only_endpoint(self):
+    def test_is_cloud_true_with_endpoint_only(self):
         cfg = AgentConfig(endpoint="https://state.akamai.ai")
-        assert cfg.is_cloud is False
+        assert cfg.is_cloud is True
 
     def test_resolved_db_path_sqlite_default(self):
         cfg = AgentConfig(backend="sqlite")
@@ -184,13 +195,14 @@ class TestConstruction:
         a = AgentState.from_env()
         assert a.session_id == "env-agent"
 
-    def test_cloud_warning_when_endpoint_set(self, monkeypatch):
+    def test_cloud_routes_to_remote_when_endpoint_set(self, monkeypatch):
+        from omem.cloud.remote import RemoteAgentState
+
         monkeypatch.setenv("OMEM_ENDPOINT", "https://state.akamai.ai")
-        monkeypatch.setenv("OMEM_API_KEY", "sk-test")
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            AgentState(backend="memory")
-        assert any("OMEM_ENDPOINT" in str(wn.message) for wn in w)
+        monkeypatch.delenv("OMEM_API_KEY", raising=False)
+        agent = AgentState(backend="memory")
+        assert isinstance(agent, RemoteAgentState)
+        agent.close()
 
     def test_stores_config(self, agent):
         assert isinstance(agent.config, AgentConfig)

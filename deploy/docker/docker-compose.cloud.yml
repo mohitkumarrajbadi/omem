@@ -1,13 +1,17 @@
 version: "3.9"
 
-# OMem Cloud tech preview — local Docker stack
-# Mirrors the Linode topology (API + Worker + Postgres).
+# OMem Cloud — local Docker stack with Postgres
+# Mirrors Linode topology: API + PostgreSQL (+ optional worker profile).
 #
-# Usage:
+# Quick start:
 #   cp .env.cloud.example .env.cloud
-#   docker compose -f deploy/docker/docker-compose.cloud.yml up
+#   ./deploy/scripts/cloud-docker-up.sh
 #
-# See: docs/roadmap/AKAMAI_LINODE_DEPLOYMENT.md
+# Test:
+#   curl http://localhost:8080/v1/health
+#   open http://localhost:8080/docs
+#
+# Same image/env deploys to Linode via cloud-proof-deploy.sh (Postgres on DBaaS).
 
 services:
   omem-api:
@@ -19,12 +23,17 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
-    env_file: ../../.env.cloud
+    env_file:
+      - ../../.env.cloud
     environment:
-      - OMEM_CLOUD_MODE=1
-      - OMEM_BACKEND=postgres
-      - OMEM_DB_URL=postgresql://omem:omem@omem-db:5432/omem
-      - OMEM_LOG_LEVEL=INFO
+      OMEM_CLOUD_MODE: "1"
+      OMEM_BACKEND: postgres
+      OMEM_DB_URL: postgresql://omem:omem@omem-db:5432/omem
+      OMEM_STATE_DB_PATH: /data/omem_state.db
+      OMEM_AUDIT_DB_PATH: /data/omem_audit.db
+      OMEM_RUNTIME_DB_PATH: /data/omem_runtime.db
+    volumes:
+      - omem-cloud-sidecar:/data
     depends_on:
       omem-db:
         condition: service_healthy
@@ -32,48 +41,54 @@ services:
       - omem-cloud-net
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8080/v1/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-
-  omem-worker:
-    image: omem-cloud:latest
-    container_name: omem-cloud-worker
-    restart: unless-stopped
-    env_file: ../../.env.cloud
-    environment:
-      - OMEM_CLOUD_MODE=1
-      - OMEM_WORKER_MODE=1
-      - OMEM_BACKEND=postgres
-      - OMEM_DB_URL=postgresql://omem:omem@omem-db:5432/omem
-      - OMEM_LOG_LEVEL=INFO
-    depends_on:
-      - omem-db
-    networks:
-      - omem-cloud-net
-    # Cloud Phase C2: replace with actual worker entrypoint
-    command: ["python", "-m", "omem.cloud.worker"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   omem-db:
     image: postgres:16-alpine
     container_name: omem-cloud-db
     restart: unless-stopped
+    command: ["postgres", "-c", "max_connections=200"]
     environment:
-      - POSTGRES_USER=omem
-      - POSTGRES_PASSWORD=omem
-      - POSTGRES_DB=omem
+      POSTGRES_USER: omem
+      POSTGRES_PASSWORD: omem
+      POSTGRES_DB: omem
     volumes:
       - omem-cloud-db-data:/var/lib/postgresql/data
     networks:
       - omem-cloud-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U omem"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U omem -d omem"]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+
+  # Full Linode topology includes a worker node — enable when omem.cloud.worker ships:
+  # docker compose -f deploy/docker/docker-compose.cloud.yml --profile worker up
+  omem-worker:
+    profiles: ["worker"]
+    image: omem-cloud:latest
+    container_name: omem-cloud-worker
+    restart: unless-stopped
+    env_file:
+      - ../../.env.cloud
+    environment:
+      OMEM_CLOUD_MODE: "1"
+      OMEM_WORKER_MODE: "1"
+      OMEM_BACKEND: postgres
+      OMEM_DB_URL: postgresql://omem:omem@omem-db:5432/omem
+    depends_on:
+      omem-db:
+        condition: service_healthy
+    networks:
+      - omem-cloud-net
+    command: ["python", "-c", "import time; print('worker stub — sleep/retention jobs TBD'); time.sleep(999999)"]
 
 volumes:
   omem-cloud-db-data:
+  omem-cloud-sidecar:
 
 networks:
   omem-cloud-net:

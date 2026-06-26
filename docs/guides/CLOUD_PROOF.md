@@ -68,6 +68,16 @@ git checkout dev   # return to daily work
 
 ### Path A — From your laptop (recommended for demos)
 
+**Prerequisite:** validate locally with Docker + Postgres first:
+
+```bash
+cp .env.cloud.example .env.cloud
+./deploy/scripts/cloud-docker-up.sh -d
+./deploy/scripts/cloud-docker-smoke.sh
+```
+
+Then deploy to Linode:
+
 ```bash
 # 1. Export your Linode root IP
 export OMEM_LINODE_IP=203.0.113.10

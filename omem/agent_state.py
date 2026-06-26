@@ -21,9 +21,8 @@ Phase 5 adds the following on top of the raw layer properties:
 
 Cloud auto-detection::
 
-    export OMEM_ENDPOINT=https://state.akamai.ai
-    export OMEM_API_KEY=omem_sk_...
-    agent = AgentState()  # auto-detects cloud (falls back to local until C1)
+    export OMEM_ENDPOINT=http://localhost:8080
+    agent = AgentState(session_id="research")  # routes to RemoteAgentState
 
 Quickstart::
 
@@ -238,6 +237,24 @@ class AgentState:
     # Construction
     # ------------------------------------------------------------------
 
+    def __new__(cls, *args: Any, **kwargs: Any) -> "AgentState":
+        """Route to RemoteAgentState when OMEM_ENDPOINT is configured."""
+        config = kwargs.get("config")
+        endpoint = kwargs.get("endpoint") or os.environ.get("OMEM_ENDPOINT")
+        if config is not None and config.endpoint:
+            from .cloud.remote import RemoteAgentState
+
+            inst = object.__new__(RemoteAgentState)
+            RemoteAgentState.__init__(inst, *args, **kwargs)
+            return inst  # type: ignore[return-value]
+        if config is None and endpoint:
+            from .cloud.remote import RemoteAgentState
+
+            inst = object.__new__(RemoteAgentState)
+            RemoteAgentState.__init__(inst, *args, **kwargs)
+            return inst  # type: ignore[return-value]
+        return object.__new__(cls)
+
     def __init__(
         self,
         session_id: Optional[str] = None,
@@ -268,21 +285,28 @@ class AgentState:
         self.session_id: Optional[str] = _cfg.session_id
         self.namespace: str = _cfg.namespace
 
-        # Cloud detection — fall back to local until Cloud Phase C1
-        if _cfg.is_cloud:
-            import warnings
-            warnings.warn(
-                "OMEM_ENDPOINT is set but CloudBackend is not yet implemented "
-                "(Cloud Phase C1). Falling back to local mode.",
-                stacklevel=2,
-            )
-
         # Ensure the SQLite directory exists
         _db = _cfg.resolved_db_path
         if _db and _db != ":memory:" and _cfg.backend == "sqlite":
             _db_dir = os.path.dirname(_db)
             if _db_dir and not os.path.exists(_db_dir):
                 os.makedirs(_db_dir, exist_ok=True)
+
+        # Sidecar SQLite paths when memories live in Postgres (cloud Docker / Linode)
+        _state_db = _db or ":memory:"
+        _audit_db: Optional[str] = None
+        _runtime_db: Optional[str] = None
+        if _cfg.backend == "postgres":
+            _state_db = os.environ.get("OMEM_STATE_DB_PATH", "/data/omem_state.db")
+            _audit_db = os.environ.get("OMEM_AUDIT_DB_PATH", "/data/omem_audit.db")
+            _runtime_db = os.environ.get("OMEM_RUNTIME_DB_PATH", "/data/omem_runtime.db")
+            for _path in (_state_db, _audit_db, _runtime_db):
+                _dir = os.path.dirname(_path)
+                if _dir and not os.path.exists(_dir):
+                    os.makedirs(_dir, exist_ok=True)
+        elif isinstance(_cfg.db_path, str) and _cfg.db_path not in (":memory:", None):
+            _audit_db = _cfg.db_path.replace(".db", "_audit.db")
+            _runtime_db = _cfg.db_path.replace(".db", "_runtime.db")
 
         # ── Memory layer (Phase 1) ────────────────────────────────────
         _omem = OMem(
@@ -298,7 +322,7 @@ class AgentState:
         if _cfg.backend == "memory":
             _state_backend = InMemoryStateBackend()
         else:
-            _state_backend = SQLiteStateBackend(_db or ":memory:")
+            _state_backend = SQLiteStateBackend(_state_db)
         self._state = StateOS(backend=_state_backend)
 
         # ── Context layer (Phase 3) ───────────────────────────────────
@@ -321,10 +345,6 @@ class AgentState:
         self._provenance = ProvenanceOS()
 
         # ── Governance (Phase 8) — wired with omem + state ───────────
-        if isinstance(_cfg.db_path, str) and _cfg.db_path not in (":memory:", None):
-            _audit_db = _cfg.db_path.replace(".db", "_audit.db").replace(":memory:", ":memory:")
-        else:
-            _audit_db = None
         self._governance = GovernanceOS(
             omem=_omem,
             state=self._state,
@@ -332,10 +352,6 @@ class AgentState:
         )
 
         # ── Runtime (Phase 9) — wired with state ──────────────────────
-        _runtime_db = (
-            None if _cfg.db_path is None or _cfg.db_path == ":memory:"
-            else _cfg.db_path.replace(".db", "_runtime.db")
-        )
         self._runtime = RuntimeOS(
             state=self._state,
             db_path=_runtime_db,
@@ -382,8 +398,13 @@ class AgentState:
             **omem_kwargs: Extra kwargs forwarded to the OMem engine.
 
         Returns:
-            Fully initialized ``AgentState``.
+            Fully initialized ``AgentState`` (or ``RemoteAgentState`` when
+            ``config.endpoint`` is set).
         """
+        if config.endpoint:
+            from .cloud.remote import RemoteAgentState
+
+            return RemoteAgentState.from_config(config, **omem_kwargs)  # type: ignore[return-value]
         return cls(config=config, **omem_kwargs)
 
     @classmethod
@@ -400,6 +421,10 @@ class AgentState:
             ``AgentState`` configured from the environment.
         """
         cfg = AgentConfig.from_env()
+        if cfg.endpoint:
+            from .cloud.remote import RemoteAgentState
+
+            return RemoteAgentState.from_config(cfg, **kwargs)  # type: ignore[return-value]
         return cls(config=cfg, **kwargs)
 
     # ------------------------------------------------------------------
@@ -489,8 +514,9 @@ class AgentState:
 
     @property
     def backend_type(self) -> str:
-        """Human-readable backend description: ``"local:sqlite"``, ``"local:memory"``,
-        or ``"cloud"`` (once Cloud Phase C1 ships)."""
+        """Human-readable backend description."""
+        if self._config.backend == "postgres":
+            return "local:postgres"
         if self.is_cloud:
             return "cloud"
         return f"local:{self._config.backend}"

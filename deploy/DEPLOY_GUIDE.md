@@ -81,6 +81,48 @@ Restart Claude Desktop. You should see OMem tools: `remember`, `recall`, `explai
 
 ---
 
+## Path 1b — Local Cloud Stack (Docker + Postgres)
+
+**Use this before Linode.** Same `Dockerfile.cloud` and Postgres backend as the Akamai tech preview.
+
+```bash
+# One-time setup
+cp .env.cloud.example .env.cloud
+
+# Start API + Postgres (builds on first run, ~2–3 min)
+./deploy/scripts/cloud-docker-up.sh -d
+
+# Wait for healthy, then smoke test
+./deploy/scripts/cloud-docker-smoke.sh
+
+# Stop when done
+./deploy/scripts/cloud-docker-down.sh
+```
+
+| Service | URL |
+|---------|-----|
+| Health | http://localhost:8080/v1/health |
+| API docs | http://localhost:8080/docs |
+| MCP SSE | http://localhost:8080/mcp/sse |
+
+**Architecture (local):**
+
+```text
+localhost:8080 → omem-api (Dockerfile.cloud) → Postgres container
+                      └── SQLite sidecars in /data (state, audit, runtime)
+```
+
+Optional worker profile (stub until `omem.cloud.worker` ships):
+
+```bash
+docker compose -f deploy/docker/docker-compose.cloud.yml --profile worker up -d
+```
+
+**Promote to Linode:** once local smoke passes, deploy the same `cloud` branch with
+`./deploy/scripts/cloud-proof-deploy.sh` (Tier A SQLite) or Terraform + Postgres (Tier C).
+
+---
+
 ## Path 2 — Single Linode VM (Fastest Cloud Deploy)
 
 **Cost: ~$12/month** on a Linode 2GB shared instance.

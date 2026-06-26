@@ -36,10 +36,11 @@ class AgentConfig:
         session_id:              Agent session identifier. If None, the facade
                                  works in sessionless mode (memory only).
         namespace:               Logical namespace to scope memories.
-        backend:                 ``"sqlite"`` (default, persistent) or
-                                 ``"memory"`` (ephemeral, for tests/scripts).
-        db_path:                 SQLite file path. Defaults to
-                                 ``~/.omem/brain.db``. Ignored in memory mode.
+        backend:                 ``"sqlite"`` (default, persistent), ``"memory"``
+                                 (ephemeral), or ``"postgres"`` (cloud / Docker).
+        db_path:                 SQLite file path, or Postgres DSN when
+                                 ``backend="postgres"``. Defaults to
+                                 ``~/.omem/brain.db`` for SQLite.
         endpoint:                Remote OMem endpoint URL (Cloud Phase C1).
                                  When set alongside ``api_key``, cloud mode
                                  will be used once Cloud Phase C1 ships.
@@ -84,10 +85,12 @@ class AgentConfig:
     auto_checkpoint: bool = True
 
     def __post_init__(self) -> None:
-        if self.backend not in ("sqlite", "memory"):
+        if self.backend not in ("sqlite", "memory", "postgres"):
             raise ValueError(
-                f"backend must be 'sqlite' or 'memory', got {self.backend!r}"
+                f"backend must be 'sqlite', 'memory', or 'postgres', got {self.backend!r}"
             )
+        if self.backend == "postgres" and not self.db_path:
+            raise ValueError("backend='postgres' requires db_path (Postgres DSN / OMEM_DB_URL)")
         if self.context_budget_tokens < 100:
             raise ValueError("context_budget_tokens must be >= 100")
         if not (0.0 <= self.context_cache_ttl):
@@ -109,7 +112,7 @@ class AgentConfig:
         ``OMEM_SESSION_ID``                          ``session_id``
         ``OMEM_NAMESPACE``                           ``namespace``
         ``OMEM_BACKEND``                             ``backend``
-        ``OMEM_DB``                                  ``db_path``
+        ``OMEM_DB`` / ``OMEM_DB_URL``                ``db_path`` (URL when postgres)
         ``OMEM_ENDPOINT``                            ``endpoint``
         ``OMEM_API_KEY``                             ``api_key``
         ``OMEM_ORG``                                 ``org``
@@ -143,7 +146,7 @@ class AgentConfig:
             session_id=os.environ.get("OMEM_SESSION_ID"),
             namespace=os.environ.get("OMEM_NAMESPACE", "default"),
             backend=os.environ.get("OMEM_BACKEND", "sqlite"),
-            db_path=os.environ.get("OMEM_DB"),
+            db_path=os.environ.get("OMEM_DB_URL") or os.environ.get("OMEM_DB"),
             endpoint=os.environ.get("OMEM_ENDPOINT"),
             api_key=os.environ.get("OMEM_API_KEY"),
             org=os.environ.get("OMEM_ORG"),
@@ -193,14 +196,16 @@ class AgentConfig:
 
     @property
     def is_cloud(self) -> bool:
-        """True when both endpoint and api_key are set."""
-        return bool(self.endpoint and self.api_key)
+        """True when a remote OMem Cloud endpoint is configured."""
+        return bool(self.endpoint)
 
     @property
     def resolved_db_path(self) -> Optional[str]:
-        """Effective DB path: explicit or the default ``~/.omem/brain.db``."""
+        """Effective DB path or Postgres DSN."""
         if self.backend == "memory":
             return None
+        if self.backend == "postgres":
+            return self.db_path
         return self.db_path or os.path.expanduser("~/.omem/brain.db")
 
     def __repr__(self) -> str:
