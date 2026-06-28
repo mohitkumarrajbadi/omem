@@ -19,6 +19,10 @@ ENV_FILE="$ROOT/.env.cloud"
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "==> Creating $ENV_FILE from .env.cloud.example"
   cp "$ROOT/.env.cloud.example" "$ENV_FILE"
+  echo ""
+  echo "  IMPORTANT: Edit $ENV_FILE and set POSTGRES_PASSWORD before continuing."
+  echo "  Then re-run this script."
+  echo ""
 fi
 
 cd "$ROOT"

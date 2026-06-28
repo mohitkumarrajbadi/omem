@@ -1,0 +1,253 @@
+version: "3.9"
+
+# OMem Enterprise Stack
+#
+# Designed for multi-tenant, enterprise-grade deployments with:
+#   • pgvector-enabled PostgreSQL 16 (native vector similarity search)
+#   • PgBouncer connection pooler (handles 10,000+ concurrent agent sessions)
+#   • Horizontally-scalable OMem API (replicas behind nginx)
+#   • Background maintenance worker
+#   • Full observability: Prometheus + Grafana
+#   • Strict multi-tenant isolation via EnterprisePostgresBackend
+#
+# Quick start:
+#   cp .env.cloud.example .env.enterprise        # edit secrets
+#   docker compose -f deploy/docker/docker-compose.enterprise.yml up -d
+#   docker compose ... --profile monitoring up    # add observability
+#
+# Required environment variables (see .env.enterprise):
+#   POSTGRES_PASSWORD    — Postgres superuser password
+#   OMEM_API_KEY         — Bearer token for REST + MCP endpoints
+#   OMEM_SECRET_KEY      — Field-level encryption key (32 bytes hex)
+#
+# Optional:
+#   OMEM_ORG_ID          — Default org namespace (default: "default")
+#   OMEM_USER_ID         — Default user namespace (default: "")
+#   GRAFANA_PASSWORD     — Grafana admin password (default: admin)
+#
+# Test the stack:
+#   curl http://localhost/v1/health
+#   curl -H "X-API-Key: $OMEM_API_KEY" http://localhost/v1/status
+#   open http://localhost/docs
+
+services:
+
+  # ── pgvector PostgreSQL 16 ────────────────────────────────────────────────
+  omem-db:
+    image: pgvector/pgvector:pg16
+    container_name: omem-enterprise-db
+    restart: unless-stopped
+    command: >
+      postgres
+        -c max_connections=500
+        -c shared_buffers=512MB
+        -c effective_cache_size=2GB
+        -c maintenance_work_mem=128MB
+        -c checkpoint_completion_target=0.9
+        -c wal_buffers=16MB
+        -c work_mem=4MB
+        -c log_min_duration_statement=500
+        -c log_checkpoints=on
+        -c log_connections=off
+    environment:
+      POSTGRES_USER:     "${POSTGRES_USER:-omem}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_DB:       "${POSTGRES_DB:-omem}"
+    volumes:
+      - omem-enterprise-db-data:/var/lib/postgresql/data
+      - ./init-enterprise.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+    networks:
+      - omem-enterprise-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-omem} -d ${POSTGRES_DB:-omem}"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 3G
+
+  # ── PgBouncer connection pooler ───────────────────────────────────────────
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: omem-enterprise-pgbouncer
+    restart: unless-stopped
+    environment:
+      DB_HOST:     omem-db
+      DB_PORT:     "5432"
+      DB_USER:     "${POSTGRES_USER:-omem}"
+      DB_PASSWORD: "${POSTGRES_PASSWORD}"
+      DB_NAME:     "${POSTGRES_DB:-omem}"
+      POOL_MODE:   transaction
+      MAX_CLIENT_CONN: "2000"
+      DEFAULT_POOL_SIZE: "50"
+      AUTH_TYPE:   md5
+    depends_on:
+      omem-db:
+        condition: service_healthy
+    networks:
+      - omem-enterprise-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -p 5432 -U ${POSTGRES_USER:-omem}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── OMem API (primary replica) ────────────────────────────────────────────
+  omem-api:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.cloud
+    image: omem-cloud:latest
+    container_name: omem-enterprise-api
+    restart: unless-stopped
+    expose:
+      - "8080"
+    env_file:
+      - ../../.env.cloud
+    environment:
+      OMEM_CLOUD_MODE:      "1"
+      OMEM_BACKEND:         postgres
+      OMEM_ENTERPRISE_MODE: "1"
+      OMEM_DB_URL:          "postgresql://${POSTGRES_USER:-omem}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-omem}"
+      OMEM_POOL_MIN:        "4"
+      OMEM_POOL_MAX:        "30"
+      OMEM_STATE_DB_PATH:   /data/omem_state.db
+      OMEM_AUDIT_DB_PATH:   /data/omem_audit.db
+      OMEM_RUNTIME_DB_PATH: /data/omem_runtime.db
+      OMEM_ORG_ID:          "${OMEM_ORG_ID:-default}"
+      OMEM_USER_ID:         "${OMEM_USER_ID:-}"
+      # Uvicorn workers — set to (2 × CPU cores + 1)
+      UVICORN_WORKERS:      "${UVICORN_WORKERS:-4}"
+    volumes:
+      - omem-enterprise-sidecar:/data
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      omem-db:
+        condition: service_healthy
+    networks:
+      - omem-enterprise-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/v1/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 6
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+
+  # ── OMem API scale-out replica ────────────────────────────────────────────
+  # Uncomment and adjust when you need horizontal scaling.
+  # omem-api-2:
+  #   extends:
+  #     service: omem-api
+  #   container_name: omem-enterprise-api-2
+
+  # ── Background maintenance worker ────────────────────────────────────────
+  omem-worker:
+    image: omem-cloud:latest
+    container_name: omem-enterprise-worker
+    restart: unless-stopped
+    env_file:
+      - ../../.env.cloud
+    environment:
+      OMEM_CLOUD_MODE:      "1"
+      OMEM_WORKER_MODE:     "1"
+      OMEM_BACKEND:         postgres
+      OMEM_ENTERPRISE_MODE: "1"
+      OMEM_ENDPOINT:        http://omem-api:8080
+      OMEM_DB_URL:          "postgresql://${POSTGRES_USER:-omem}:${POSTGRES_PASSWORD}@pgbouncer:5432/${POSTGRES_DB:-omem}"
+    command: ["python3", "-m", "omem.cloud.worker"]
+    depends_on:
+      omem-api:
+        condition: service_healthy
+    networks:
+      - omem-enterprise-net
+    healthcheck:
+      test: ["CMD-SHELL", "test -r /proc/1/status || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── Nginx reverse proxy ───────────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: omem-enterprise-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - omem-enterprise-certs:/etc/nginx/certs
+    depends_on:
+      omem-api:
+        condition: service_healthy
+    networks:
+      - omem-enterprise-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://127.0.0.1/v1/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Prometheus ── (--profile monitoring) ─────────────────────────────────
+  prometheus:
+    profiles: ["monitoring"]
+    image: prom/prometheus:latest
+    container_name: omem-enterprise-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - omem-enterprise-prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    networks:
+      - omem-enterprise-net
+
+  # ── Grafana ── (--profile monitoring) ────────────────────────────────────
+  grafana:
+    profiles: ["monitoring"]
+    image: grafana/grafana:latest
+    container_name: omem-enterprise-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_PASSWORD:-admin}"
+      GF_USERS_ALLOW_SIGN_UP:     "false"
+      GF_SERVER_ROOT_URL:         "http://localhost:3000"
+      GF_INSTALL_PLUGINS:         "grafana-clock-panel,grafana-simple-json-datasource"
+    volumes:
+      - omem-enterprise-grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    networks:
+      - omem-enterprise-net
+
+# ─────────────────────────────────────────────────────────────────────────────
+
+volumes:
+  omem-enterprise-db-data:
+  omem-enterprise-sidecar:
+  omem-enterprise-certs:
+  omem-enterprise-prometheus-data:
+  omem-enterprise-grafana-data:
+
+networks:
+  omem-enterprise-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

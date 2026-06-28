@@ -596,7 +596,7 @@ class AgentState:
     def remember(
         self,
         content: str,
-        importance: float = 0.5,
+        importance: Optional[float] = None,
         namespace: Optional[str] = None,
         **kwargs: Any,
     ) -> str:
@@ -604,7 +604,7 @@ class AgentState:
 
         Args:
             content:    The text to remember.
-            importance: Importance score [0, 1].
+            importance: Importance score [0, 1]. Auto-estimated when omitted.
             namespace:  Override the agent's default namespace.
             **kwargs:   Extra kwargs forwarded to ``MemoryOS.remember()``.
 
@@ -612,16 +612,18 @@ class AgentState:
             Memory ID string.
         """
         t0 = time.time()
-        mid = self._memory.remember(
-            content,
-            importance=importance,
-            namespace=namespace or self.namespace,
+        remember_kwargs: Dict[str, Any] = {
+            "namespace": namespace or self.namespace,
             **kwargs,
-        )
+        }
+        if importance is not None:
+            remember_kwargs["importance"] = importance
+        mid = self._memory.remember(content, **remember_kwargs)
         dur = (time.time() - t0) * 1000
-        self._emit("remember", dur, memory_id=mid, importance=importance)
-        self._prov(mid, "memory", "create", source="user",
-                   content_length=len(content), importance=importance)
+        imp_val = importance if importance is not None else 0.5
+        self._emit("remember", dur, memory_id=mid, importance=imp_val)
+        self._prov(mid, "memory", "create", source=kwargs.get("source", "user"),
+                   content_length=len(content), importance=imp_val)
         return mid
 
     def recall(

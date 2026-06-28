@@ -1,13 +1,26 @@
-"""OMem MCP Server Integration.
+"""OMem MCP Server — Coding Agent Edition.
 
-Provides a Model Context Protocol (MCP) server that exposes OMem's cognitive engine
-to Claude Code and other MCP-compatible agents.
+Optimized memory layer for Cursor, Claude Code, and any MCP-compatible coding agent.
+Provides persistent context across sessions: architectural decisions, PR history,
+codebase structure, and bug fixes — the exact knowledge that makes an agent behave
+like a senior engineer who has been on the project for months.
 
-Features:
-- Natural language tools: remember, recall, reflect, maintain.
-- Advanced retrieval: context_type and time_range filtering.
-- Truth Maintenance: resolve_conflict tool.
-- Auto-namespacing: Detects project context for zero-config isolation.
+Core tools (coding-agent wedge):
+  remember_decision      — Store ADRs, tech choices, tradeoffs
+  recall_decisions       — Retrieve past architectural decisions
+  remember_pr_context    — Persist PR metadata, review notes, merge rationale
+  recall_pr_context      — Recall PR history for a file or feature
+  remember_bug_fix       — Log root cause + fix for recurring issues
+  recall_bugs            — Surface past fixes before repeating mistakes
+  query_codebase         — Semantic AST search (preferred over grep)
+  ingest_codebase        — One-time full index of a repository
+  sync_codebase          — Incremental post-commit sync via git diff
+
+General tools:
+  remember, recall, reflect, maintain, resolve_conflict
+  remember_action, recall_action
+
+Auto-namespace: detects .git root → zero-config project isolation.
 """
 
 import logging
@@ -136,15 +149,31 @@ def format_memory_summary(memories: List[Any]) -> str:
 
     lines = []
     for m in memories:
-        # Use content summary if available, or first 120 chars
         content_snippet = m.content[:120].strip()
         if len(m.content) > 120:
             content_snippet += "..."
-
         line = f"- [{m.type.name}] ({m.importance:.2f}) {content_snippet}"
         lines.append(line)
 
     return "\n".join(lines)
+
+
+def _coding_namespace() -> str:
+    """Return the coding-agent namespace (project root basename)."""
+    return get_project_namespace()
+
+
+def _memory_to_dict(m: Any) -> Dict[str, Any]:
+    """Serialize a Memory object to a lean JSON-serializable dict."""
+    return {
+        "id": m.id,
+        "content": m.content,
+        "type": m.type.name,
+        "importance": round(m.importance, 3),
+        "score": round(getattr(m, "score", m.importance), 4),
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(m.timestamp)),
+        "metadata": m.metadata,
+    }
 
 
 # --- TOOLS ---
@@ -490,6 +519,354 @@ def ingest_codebase(path: str = "."):
         return {"status": "error", "error": str(e)}
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# CODING AGENT TOOLS — architectural decisions, PR context, bug knowledge
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@mcp.tool()
+def remember_decision(
+    title: str,
+    decision: str,
+    rationale: str,
+    alternatives: Optional[List[str]] = None,
+    files_affected: Optional[List[str]] = None,
+    pr_url: Optional[str] = None,
+    importance: float = 0.9,
+):
+    """Store an architectural decision record (ADR) in persistent memory.
+
+    Use this whenever you make a significant technical choice so that future
+    sessions can recall the rationale without re-deriving it.
+
+    Args:
+        title: Short name for the decision (e.g. 'Use PostgreSQL over SQLite for prod').
+        decision: The chosen option in one sentence.
+        rationale: Why this was chosen — the key factors and tradeoffs.
+        alternatives: Other options that were considered and rejected.
+        files_affected: Source file paths most impacted by this decision.
+        pr_url: Link to the PR or issue where this was discussed.
+        importance: Criticality weight (0.0–1.0). Defaults to 0.9 (high).
+    """
+    namespace = _coding_namespace()
+    content = f"[ADR] {title}\nDecision: {decision}\nRationale: {rationale}"
+    meta: Dict[str, Any] = {
+        "kind": "architectural_decision",
+        "title": title,
+        "decision": decision,
+        "rationale": rationale,
+        "alternatives": alternatives or [],
+        "files_affected": files_affected or [],
+        "pr_url": pr_url or "",
+        "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    mem_id = omem.add(
+        content,
+        mem_type=MemoryType.SEMANTIC,
+        importance=importance,
+        namespace=namespace,
+        source="coding_agent",
+        metadata=meta,
+        force=True,
+    )
+    return {
+        "status": "stored",
+        "memory_id": mem_id,
+        "title": title,
+        "namespace": namespace,
+        "tip": "Use recall_decisions to surface this in future sessions.",
+    }
+
+
+@mcp.tool()
+def recall_decisions(query: str, k: int = 5):
+    """Retrieve past architectural decisions relevant to a topic.
+
+    Always call this before making a significant technical choice — you may
+    have already evaluated the options in a previous session.
+
+    Args:
+        query: Describe the decision context (e.g. 'database choice', 'auth strategy').
+        k: Max results to return.
+    """
+    namespace = _coding_namespace()
+    results = omem.recall(
+        query,
+        k=k,
+        context_type="architecture",
+        namespace=namespace,
+        mode="coding",
+    )
+    decisions = [
+        m for m in results
+        if m.metadata.get("kind") == "architectural_decision"
+    ]
+    if not decisions:
+        decisions = results
+
+    return {
+        "query": query,
+        "decisions": [_memory_to_dict(m) for m in decisions],
+        "total": len(decisions),
+        "namespace": namespace,
+        "hint": (
+            "No past decisions found." if not decisions
+            else f"Found {len(decisions)} relevant ADR(s). Review before proceeding."
+        ),
+    }
+
+
+@mcp.tool()
+def remember_pr_context(
+    pr_number: int,
+    title: str,
+    description: str,
+    files_changed: Optional[List[str]] = None,
+    review_notes: Optional[str] = None,
+    merge_decision: Optional[str] = None,
+    author: Optional[str] = None,
+    importance: float = 0.8,
+):
+    """Store the context of a pull request for future recall.
+
+    Enables agents to answer 'why was this changed?' or 'what did PR #42 do?'
+    without reading the entire git log.
+
+    Args:
+        pr_number: GitHub / GitLab PR number.
+        title: PR title.
+        description: What this PR does and why.
+        files_changed: Key files modified in the PR.
+        review_notes: Important review comments or requested changes.
+        merge_decision: Outcome — 'merged', 'closed', 'reverted', etc.
+        author: Author username.
+        importance: Memory weight (0.0–1.0).
+    """
+    namespace = _coding_namespace()
+    content = f"[PR #{pr_number}] {title}\n{description}"
+    meta: Dict[str, Any] = {
+        "kind": "pr_context",
+        "pr_number": pr_number,
+        "title": title,
+        "description": description,
+        "files_changed": files_changed or [],
+        "review_notes": review_notes or "",
+        "merge_decision": merge_decision or "unknown",
+        "author": author or "",
+        "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    mem_id = omem.add(
+        content,
+        mem_type=MemoryType.SEMANTIC,
+        importance=importance,
+        namespace=namespace,
+        source="coding_agent",
+        metadata=meta,
+        force=True,
+    )
+    return {
+        "status": "stored",
+        "memory_id": mem_id,
+        "pr_number": pr_number,
+        "namespace": namespace,
+    }
+
+
+@mcp.tool()
+def recall_pr_context(query: str, k: int = 5, pr_number: Optional[int] = None):
+    """Retrieve stored PR context for a feature, file, or topic.
+
+    Args:
+        query: What you want to know ('changes to auth module', 'performance PRs').
+        k: Max results.
+        pr_number: If set, filters to this specific PR number.
+    """
+    namespace = _coding_namespace()
+    results = omem.recall(
+        query,
+        k=k * 2,
+        context_type="decisions",
+        namespace=namespace,
+        mode="coding",
+    )
+    prs = [m for m in results if m.metadata.get("kind") == "pr_context"]
+    if pr_number is not None:
+        prs = [m for m in prs if m.metadata.get("pr_number") == pr_number]
+    prs = prs[:k]
+
+    if not prs:
+        prs = results[:k]
+
+    return {
+        "query": query,
+        "pr_number_filter": pr_number,
+        "results": [_memory_to_dict(m) for m in prs],
+        "total": len(prs),
+        "namespace": namespace,
+    }
+
+
+@mcp.tool()
+def remember_bug_fix(
+    description: str,
+    root_cause: str,
+    fix: str,
+    files: Optional[List[str]] = None,
+    commit_hash: Optional[str] = None,
+    error_signature: Optional[str] = None,
+    importance: float = 0.88,
+):
+    """Persist a bug fix with root cause analysis for future recall.
+
+    Prevents agents from re-investigating the same issue. If you've seen this
+    error or pattern before, OMem will surface the prior fix immediately.
+
+    Args:
+        description: Human-readable description of the bug.
+        root_cause: What caused the issue at a technical level.
+        fix: How it was resolved — the actual change made.
+        files: Files that were modified to fix the issue.
+        commit_hash: Git commit that introduced or fixed the bug.
+        error_signature: Key error string / stack frame for pattern matching.
+        importance: Memory weight (0.0–1.0).
+    """
+    namespace = _coding_namespace()
+    content = (
+        f"[BUG FIX] {description}\n"
+        f"Root cause: {root_cause}\n"
+        f"Fix: {fix}"
+    )
+    if error_signature:
+        content += f"\nError signature: {error_signature}"
+
+    meta: Dict[str, Any] = {
+        "kind": "bug_fix",
+        "description": description,
+        "root_cause": root_cause,
+        "fix": fix,
+        "files": files or [],
+        "commit_hash": commit_hash or "",
+        "error_signature": error_signature or "",
+        "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    mem_id = omem.add(
+        content,
+        mem_type=MemoryType.EPISODIC,
+        importance=importance,
+        namespace=namespace,
+        source="coding_agent",
+        metadata=meta,
+        force=True,
+    )
+    return {
+        "status": "stored",
+        "memory_id": mem_id,
+        "description": description,
+        "namespace": namespace,
+        "tip": "Use recall_bugs before investigating a new error.",
+    }
+
+
+@mcp.tool()
+def recall_bugs(query: str, k: int = 5, error_signature: Optional[str] = None):
+    """Search for past bug fixes matching a symptom, error message, or module.
+
+    ALWAYS call this before starting a debugging session. You may have already
+    fixed this exact issue in a prior session.
+
+    Args:
+        query: Describe the symptom (e.g. 'KeyError in auth module', 'payment retry').
+        k: Max results.
+        error_signature: Exact error string fragment for precise matching.
+    """
+    namespace = _coding_namespace()
+    search_query = query
+    if error_signature:
+        search_query = f"{query} {error_signature}"
+
+    results = omem.recall(
+        search_query,
+        k=k * 2,
+        context_type="bugs",
+        namespace=namespace,
+        mode="coding",
+    )
+    bugs = [m for m in results if m.metadata.get("kind") == "bug_fix"]
+    if not bugs:
+        bugs = results
+    bugs = bugs[:k]
+
+    return {
+        "query": query,
+        "fixes_found": len(bugs),
+        "results": [_memory_to_dict(m) for m in bugs],
+        "namespace": namespace,
+        "alert": (
+            f"Found {len(bugs)} prior fix(es) — review before investigating."
+            if bugs else
+            "No prior fixes found. This may be a new issue."
+        ),
+    }
+
+
+@mcp.tool()
+def get_codebase_summary(include_decisions: bool = True, include_recent_prs: bool = True):
+    """Get a high-level summary of the project's architectural state.
+
+    Returns the most important architectural decisions, recent PR context,
+    and a codebase stats overview. Call at the start of a new session to
+    re-orient quickly without re-reading the codebase.
+
+    Args:
+        include_decisions: Include recent ADRs (default True).
+        include_recent_prs: Include recent PR context (default True).
+    """
+    namespace = _coding_namespace()
+    summary: Dict[str, Any] = {"namespace": namespace, "project": namespace}
+
+    if include_decisions:
+        decisions = omem.recall(
+            "architectural decisions design patterns",
+            k=5,
+            context_type="architecture",
+            namespace=namespace,
+            mode="coding",
+        )
+        summary["recent_decisions"] = [
+            _memory_to_dict(m) for m in decisions
+            if m.metadata.get("kind") == "architectural_decision"
+        ]
+
+    if include_recent_prs:
+        prs = omem.recall(
+            "pull request changes feature",
+            k=5,
+            context_type="decisions",
+            namespace=namespace,
+            mode="coding",
+        )
+        summary["recent_prs"] = [
+            _memory_to_dict(m) for m in prs
+            if m.metadata.get("kind") == "pr_context"
+        ]
+
+    try:
+        stats = omem.stats()
+        summary["memory_stats"] = {
+            "total_memories": stats.get("total", 0),
+            "active": stats.get("active", 0),
+            "by_type": stats.get("by_type", {}),
+        }
+    except Exception:
+        summary["memory_stats"] = {}
+
+    summary["tip"] = (
+        "Start with query_codebase to navigate code. "
+        "Use recall_decisions before making tech choices. "
+        "Use recall_bugs before debugging."
+    )
+    return summary
+
 
 # --- RESOURCES ---
 
@@ -524,32 +901,148 @@ def get_knowledge_graph() -> List[Dict[str, Any]]:
     return omem.entities()
 
 
+@mcp.resource("omem://decisions")
+def get_architectural_decisions():
+    """Returns all stored architectural decision records (ADRs) for this project."""
+    namespace = get_project_namespace()
+    mems = omem.all(namespace=namespace)
+    decisions = [
+        m for m in mems
+        if m.metadata.get("kind") == "architectural_decision" and m.active
+    ]
+    decisions.sort(key=lambda m: m.importance, reverse=True)
+    return {
+        "project": namespace,
+        "count": len(decisions),
+        "decisions": [
+            {
+                "title": m.metadata.get("title", m.content[:60]),
+                "decision": m.metadata.get("decision", ""),
+                "rationale": m.metadata.get("rationale", ""),
+                "alternatives": m.metadata.get("alternatives", []),
+                "files_affected": m.metadata.get("files_affected", []),
+                "pr_url": m.metadata.get("pr_url", ""),
+                "recorded_at": m.metadata.get("recorded_at", ""),
+                "importance": round(m.importance, 3),
+            }
+            for m in decisions[:20]
+        ],
+    }
+
+
+@mcp.resource("omem://pr_history")
+def get_pr_history():
+    """Returns stored PR context records for this project, newest first."""
+    namespace = get_project_namespace()
+    mems = omem.all(namespace=namespace)
+    prs = [m for m in mems if m.metadata.get("kind") == "pr_context" and m.active]
+    prs.sort(key=lambda m: m.timestamp, reverse=True)
+    return {
+        "project": namespace,
+        "count": len(prs),
+        "pull_requests": [
+            {
+                "pr_number": m.metadata.get("pr_number"),
+                "title": m.metadata.get("title", ""),
+                "description": m.metadata.get("description", "")[:200],
+                "files_changed": m.metadata.get("files_changed", []),
+                "merge_decision": m.metadata.get("merge_decision", ""),
+                "author": m.metadata.get("author", ""),
+                "recorded_at": m.metadata.get("recorded_at", ""),
+            }
+            for m in prs[:20]
+        ],
+    }
+
+
+@mcp.resource("omem://bug_fixes")
+def get_bug_fixes():
+    """Returns stored bug fix records for this project."""
+    namespace = get_project_namespace()
+    mems = omem.all(namespace=namespace)
+    bugs = [m for m in mems if m.metadata.get("kind") == "bug_fix" and m.active]
+    bugs.sort(key=lambda m: m.importance, reverse=True)
+    return {
+        "project": namespace,
+        "count": len(bugs),
+        "fixes": [
+            {
+                "description": m.metadata.get("description", ""),
+                "root_cause": m.metadata.get("root_cause", ""),
+                "fix": m.metadata.get("fix", ""),
+                "files": m.metadata.get("files", []),
+                "error_signature": m.metadata.get("error_signature", ""),
+                "recorded_at": m.metadata.get("recorded_at", ""),
+            }
+            for m in bugs[:20]
+        ],
+    }
+
+
 # --- PROMPTS ---
 
 
 @mcp.prompt("omem/onboarding")
 def onboarding_prompt():
-    """Instruction for Claude on how to effectively use OMem cognitive memory."""
+    """Instruction for Claude / Cursor on how to effectively use OMem for coding."""
     return (
-        "You have access to OMem, a persistent cognitive memory engine with built-in "
-        "codebase intelligence. Unlike static metadata, OMem manages short-term vs "
-        "long-term importance, resolves contradictions, and understands code structure.\n\n"
-        "═══ CODEBASE NAVIGATION (most important) ═══\n"
-        "NEVER use grep, find, or recursive file search to navigate code.\n"
-        "Instead, use `query_codebase` with a natural-language query:\n"
-        "  • 'auth token refresh logic'     → returns auth/session.py:142-178\n"
-        "  • 'class that parses AST nodes'  → returns the exact class + file\n"
-        "  • 'database connection pooling'  → returns the module + dependencies\n\n"
-        "WORKFLOW:\n"
-        "1. **First run** (new project): call `ingest_codebase` once to index the repo.\n"
-        "2. **Navigate**: use `query_codebase` to jump to exact files + lines.\n"
-        "3. **After changes**: call `sync_codebase` to update the graph (uses git diff).\n\n"
-        "═══ GENERAL MEMORY HABITS ═══\n"
-        "1. **Recall first**: Use `recall` before solving complex tasks.\n"
-        "2. **Remember decisions**: Use `remember` for architectural choices or bug fixes.\n"
-        "3. **Reflect & Maintain**: Occasionally use `reflect` or `maintain`.\n"
-        "4. **Summarize**: Use `summarize_state` for a birds-eye project overview.\n\n"
-        "Do not over-use memory for trivial things; focus on 'knowledge debt' reduction."
+        "You have access to OMem — a persistent cognitive memory engine purpose-built for "
+        "coding agents. It gives you the institutional knowledge of a senior engineer who "
+        "has been on this project for months, across every session.\n\n"
+
+        "═══ SESSION START CHECKLIST ═══\n"
+        "1. Call `get_codebase_summary` to re-orient (ADRs, recent PRs, stats).\n"
+        "2. If first time on this project: call `ingest_codebase` once to index the AST.\n"
+        "3. Before debugging: call `recall_bugs` — the fix may already be known.\n"
+        "4. Before a tech choice: call `recall_decisions` — you may have decided this before.\n\n"
+
+        "═══ CODEBASE NAVIGATION ═══\n"
+        "NEVER use grep or find to navigate code. Use `query_codebase` instead:\n"
+        "  • 'auth token refresh logic'  → returns auth/session.py:142-178 + callers\n"
+        "  • 'database connection pool'  → returns the module + dependency graph\n"
+        "  • 'class that handles retries'→ returns exact class + file + line range\n"
+        "After code changes: call `sync_codebase` to update the index incrementally.\n\n"
+
+        "═══ WHAT TO PERSIST ═══\n"
+        "• Architectural decisions   → `remember_decision`  (why PostgreSQL, why GraphQL, etc.)\n"
+        "• PR context               → `remember_pr_context` (what changed, why, review notes)\n"
+        "• Bug fixes                → `remember_bug_fix`    (root cause + fix, prevent recurrence)\n"
+        "• General facts            → `remember`            (any important project knowledge)\n\n"
+
+        "═══ RULES ═══\n"
+        "1. Always recall before solving — check what you already know.\n"
+        "2. Store decisions immediately after making them — don't rely on chat history.\n"
+        "3. Tag bug fixes with the error signature for precise future matching.\n"
+        "4. Call `maintain` when idle to consolidate and prune stale memories.\n"
+        "5. Do NOT store trivial facts — focus on knowledge that would take >5 min to re-derive."
+    )
+
+
+@mcp.prompt("omem/coding_agent")
+def coding_agent_prompt():
+    """Advanced system prompt for coding agents with full OMem integration."""
+    project = get_project_namespace()
+    return (
+        f"Project: {project}\n\n"
+        "You are a coding agent with persistent memory across sessions via OMem.\n\n"
+        "MEMORY TOOLS AVAILABLE:\n"
+        "  query_codebase(query)           — navigate code semantically\n"
+        "  recall_decisions(query)         — past architectural choices\n"
+        "  recall_bugs(query)              — prior bug fixes\n"
+        "  recall_pr_context(query)        — PR history\n"
+        "  recall(query, mode='coding')    — general project knowledge\n\n"
+        "STORAGE TOOLS:\n"
+        "  remember_decision(...)          — store ADR\n"
+        "  remember_pr_context(...)        — store PR metadata\n"
+        "  remember_bug_fix(...)           — store root cause + fix\n"
+        "  remember(content)               — store general knowledge\n\n"
+        "RESOURCES (read-only snapshots):\n"
+        "  omem://decisions                — all ADRs\n"
+        "  omem://pr_history               — PR context\n"
+        "  omem://bug_fixes                — known bug fixes\n"
+        "  omem://recent                   — recent memories\n\n"
+        "Start every task by checking what OMem already knows. "
+        "End every task by persisting new knowledge."
     )
 
 

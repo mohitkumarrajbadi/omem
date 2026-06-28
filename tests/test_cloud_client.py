@@ -31,7 +31,35 @@ def _mock_response(status_code: int, payload: Dict[str, Any]) -> MagicMock:
     return resp
 
 
-def test_cloud_client_remember_recall():
+def test_cloud_client_remember_minimal_body():
+    """Content-only body — CLI simplicity."""
+    client = OMemCloudClient("http://testserver", session_id="s1")
+
+    with patch.object(
+        client._client,
+        "request",
+        return_value=_mock_response(200, {"memory_id": "mem-1"}),
+    ) as mock_req:
+        mem_id = client.remember("just content")
+
+    assert mem_id == "mem-1"
+    body = mock_req.call_args.kwargs["json"]
+    assert body == {"content": "just content", "session_id": "s1", "namespace": "default"}
+    client.close()
+
+
+def test_cloud_client_status():
+    client = OMemCloudClient("http://testserver")
+    with patch.object(
+        client._client,
+        "request",
+        return_value=_mock_response(200, {"backend": "cloud"}),
+    ):
+        data = client.status()
+    assert data["backend"] == "cloud"
+    client.close()
+
+
     client = OMemCloudClient("http://testserver", api_key="")
     calls = []
 
