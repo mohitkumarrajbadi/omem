@@ -78,3 +78,5 @@ benchmarks/token_savings.py
 .env.enterprise.example
 deploy/scripts/enterprise-*.sh
 DOCKER_TESTING.md
+docs/guides/CLOUD_PROOF.md
+docs/roadmap/AKAMAI_LINODE_DEPLOYMENT.md

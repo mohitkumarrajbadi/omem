@@ -175,80 +175,33 @@ Run the full demo: `python demo_mcp_coding_workflow.py`
 
 ---
 
-## Enterprise PostgreSQL
+## OMem Cloud
 
-Production-grade multi-tenant deployment for enterprise AI agent fleets.
+**OMem Cloud** is a commercial product that wraps the open-source core with a production-grade managed service: multi-tenant API, PostgreSQL + pgvector backend, background worker, Prometheus/Grafana observability, NGINX, and one-command Linode/Akamai deployment via Terraform.
 
-### Architecture
-
-```
-                     ┌─────────────────────────────────────────┐
-                     │           Enterprise Stack               │
-         Agents ───▶ │  nginx (TLS) ──▶ OMem API (×N)          │
-                     │                      │                   │
-                     │  PgBouncer (pool) ───▶ PostgreSQL 16      │
-                     │  + pgvector (ANN)    + Row-Level Security │
-                     │  + RLS policies      + Tenant isolation   │
-                     │                                          │
-                     │  Worker (maintain)   Prometheus + Grafana │
-                     └─────────────────────────────────────────┘
-```
-
-### Multi-Tenant Isolation
-
-Every memory is scoped to `(org_id, user_id)`. Tenant isolation operates at **three independent layers**:
-
-1. **Application layer**: all queries include `WHERE org_id = ? AND user_id = ?`
-2. **Database RLS**: Postgres row-level security policies block cross-tenant access even if application code has a bug
-3. **Session context**: `SET LOCAL omem.org_id = 'acme'` enforces isolation at the connection level
-
-```sql
--- Row-level security policy (from init-enterprise.sql)
-CREATE POLICY memories_tenant_rls ON memories
-    USING (
-        org_id  = current_setting('omem.org_id',  true)
-        AND
-        user_id = current_setting('omem.user_id', true)
-    );
-```
-
-### Quick Deploy
-
-```bash
-# 1. Configure secrets
-cp .env.cloud.example .env.enterprise
-# Edit: POSTGRES_PASSWORD, OMEM_API_KEY, OMEM_SECRET_KEY
-
-# 2. Start the enterprise stack (pgvector + PgBouncer + OMem + monitoring)
-docker compose -f deploy/docker/docker-compose.enterprise.yml up -d
-
-# 3. Add monitoring
-docker compose -f deploy/docker/docker-compose.enterprise.yml --profile monitoring up -d
-
-# 4. Verify
-curl http://localhost/v1/health
-# {"status": "healthy", "backend": "postgres", ...}
-```
-
-### Enterprise Stack Services
-
-| Service | Image | Role |
+| Feature | omem-os (open source) | omem-cloud (commercial) |
 |---|---|---|
-| `omem-db` | `pgvector/pgvector:pg16` | Primary DB with native vector ANN |
-| `pgbouncer` | `edoburu/pgbouncer` | Connection pooler (2,000 clients → 50 DB connections) |
-| `omem-api` | `omem-cloud:latest` | FastAPI REST + MCP/SSE |
-| `omem-worker` | `omem-cloud:latest` | Background memory maintenance |
-| `nginx` | `nginx:alpine` | TLS termination + load balancing |
-| `prometheus` | `prom/prometheus` | Metrics scraping |
-| `grafana` | `grafana/grafana` | Dashboards |
+| Local SQLite memory | ✅ | ✅ |
+| MCP server | ✅ | ✅ |
+| All integrations | ✅ | ✅ |
+| Multi-tenant REST API | — | ✅ |
+| PostgreSQL + pgvector | ✅ backend only | ✅ managed stack |
+| Production Docker deploy | — | ✅ |
+| Linode / Akamai Terraform | — | ✅ |
+| Prometheus + Grafana | — | ✅ |
+| SLA support | — | ✅ |
 
-### Enterprise Backend
+> **Get access:** [https://omem.dev/cloud](https://omem.dev/cloud) · [support@omem.dev](mailto:support@omem.dev)
+
+### Enterprise PostgreSQL Backend (open source)
+
+The PostgreSQL backend itself is open source and ships with `omem-os`. You can use it with your own Postgres instance without omem-cloud:
 
 ```python
 from omem.backends.postgres_enterprise import EnterprisePostgresBackend
 
 backend = EnterprisePostgresBackend(
-    connection_string="postgresql://omem:secret@pgbouncer:5432/omem",
+    connection_string="postgresql://omem:secret@localhost:5432/omem",
     org_id="acme-corp",
     user_id="alice",
 )
@@ -297,8 +250,6 @@ Weights adapt per retrieval mode: `coding`, `planning`, `chat`, `recall`. The Ru
 | `omem/core/engine/` | BrainTrace orchestrator |
 | `omem/core/brain/` | Importance, forgetting, dreaming, TMS |
 | `omem/core/retrieval/` | Fusion, BM25, vector, ranker |
-| `deploy/docker/docker-compose.enterprise.yml` | Enterprise stack |
-| `deploy/docker/init-enterprise.sql` | pgvector schema + RLS |
 | `distribution/benchmark_vs_mem0.py` | Reproducible benchmark |
 | `distribution/engineering_blog.md` | Technical deep-dive |
 | `demo_mcp_coding_workflow.py` | Cross-session context demo |
@@ -386,8 +337,8 @@ pip install omem-os                     # core (SQLite, hash embeddings)
 pip install "omem-os[mcp]"              # + MCP server for Cursor/Claude
 pip install "omem-os[fast]"             # + FAISS + sentence-transformers
 pip install "omem-os[postgres]"         # + PostgreSQL backend
-pip install "omem-os[cloud]"            # + FastAPI cloud server
-pip install "omem-os[all]"              # everything
+pip install "omem-os[all]"              # everything open-source
+# omem-cloud (managed API server) → https://omem.dev/cloud
 ```
 
 From source with Rust acceleration:
@@ -411,8 +362,8 @@ pytest tests/ -v
 | Coding agent tools (ADRs, PRs, bugs) | Stable |
 | PostgreSQL backend | Beta |
 | Enterprise multi-tenant backend | Beta |
-| Enterprise docker-compose + pgvector | Beta |
 | Codebase AST indexing | Alpha |
+| Managed cloud API (omem-cloud) | [Commercial](https://omem.dev/cloud) |
 | LangChain integration | Beta |
 | CrewAI integration | Alpha |
 
@@ -445,6 +396,6 @@ MIT — see [LICENSE](./LICENSE).
 
 <div align="center">
 
-**[Engineering Blog](./distribution/engineering_blog.md) · [Benchmark](./distribution/benchmark_vs_mem0.py) · [MCP Setup](./docs/guides/MCP_SETUP.md) · [Enterprise Deploy](./deploy/DEPLOY_GUIDE.md)**
+**[Engineering Blog](./distribution/engineering_blog.md) · [Benchmark](./distribution/benchmark_vs_mem0.py) · [MCP Setup](./docs/guides/MCP_SETUP.md) · [OMem Cloud](https://omem.dev/cloud)**
 
 </div>
