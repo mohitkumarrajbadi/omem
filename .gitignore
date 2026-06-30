@@ -52,3 +52,29 @@ omem_rust*.so
 
 # Local notes (not tracked)
 .notes/
+
+# --- COMMERCIAL CLOUD (never public) ---
+omem/cloud/
+.env.cloud
+.env.cloud.example
+deploy/docker/Dockerfile.cloud
+deploy/docker/docker-compose.cloud.yml
+deploy/docker/nginx.conf
+deploy/docker/prometheus.yml
+deploy/docker/grafana/
+deploy/linode/
+deploy/scripts/cloud-docker-*.sh
+deploy/scripts/cloud-proof-deploy.sh
+deploy/scripts/linode-*.sh
+deploy/scripts/provision.sh
+deploy/scripts/seed-demo-data.sh
+deploy/scripts/deploy.sh
+deploy/scripts/health-check.sh
+deploy/scripts/teardown.sh
+tests/test_cloud_*.py
+benchmarks/token_savings.py
+.github/workflows/cloud-preview.yml
+.env.enterprise
+.env.enterprise.example
+deploy/scripts/enterprise-*.sh
+DOCKER_TESTING.md
