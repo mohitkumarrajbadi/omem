@@ -74,6 +74,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _require_cloud_package() -> Any:
+    """Import RemoteAgentState from omem-cloud, or raise a clear install error."""
+    try:
+        from omem.cloud.remote import RemoteAgentState  # type: ignore[import]
+
+        return RemoteAgentState
+    except ImportError:
+        raise ImportError(
+            "Cloud routing requires the omem-cloud package.\n"
+            "omem-cloud is a commercial product — visit https://omem.dev/cloud to get access.\n"
+            "Once you have a license: pip install omem-cloud"
+        ) from None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # ExplanationReport — the "why" behind every recall decision
 # ─────────────────────────────────────────────────────────────────────────────
@@ -242,14 +256,12 @@ class AgentState:
         config = kwargs.get("config")
         endpoint = kwargs.get("endpoint") or os.environ.get("OMEM_ENDPOINT")
         if config is not None and config.endpoint:
-            from .cloud.remote import RemoteAgentState
-
+            RemoteAgentState = _require_cloud_package()
             inst = object.__new__(RemoteAgentState)
             RemoteAgentState.__init__(inst, *args, **kwargs)
             return inst  # type: ignore[return-value]
         if config is None and endpoint:
-            from .cloud.remote import RemoteAgentState
-
+            RemoteAgentState = _require_cloud_package()
             inst = object.__new__(RemoteAgentState)
             RemoteAgentState.__init__(inst, *args, **kwargs)
             return inst  # type: ignore[return-value]
@@ -402,8 +414,7 @@ class AgentState:
             ``config.endpoint`` is set).
         """
         if config.endpoint:
-            from .cloud.remote import RemoteAgentState
-
+            RemoteAgentState = _require_cloud_package()
             return RemoteAgentState.from_config(config, **omem_kwargs)  # type: ignore[return-value]
         return cls(config=config, **omem_kwargs)
 
@@ -422,8 +433,7 @@ class AgentState:
         """
         cfg = AgentConfig.from_env()
         if cfg.endpoint:
-            from .cloud.remote import RemoteAgentState
-
+            RemoteAgentState = _require_cloud_package()
             return RemoteAgentState.from_config(cfg, **kwargs)  # type: ignore[return-value]
         return cls(config=cfg, **kwargs)
 
