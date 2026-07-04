@@ -82,6 +82,14 @@ class RAGMixin:
         level: Optional[str] = None,
         include_archive: bool = False,
     ) -> List[Memory]:
+        if mode == "strong":
+            return self._rag_strong(
+                query,
+                top_k=top_k,
+                namespace=namespace,
+                include_inactive=include_inactive,
+            )
+
         query_key = f"{query}:{namespace}:{mode}:{top_k}:{level}"
         cached = self.working_memory.get(query_key)
         if cached and not explain:
@@ -89,6 +97,9 @@ class RAGMixin:
 
         query_vec = self.embedder.encode(query)
         with ReadContext(self._lock):
+            if self.kv.size == 0:
+                # Cold engine or post-restart pool entry — reload from durable store.
+                self.reload_from_backend()
             if self.kv.size == 0:
                 self._last_explanations = []
                 return []
@@ -343,3 +354,48 @@ class RAGMixin:
     def get_fusion_weights(self) -> FusionWeights:
         """Return current default fusion weights."""
         return getattr(self, "_fusion_weights", weights_for_mode("default"))
+
+    def _rag_strong(
+        self,
+        query: str,
+        *,
+        top_k: int = 5,
+        namespace: Optional[str] = None,
+        include_inactive: bool = False,
+    ) -> List[Memory]:
+        """DB-authoritative recall via pgvector — read-your-writes consistency."""
+        backend = getattr(self, "backend", None)
+        if backend is None or not hasattr(backend, "vector_search"):
+            return self.rag(
+                query,
+                top_k=top_k,
+                namespace=namespace,
+                include_inactive=include_inactive,
+                mode="default",
+            )
+
+        query_vec = self.embedder.encode(query)
+        model = getattr(self.embedder, "_model_name", None)
+        pairs = backend.vector_search(
+            query_vec,
+            namespace=namespace,
+            top_k=top_k,
+            embedding_model=model,
+        )
+        if not pairs:
+            return self.rag(
+                query,
+                top_k=top_k,
+                namespace=namespace,
+                include_inactive=include_inactive,
+                mode="recall",
+            )
+        results: List[Memory] = []
+        for mem, sim in pairs:
+            if not include_inactive and not mem.active:
+                continue
+            mem.score = float(sim)
+            results.append(mem)
+            if len(results) >= top_k:
+                break
+        return results

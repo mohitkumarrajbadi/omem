@@ -52,7 +52,7 @@ class MemoryOS:
         force: bool = False,
     ) -> str:
         """Store graph-backed experience in memory."""
-        if confidence != 1.0 or source != "memory":
+        if confidence != 1.0 or (source != "memory" and source != "user"):
             return self._omem.add_experience(
                 content,
                 namespace=namespace,
@@ -60,6 +60,7 @@ class MemoryOS:
                 confidence=confidence,
                 importance=importance,
                 metadata=metadata,
+                force=force,
             )
         return self._omem.add(
             content,
@@ -83,6 +84,7 @@ class MemoryOS:
         tiers: Optional[List[MemoryTier]] = None,
         include_archive: Optional[bool] = None,
         weight_overrides: Optional[Dict[str, float]] = None,
+        project_only: bool = False,
     ) -> List[Memory]:
         """Retrieve memories using the multi-objective retrieval engine."""
         if isinstance(query, MemoryQuery):
@@ -103,6 +105,7 @@ class MemoryOS:
                     if weight_overrides is None
                     else weight_overrides
                 ),
+                project_only=q.metadata.get("project_only", False) if q.metadata else False,
             )
 
         return self._omem.recall(
@@ -115,6 +118,7 @@ class MemoryOS:
             tiers=tiers,
             include_archive=False if include_archive is None else include_archive,
             weight_overrides=weight_overrides,
+            project_only=project_only,
         )
 
     def explain(

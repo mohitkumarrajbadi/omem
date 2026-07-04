@@ -306,25 +306,31 @@ class AgentState:
 
         # Sidecar SQLite paths when memories live in Postgres (cloud Docker / Linode)
         _state_db = _db or ":memory:"
-        _audit_db: Optional[str] = None
+        _audit_db: Optional[str] = os.environ.get("OMEM_AUDIT_DB_PATH") or None
         _runtime_db: Optional[str] = None
         if _cfg.backend == "postgres":
             _state_db = os.environ.get("OMEM_STATE_DB_PATH", "/data/omem_state.db")
-            _audit_db = os.environ.get("OMEM_AUDIT_DB_PATH", "/data/omem_audit.db")
+            _audit_db = _audit_db or "/data/omem_audit.db"
             _runtime_db = os.environ.get("OMEM_RUNTIME_DB_PATH", "/data/omem_runtime.db")
             for _path in (_state_db, _audit_db, _runtime_db):
                 _dir = os.path.dirname(_path)
                 if _dir and not os.path.exists(_dir):
                     os.makedirs(_dir, exist_ok=True)
         elif isinstance(_cfg.db_path, str) and _cfg.db_path not in (":memory:", None):
-            _audit_db = _cfg.db_path.replace(".db", "_audit.db")
+            _audit_db = _audit_db or _cfg.db_path.replace(".db", "_audit.db")
             _runtime_db = _cfg.db_path.replace(".db", "_runtime.db")
+
+        from .governance.audit import AuditLogger
+
+        _audit_logger = AuditLogger(db_path=_audit_db)
 
         # ── Memory layer (Phase 1) ────────────────────────────────────
         _omem = OMem(
             backend=_cfg.backend,
             db_path=_cfg.db_path,
             model=_cfg.embedding_model,
+            audit_db_path=_audit_db,
+            audit_logger=_audit_logger,
             **omem_kwargs,
         )
         self._omem = _omem
@@ -361,6 +367,7 @@ class AgentState:
             omem=_omem,
             state=self._state,
             audit_db_path=_audit_db,
+            audit_logger=_audit_logger,
         )
 
         # ── Runtime (Phase 9) — wired with state ──────────────────────

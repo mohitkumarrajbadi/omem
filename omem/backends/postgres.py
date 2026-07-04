@@ -2,7 +2,9 @@
 
 import json
 import logging
-from typing import List, Optional
+import os
+import uuid
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -59,8 +61,15 @@ class PostgresBackend(Backend):
                 failure_threshold=5,
                 recovery_timeout=30.0,
             )
+            self._pgvector_enabled = False
+            self._embedding_model = os.environ.get("OMEM_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+            self._embedding_version = os.environ.get("OMEM_EMBEDDING_VERSION", "v1")
             self._create_table()
-            logger.info("PostgresBackend initialized successfully.")
+            self._migrate_layers()
+            logger.info(
+                "PostgresBackend initialized (pgvector=%s).",
+                self._pgvector_enabled,
+            )
         except Exception as e:
             logger.error("Failed to initialize PostgresBackend: %s", e)
             raise
@@ -107,52 +116,234 @@ class PostgresBackend(Backend):
         finally:
             self._put_conn(conn)
 
+    def _migrate_layers(self) -> None:
+        """Add pgvector, embedding versioning, and projection tables."""
+        conn = self._get_conn()
+        try:
+            with conn.cursor() as cur:
+                try:
+                    cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
+                    self._pgvector_enabled = True
+                except Exception as exc:
+                    logger.debug("pgvector extension unavailable: %s", exc)
+                    self._pgvector_enabled = False
+
+                for col, col_type in (
+                    ("embedding", "vector(384)"),
+                    ("embedding_model", "TEXT DEFAULT ''"),
+                    ("embedding_version", "TEXT DEFAULT ''"),
+                    ("embedding_dim", "INTEGER DEFAULT 384"),
+                    ("lifecycle_state", "TEXT DEFAULT 'active'"),
+                ):
+                    cur.execute(
+                        """
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'memories' AND column_name = %s
+                        """,
+                        (col,),
+                    )
+                    if cur.fetchone() is None:
+                        cur.execute(
+                            f"ALTER TABLE memories ADD COLUMN {col} {col_type}"
+                        )
+
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS memory_edges (
+                        id TEXT PRIMARY KEY,
+                        namespace TEXT NOT NULL DEFAULT 'default',
+                        source_id TEXT NOT NULL,
+                        target_id TEXT NOT NULL,
+                        relation_type TEXT NOT NULL DEFAULT 'related',
+                        confidence DOUBLE PRECISION DEFAULT 1.0,
+                        metadata JSONB DEFAULT '{}',
+                        active INTEGER DEFAULT 1,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                    )
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS memory_events (
+                        id BIGSERIAL PRIMARY KEY,
+                        event_type TEXT NOT NULL,
+                        memory_id TEXT,
+                        namespace TEXT NOT NULL DEFAULT 'default',
+                        payload JSONB DEFAULT '{}',
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        processed_at TIMESTAMPTZ,
+                        attempts INTEGER DEFAULT 0
+                    )
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_events_unprocessed
+                    ON memory_events(created_at) WHERE processed_at IS NULL
+                    """
+                )
+            conn.commit()
+        finally:
+            self._put_conn(conn)
+
+    @staticmethod
+    def _vec_to_pg(vector: np.ndarray) -> str:
+        return "[" + ",".join(f"{float(x):.8f}" for x in vector.tolist()) + "]"
+
+    def emit_event(
+        self,
+        event_type: str,
+        *,
+        memory_id: Optional[str] = None,
+        namespace: str = "default",
+        payload: Optional[Dict[str, Any]] = None,
+        conn=None,
+    ) -> int:
+        """Write a projection outbox event."""
+        own_conn = conn is None
+        if own_conn:
+            conn = self._get_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO memory_events (event_type, memory_id, namespace, payload)
+                    VALUES (%s, %s, %s, %s::jsonb)
+                    RETURNING id
+                    """,
+                    (
+                        event_type,
+                        memory_id,
+                        namespace,
+                        json.dumps(payload or {}),
+                    ),
+                )
+                event_id = int(cur.fetchone()[0])
+            if own_conn:
+                conn.commit()
+            return event_id
+        finally:
+            if own_conn:
+                self._put_conn(conn)
+
     # ------------------------------------------------------------------
     # CRUD
     # ------------------------------------------------------------------
 
-    def save(self, memory: Memory) -> None:
+    def save(
+        self,
+        memory: Memory,
+        *,
+        embedding_model: str = "",
+        embedding_version: str = "",
+    ) -> None:
         content = self._enc.encrypt(memory.content) if self._enc else memory.content
         meta = self._enc.encrypt(json.dumps(memory.metadata)) if self._enc else json.dumps(memory.metadata)
+        emb_model = embedding_model or self._embedding_model
+        emb_version = embedding_version or self._embedding_version
+        emb_dim = int(memory.vector.shape[0]) if memory.vector is not None else 384
+        emb_pg = (
+            self._vec_to_pg(memory.vector)
+            if self._pgvector_enabled and memory.vector is not None
+            else None
+        )
 
         def _do():
             import psycopg2
-            conn = self._get_conn()
-            try:
-                def _inner():
+
+            # Each retry attempt checks out its own connection so that a stale
+            # socket from a previous attempt doesn't cause every retry to fail.
+            def _attempt():
+                conn = self._get_conn()
+                try:
                     with conn.cursor() as cur:
+                        if self._pgvector_enabled and emb_pg:
+                            cur.execute(
+                                """INSERT INTO memories
+                                   (id, type, content, vector, embedding, embedding_model,
+                                    embedding_version, embedding_dim, lifecycle_state,
+                                    timestamp, importance, utility_score, access_count,
+                                    last_accessed, namespace, source, active, status,
+                                    consensus_score, logical_hash, metadata, score)
+                                   VALUES (%s,%s,%s,%s,%s::vector,%s,%s,%s,'active',
+                                           %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                                   ON CONFLICT (id) DO UPDATE SET
+                                   type=EXCLUDED.type, content=EXCLUDED.content,
+                                   vector=EXCLUDED.vector, embedding=EXCLUDED.embedding,
+                                   embedding_model=EXCLUDED.embedding_model,
+                                   embedding_version=EXCLUDED.embedding_version,
+                                   embedding_dim=EXCLUDED.embedding_dim,
+                                   lifecycle_state='active',
+                                   timestamp=EXCLUDED.timestamp,
+                                   importance=EXCLUDED.importance,
+                                   utility_score=EXCLUDED.utility_score,
+                                   access_count=EXCLUDED.access_count,
+                                   last_accessed=EXCLUDED.last_accessed,
+                                   namespace=EXCLUDED.namespace, source=EXCLUDED.source,
+                                   active=EXCLUDED.active, status=EXCLUDED.status,
+                                   consensus_score=EXCLUDED.consensus_score,
+                                   logical_hash=EXCLUDED.logical_hash,
+                                   metadata=EXCLUDED.metadata, score=EXCLUDED.score""",
+                                (
+                                    memory.id, memory.type.value, content,
+                                    memory.vector.tobytes() if memory.vector is not None else None,
+                                    emb_pg, emb_model, emb_version, emb_dim,
+                                    memory.timestamp, memory.importance, memory.utility_score,
+                                    memory.access_count, memory.last_accessed, memory.namespace,
+                                    memory.source, 1 if memory.active else 0, memory.status.value,
+                                    memory.consensus_score, memory.logical_hash, meta, memory.score,
+                                ),
+                            )
+                        else:
+                            cur.execute(
+                                """INSERT INTO memories
+                                   (id, type, content, vector, timestamp, importance, utility_score, access_count,
+                                    last_accessed, namespace, source, active, status, consensus_score, logical_hash, metadata, score)
+                                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                   ON CONFLICT (id) DO UPDATE SET
+                                   type = EXCLUDED.type, content = EXCLUDED.content,
+                                   vector = EXCLUDED.vector, timestamp = EXCLUDED.timestamp,
+                                   importance = EXCLUDED.importance, utility_score = EXCLUDED.utility_score,
+                                   access_count = EXCLUDED.access_count, last_accessed = EXCLUDED.last_accessed,
+                                   namespace = EXCLUDED.namespace, source = EXCLUDED.source,
+                                   active = EXCLUDED.active, status = EXCLUDED.status,
+                                   consensus_score = EXCLUDED.consensus_score, logical_hash = EXCLUDED.logical_hash,
+                                   metadata = EXCLUDED.metadata, score = EXCLUDED.score""",
+                                (
+                                    memory.id, memory.type.value, content,
+                                    memory.vector.tobytes() if memory.vector is not None else None,
+                                    memory.timestamp, memory.importance, memory.utility_score,
+                                    memory.access_count, memory.last_accessed, memory.namespace,
+                                    memory.source, 1 if memory.active else 0, memory.status.value,
+                                    memory.consensus_score, memory.logical_hash, meta, memory.score,
+                                ),
+                            )
                         cur.execute(
-                            """INSERT INTO memories
-                               (id, type, content, vector, timestamp, importance, utility_score, access_count,
-                                last_accessed, namespace, source, active, status, consensus_score, logical_hash, metadata, score)
-                               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                               ON CONFLICT (id) DO UPDATE SET
-                               type = EXCLUDED.type, content = EXCLUDED.content,
-                               vector = EXCLUDED.vector, timestamp = EXCLUDED.timestamp,
-                               importance = EXCLUDED.importance, utility_score = EXCLUDED.utility_score,
-                               access_count = EXCLUDED.access_count, last_accessed = EXCLUDED.last_accessed,
-                               namespace = EXCLUDED.namespace, source = EXCLUDED.source,
-                               active = EXCLUDED.active, status = EXCLUDED.status,
-                               consensus_score = EXCLUDED.consensus_score, logical_hash = EXCLUDED.logical_hash,
-                               metadata = EXCLUDED.metadata, score = EXCLUDED.score""",
-                            (
-                                memory.id, memory.type.value, content,
-                                memory.vector.tobytes() if memory.vector is not None else None,
-                                memory.timestamp, memory.importance, memory.utility_score,
-                                memory.access_count, memory.last_accessed, memory.namespace,
-                                memory.source, 1 if memory.active else 0, memory.status.value,
-                                memory.consensus_score, memory.logical_hash, meta, memory.score,
-                            ),
+                            """
+                            INSERT INTO memory_events (event_type, memory_id, namespace, payload)
+                            VALUES ('memory.created', %s, %s, '{}'::jsonb)
+                            """,
+                            (memory.id, memory.namespace),
                         )
                     conn.commit()
+                    self._put_conn(conn)
+                except (psycopg2.OperationalError, psycopg2.InterfaceError):
+                    # Remove the broken connection from the pool so the next
+                    # retry (or future call) gets a fresh one.
+                    try:
+                        self._pool.putconn(conn, close=True)
+                    except Exception:
+                        pass
+                    raise
+                except Exception:
+                    self._put_conn(conn)
+                    raise
 
-                retry_with_backoff(
-                    _inner,
-                    retryable_exceptions=(psycopg2.OperationalError, psycopg2.InterfaceError),
-                    operation_name="postgres.save",
-                )
-            finally:
-                self._put_conn(conn)
+            retry_with_backoff(
+                _attempt,
+                retryable_exceptions=(psycopg2.OperationalError, psycopg2.InterfaceError),
+                operation_name="postgres.save",
+            )
 
         self._circuit.call(_do)
 
@@ -177,9 +368,10 @@ class PostgresBackend(Backend):
 
         def _do():
             import psycopg2
-            conn = self._get_conn()
-            try:
-                def _inner():
+
+            def _attempt():
+                conn = self._get_conn()
+                try:
                     with conn.cursor() as cur:
                         query = """INSERT INTO memories
                                (id, type, content, vector, timestamp, importance, utility_score, access_count,
@@ -196,14 +388,22 @@ class PostgresBackend(Backend):
                                metadata = EXCLUDED.metadata, score = EXCLUDED.score"""
                         self._execute_values(cur, query, data)
                     conn.commit()
+                    self._put_conn(conn)
+                except (psycopg2.OperationalError, psycopg2.InterfaceError):
+                    try:
+                        self._pool.putconn(conn, close=True)
+                    except Exception:
+                        pass
+                    raise
+                except Exception:
+                    self._put_conn(conn)
+                    raise
 
-                retry_with_backoff(
-                    _inner,
-                    retryable_exceptions=(psycopg2.OperationalError, psycopg2.InterfaceError),
-                    operation_name="postgres.save_batch",
-                )
-            finally:
-                self._put_conn(conn)
+            retry_with_backoff(
+                _attempt,
+                retryable_exceptions=(psycopg2.OperationalError, psycopg2.InterfaceError),
+                operation_name="postgres.save_batch",
+            )
 
         self._circuit.call(_do)
 
@@ -246,10 +446,87 @@ class PostgresBackend(Backend):
         conn = self._get_conn()
         try:
             with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT namespace FROM memories WHERE id = %s", (memory_id,)
+                )
+                row = cur.fetchone()
+                namespace = row[0] if row else "default"
                 cur.execute("DELETE FROM memories WHERE id = %s", (memory_id,))
                 deleted = cur.rowcount > 0
+                if deleted:
+                    cur.execute(
+                        """
+                        INSERT INTO memory_events (event_type, memory_id, namespace, payload)
+                        VALUES ('memory.deleted', %s, %s, '{}'::jsonb)
+                        """,
+                        (memory_id, namespace),
+                    )
             conn.commit()
             return deleted
+        finally:
+            self._put_conn(conn)
+
+    def vector_search(
+        self,
+        query_vector: np.ndarray,
+        *,
+        namespace: Optional[str] = None,
+        top_k: int = 10,
+        embedding_model: Optional[str] = None,
+    ) -> List[Tuple[Memory, float]]:
+        """ANN search via pgvector. Returns (memory, cosine_similarity) pairs."""
+        if not self._pgvector_enabled:
+            return []
+
+        vec_str = self._vec_to_pg(query_vector)
+        conn = self._get_conn()
+        try:
+            with conn.cursor(cursor_factory=self._DictCursor) as cur:
+                clauses = ["active = 1", "embedding IS NOT NULL"]
+                params: List[Any] = []
+                if namespace:
+                    clauses.append("namespace = %s")
+                    params.append(namespace)
+                if embedding_model:
+                    clauses.append("embedding_model = %s")
+                    params.append(embedding_model)
+                where = " AND ".join(clauses)
+                sql = f"""
+                    SELECT *, 1 - (embedding <=> %s::vector) AS similarity
+                    FROM memories
+                    WHERE {where}
+                    ORDER BY embedding <=> %s::vector
+                    LIMIT %s
+                """
+                cur.execute(sql, [vec_str] + params + [vec_str, top_k])
+                rows = cur.fetchall()
+                return [(self._row_to_memory(r), float(r["similarity"])) for r in rows]
+        finally:
+            self._put_conn(conn)
+
+    def save_edge(
+        self,
+        namespace: str,
+        source_id: str,
+        target_id: str,
+        relation_type: str = "related",
+        confidence: float = 1.0,
+    ) -> str:
+        eid = uuid.uuid4().hex[:32]
+        conn = self._get_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO memory_edges
+                        (id, namespace, source_id, target_id, relation_type, confidence, active)
+                    VALUES (%s, %s, %s, %s, %s, %s, 1)
+                    ON CONFLICT (id) DO UPDATE SET active = 1, confidence = EXCLUDED.confidence
+                    """,
+                    (eid, namespace, source_id, target_id, relation_type, confidence),
+                )
+            conn.commit()
+            return eid
         finally:
             self._put_conn(conn)
 

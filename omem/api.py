@@ -34,6 +34,8 @@ class OMem:
         model: Optional[str] = None,
         embedding_provider: str = "local",
         encryption_key: Optional[str] = None,
+        audit_db_path: Optional[str] = None,
+        audit_logger: Optional[AuditLogger] = None,
     ):
         # Resolve encryption
         from .governance.encryption import EncryptionManager
@@ -66,7 +68,11 @@ class OMem:
             model_name=model_name,
             embedding_provider=embedding_provider,
         )
-        self._audit = AuditLogger()
+        if audit_logger is not None:
+            self._audit = audit_logger
+        else:
+            resolved_audit = audit_db_path or os.environ.get("OMEM_AUDIT_DB_PATH") or None
+            self._audit = AuditLogger(db_path=resolved_audit)
         logger.info(
             "OMem initialized (backend=%s, provider=%s, encrypted=%s)",
             backend,

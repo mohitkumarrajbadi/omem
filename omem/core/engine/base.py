@@ -68,15 +68,15 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
 
         self._load_from_backend()
 
-    def _load_from_backend(self):
+    def _load_from_backend(self) -> int:
         """Load existing memories from backend into KV cache and vector index."""
         if not self.backend or not hasattr(self.backend, "all"):
-            return
+            return 0
 
         try:
             stored_memories = self.backend.all()
             if not stored_memories:
-                return
+                return 0
 
             import numpy as np
 
@@ -89,12 +89,50 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
             if vectors:
                 vectors_array = np.array(vectors, dtype=np.float32)
                 self.vector_index.rebuild(vectors_array)
+            return len(stored_memories)
         except Exception as exc:
             logger.error(
                 "Failed to load memories from backend — engine starts empty. Error: %s",
                 exc,
                 exc_info=True,
             )
+            return 0
+
+    def reload_from_backend(self) -> int:
+        """Re-hydrate the in-memory index from the durable backend.
+
+        Used after API restarts or when a pooled engine was warmed before writes
+        landed in Postgres. Returns the number of memories loaded.
+        """
+        if not self.backend or not hasattr(self.backend, "all"):
+            return 0
+
+        try:
+            stored_memories = self.backend.all()
+            if not stored_memories:
+                return 0
+
+            import numpy as np
+
+            with WriteContext(self._lock):
+                self.kv.clear()
+                self._id_order.clear()
+                vectors = []
+                for mem in stored_memories:
+                    self.kv.set(mem.id, mem)
+                    self._id_order.append(mem.id)
+                    vectors.append(mem.vector)
+                if vectors:
+                    vectors_array = np.array(vectors, dtype=np.float32)
+                    self.vector_index.rebuild(vectors_array)
+                else:
+                    self.vector_index.rebuild(
+                        __import__("numpy").empty((0, self.embedder.dim), dtype="float32")
+                    )
+            return len(stored_memories)
+        except Exception as exc:
+            logger.error("Failed to reload memories from backend: %s", exc, exc_info=True)
+            return 0
 
     def __del__(self):
         """Ensure write buffer is flushed before destruction."""

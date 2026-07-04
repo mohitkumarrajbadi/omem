@@ -238,6 +238,7 @@ class GovernanceOS:
         omem: Any = None,
         state: Any = None,
         audit_db_path: Optional[str] = None,
+        audit_logger: Any = None,
     ) -> None:
         """Initialise GovernanceOS.
 
@@ -245,15 +246,17 @@ class GovernanceOS:
             omem:          The ``OMem`` instance (provides memory deletion/listing).
             state:         The ``StateOS`` instance (provides session listing).
             audit_db_path: Override audit DB path (default: ``~/.omem/audit.db``).
+            audit_logger:  Shared ``AuditLogger`` instance (preferred in cloud).
         """
         self._omem = omem
         self._state = state
 
-        # Lazy import to avoid import cycles — AuditLogger is already initialised
-        # on the OMem side; we create a separate read handle for GovernanceOS.
-        from omem.governance.audit import AuditLogger
+        if audit_logger is not None:
+            self._audit = audit_logger
+        else:
+            from omem.governance.audit import AuditLogger
 
-        self._audit = AuditLogger(db_path=audit_db_path)
+            self._audit = AuditLogger(db_path=audit_db_path)
 
         import threading
         self._lock = threading.RLock()

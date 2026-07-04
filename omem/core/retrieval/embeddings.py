@@ -75,6 +75,11 @@ class Embedder:
             self._use_st = False
             # *** LAZY: do NOT load model here — wait until first encode() call ***
 
+    @property
+    def model_version(self) -> str:
+        """Stable version string for embedding migration tracking."""
+        return f"{self._model_name}:v1:{self.dim}"
+
     # ------------------------------------------------------------------
     # Model loading
     # ------------------------------------------------------------------

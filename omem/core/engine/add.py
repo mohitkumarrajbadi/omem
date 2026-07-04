@@ -133,6 +133,7 @@ class AddMixin:
         confidence: float = 1.0,
         importance: Optional[float] = None,
         metadata: Optional[Dict] = None,
+        force: bool = False,
     ) -> str:
         """Graph-first ingestion entrypoint for unstructured experience text."""
         return self.add(
@@ -142,6 +143,7 @@ class AddMixin:
             confidence=confidence,
             importance=importance,
             metadata=metadata,
+            force=force,
         )
 
     def _check_dedup(self, vector: np.ndarray, content: str) -> Optional[str]:
