@@ -37,10 +37,13 @@ class OMem:
         audit_db_path: Optional[str] = None,
         audit_logger: Optional[AuditLogger] = None,
     ):
-        # Resolve encryption
+        # Resolve encryption (column-level AES-256-GCM when key present)
         from .governance.encryption import EncryptionManager
-        _raw = encryption_key or os.environ.get("OMEM_ENCRYPTION_KEY")
-        _enc = EncryptionManager(base64.urlsafe_b64decode(_raw + "==")) if _raw else None
+
+        if encryption_key:
+            _enc = EncryptionManager(EncryptionManager.parse_key_material(encryption_key))
+        else:
+            _enc = EncryptionManager.from_env()
 
         if backend in ("sqlite", "memory", "postgres"):
             if backend == "postgres":
@@ -383,7 +386,14 @@ class OMem:
         Returns:
             ForgetResult with a summary of affected items.
         """
-        return self.brain.forget()
+        result = self.brain.forget()
+        self._audit.log(
+            "forget",
+            namespace="",
+            archived_count=len(result.archived),
+            deleted_count=len(result.deleted),
+        )
+        return result
 
     def archived(self, namespace: Optional[str] = None) -> List[Memory]:
         """Return archived memories (excluded from RAG, but recoverable)."""

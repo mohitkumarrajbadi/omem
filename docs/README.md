@@ -2,6 +2,8 @@
 
 OMem docs are grouped by purpose so contributors can find the right file quickly.
 
+**Layer maturity, known limitations, and OMem Cloud:** see [README — Layer maturity](../README.md#layer-maturity).
+
 ## Architecture
 
 - [Project Structure](./architecture/PROJECT_STRUCTURE.md) - repo map, ownership areas, and where to change code

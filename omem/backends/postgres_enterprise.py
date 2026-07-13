@@ -41,6 +41,7 @@ from ..core.utils.retry import retry_with_backoff
 from ..types import Memory, MemoryStatus, MemoryType
 from .base import Backend
 from .postgres import PostgresBackend
+from .pg_session import resolve_pg_session
 
 logger = logging.getLogger(__name__)
 
@@ -96,19 +97,7 @@ _CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_mem_importance ON memories(importance DESC)",
 ]
 
-# Postgres row-level security policies (applied once per DB, not per connection).
-# When enabled, sessions that have not called _set_tenant_context() see zero rows.
-_RLS_POLICIES = """
-ALTER TABLE memories ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS memories_tenant_isolation ON memories;
-CREATE POLICY memories_tenant_isolation ON memories
-    USING (
-        org_id  = current_setting('omem.org_id',  true)
-        AND
-        user_id = current_setting('omem.user_id', true)
-    );
-"""
+# RLS policies are applied by omem-cloud migration 004_rls_namespace.sql.
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -223,15 +212,6 @@ class EnterprisePostgresBackend(Backend):
                 cur.execute(_CREATE_TENANTS_TABLE)
                 for idx_sql in _CREATE_INDEXES:
                     cur.execute(idx_sql)
-                if self._enable_rls:
-                    try:
-                        cur.execute(_RLS_POLICIES)
-                        logger.info("RLS policies applied.")
-                    except Exception as rls_err:
-                        logger.warning(
-                            "RLS policy application failed (requires superuser): %s", rls_err
-                        )
-                        conn.rollback()
             conn.commit()
         finally:
             self._put_conn(conn)
@@ -262,8 +242,10 @@ class EnterprisePostgresBackend(Backend):
     def _put_conn(self, conn) -> None:
         self._pool.putconn(conn)
 
-    def _set_tenant_context(self, cur) -> None:
-        """Set Postgres session variables for RLS policy evaluation."""
+    def _set_tenant_context(self, cur, *, namespace: Optional[str] = None) -> None:
+        """Set Postgres session variables for RLS policy evaluation (SET LOCAL)."""
+        ns = namespace or resolve_pg_session(fallback_namespace="default").namespace
+        cur.execute("SET LOCAL app.current_namespace = %s", (ns,))
         cur.execute("SET LOCAL omem.org_id  = %s", (self.org_id,))
         cur.execute("SET LOCAL omem.user_id = %s", (self.user_id,))
 

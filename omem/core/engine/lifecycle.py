@@ -155,7 +155,10 @@ class LifecycleMixin:
             for m in to_purge:
                 self.kv.delete(m.id)
                 if self.backend and hasattr(self.backend, "delete"):
-                    self.backend.delete(m.id)
+                    try:
+                        self.backend.delete(m.id, namespace=m.namespace)
+                    except TypeError:
+                        self.backend.delete(m.id)
 
             logger.info("Maintenance vacuumed %d forgotten memories", len(to_purge))
             return len(to_purge)

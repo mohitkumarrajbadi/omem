@@ -1,8 +1,14 @@
 """AES-256-GCM field-level encryption for memory content and metadata."""
 
+from __future__ import annotations
+
 import base64
+import binascii
+import logging
 import os
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 class EncryptionManager:
@@ -41,7 +47,7 @@ class EncryptionManager:
             return value
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-        raw = base64.b64decode(value[len(self.PREFIX):])
+        raw = base64.b64decode(value[len(self.PREFIX) :])
         iv, ciphertext = raw[:12], raw[12:]
         aesgcm = AESGCM(self._key)
         return aesgcm.decrypt(iv, ciphertext, None).decode("utf-8")
@@ -61,16 +67,55 @@ class EncryptionManager:
             return data
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-        rest = data[len(self.MAGIC):]
+        rest = data[len(self.MAGIC) :]
         iv, ciphertext = rest[:12], rest[12:]
         aesgcm = AESGCM(self._key)
         return aesgcm.decrypt(iv, ciphertext, None)
 
+    @staticmethod
+    def parse_key_material(raw: str) -> bytes:
+        """Accept base64url (32 bytes) or hex (64 chars → 32 bytes)."""
+        raw = (raw or "").strip()
+        if not raw:
+            raise ValueError("empty encryption key")
+        if len(raw) == 64 and all(c in "0123456789abcdefABCDEF" for c in raw):
+            return binascii.unhexlify(raw)
+        padded = raw + "=" * (-len(raw) % 4)
+        try:
+            key = base64.urlsafe_b64decode(padded)
+        except Exception:
+            key = base64.b64decode(padded)
+        if len(key) != 32:
+            raise ValueError(
+                f"Encryption key must decode to 32 bytes, got {len(key)}. "
+                "Use 64-char hex or base64url of 32 random bytes."
+            )
+        return key
+
     @classmethod
     def from_env(cls) -> Optional["EncryptionManager"]:
-        """Read OMEM_ENCRYPTION_KEY env var (base64url-encoded 32 bytes)."""
-        raw = os.environ.get("OMEM_ENCRYPTION_KEY")
+        """Load key from ``OMEM_ENCRYPTION_KEY`` or legacy ``OMEM_SECRET_KEY``.
+
+        Opt-out: set ``OMEM_ENCRYPTION_DISABLED=1`` (cloud/enterprise should not).
+        """
+        if os.environ.get("OMEM_ENCRYPTION_DISABLED", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        ):
+            logger.warning(
+                "Field-level encryption DISABLED via OMEM_ENCRYPTION_DISABLED — "
+                "memory content/metadata stored in plaintext"
+            )
+            return None
+        raw = (
+            os.environ.get("OMEM_ENCRYPTION_KEY", "").strip()
+            or os.environ.get("OMEM_SECRET_KEY", "").strip()
+        )
         if not raw:
             return None
-        key = base64.urlsafe_b64decode(raw + "==")
-        return cls(key)
+        try:
+            return cls(cls.parse_key_material(raw))
+        except Exception as exc:
+            logger.error("Invalid encryption key material: %s", exc)
+            raise

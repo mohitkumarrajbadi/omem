@@ -18,6 +18,21 @@ from .utils import _DEDUP_THRESHOLD, _TOKENIZER, _fast_hash, _token_hash
 logger = logging.getLogger(__name__)
 
 
+def _scoped_memory_id(namespace: str, content: str) -> str:
+    """Content-hash scoped by org + namespace so identical text never collides.
+
+    See omem-cloud ``docs/MIGRATION_MEMORY_IDS.md`` for upgrade notes.
+    """
+    try:
+        from omem.backends.pg_session import resolve_pg_session
+
+        org = resolve_pg_session(fallback_namespace=namespace or "default").org_id or ""
+    except Exception:
+        org = ""
+    ns = namespace or "default"
+    return _fast_hash(f"{org}\0{ns}\0{content}")
+
+
 class AddMixin:
     """Methods for adding and indexing memories."""
 
@@ -41,7 +56,7 @@ class AddMixin:
                     metrics.increment("noise_rejected")
                     return ""
 
-            mem_id = memory_id if memory_id else _fast_hash(content)
+            mem_id = memory_id if memory_id else _scoped_memory_id(namespace, content)
             type_scores = auto_classify_multi(content)
             primary_type = mem_type or type_scores[0][0]
             vector = self.embedder.encode(content)

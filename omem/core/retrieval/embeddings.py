@@ -77,8 +77,17 @@ class Embedder:
 
     @property
     def model_version(self) -> str:
-        """Stable version string for embedding migration tracking."""
-        return f"{self._model_name}:v1:{self.dim}"
+        """Stable version string for embedding migration tracking.
+
+        Prefixed with ``st:`` or ``hash:`` so upgrades from the hash fallback
+        to sentence-transformers are detectable in stored rows.
+        """
+        if self.provider == "openai":
+            return f"openai:{self._model_name}:v1:{self.dim}"
+        if not self._model_loaded:
+            self._try_load_model()
+        kind = "st" if self._use_st else "hash"
+        return f"{kind}:{self._model_name}:v1:{self.dim}"
 
     # ------------------------------------------------------------------
     # Model loading
@@ -111,8 +120,10 @@ class Embedder:
             self._use_st = True
             logger.debug("Loaded sentence-transformers model: %s", self._model_name)
         except Exception as e:
-            logger.debug(
-                "sentence-transformers not available (%s). Using fast hash-based embedder.",
+            logger.warning(
+                "sentence-transformers not available (%s). "
+                "Using hash-based embedder — semantic recall will be weak. "
+                "Install with: pip install 'omem[embeddings]'",
                 str(e),
             )
 

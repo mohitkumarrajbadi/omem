@@ -174,9 +174,12 @@ def _compute_metrics(events: List[TraceEvent]) -> Dict[str, Any]:
         if not e.payload.get("error")
     )
 
+    remember_events = by_type.get("remember", [])
+
     return {
         "total_events": len(events),
-        "remember_count": len(by_type.get("remember", [])),
+        "remember_count": sum(1 for e in remember_events if not e.payload.get("rejected")),
+        "rejected_count": sum(1 for e in remember_events if e.payload.get("rejected")),
         "recall_count": len(recall_events),
         "recall_latency_p50_ms": round(_percentile(recall_latencies, 50), 2),
         "recall_latency_p99_ms": round(_percentile(recall_latencies, 99), 2),

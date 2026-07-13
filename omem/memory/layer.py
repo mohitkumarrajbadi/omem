@@ -60,7 +60,6 @@ class MemoryOS:
                 confidence=confidence,
                 importance=importance,
                 metadata=metadata,
-                force=force,
             )
         return self._omem.add(
             content,

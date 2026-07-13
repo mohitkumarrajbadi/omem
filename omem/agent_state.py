@@ -638,9 +638,18 @@ class AgentState:
         mid = self._memory.remember(content, **remember_kwargs)
         dur = (time.time() - t0) * 1000
         imp_val = importance if importance is not None else 0.5
-        self._emit("remember", dur, memory_id=mid, importance=imp_val)
-        self._prov(mid, "memory", "create", source=kwargs.get("source", "user"),
-                   content_length=len(content), importance=imp_val)
+        if mid:
+            self._emit("remember", dur, memory_id=mid, importance=imp_val)
+            self._prov(
+                mid,
+                "memory",
+                "create",
+                source=kwargs.get("source", "user"),
+                content_length=len(content),
+                importance=imp_val,
+            )
+        else:
+            self._emit("remember", dur, memory_id=mid, importance=imp_val, rejected=True)
         return mid
 
     def recall(

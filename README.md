@@ -22,6 +22,25 @@
 
 ---
 
+## Layer maturity
+
+| Layer | Status |
+|-------|--------|
+| Memory | Stable |
+| State | Stable |
+| Context | Stable |
+| Knowledge | Partial — link/query API works; graph projection is in-memory, durable edges incomplete |
+| Observe | Partial — Prometheus metrics work; Grafana dashboards are basic |
+| Governance | Stable (local SQLite audit) / Preview (cloud RBAC + namespace headers) |
+
+For managed, multi-tenant hosting see [OMem Cloud](../omem-cloud/).
+
+### Known limitations
+
+Default embeddings are hash-based (384-dim, zero extra dependencies). Recall quality is lower than `sentence-transformers` or OpenAI embeddings. For production semantic quality, install the optional `[embeddings]` extra: `pip install omem-os[embeddings]`.
+
+---
+
 ## Benchmarks
 
 Tested on Apple M-series · 5,000 memories · 500 queries · `all-MiniLM-L6-v2` · reproduce with `python distribution/benchmark_vs_mem0.py`
@@ -79,7 +98,7 @@ for mem in brain.recall("database choice", k=3):
     print(f"[{mem.importance:.2f}] {mem.content}")
 ```
 
-Full `AgentState` API (six-layer stack):
+Full `AgentState` API (four product layers + cross-cutting gov/observe):
 
 ```python
 from omem import AgentState
@@ -212,24 +231,33 @@ backend = EnterprisePostgresBackend(
 
 ## Architecture
 
-OMem is a six-layer agent state platform. Each layer is independently useful; together they form a complete agent infrastructure stack.
+OMem exposes **four product layers** (Memory, State, Context, Knowledge).
+**Governance & Observability are cross-cutting** — they apply to every operation
+in every layer above, not sequential layers stacked after Knowledge.
 
 ```
-┌────────────────────────────────────────────────────────────┐
-│                     Agent / MCP Client                      │
-├────────────────────────────────────────────────────────────┤
-│  Layer 1: Memory OS    add, recall, reflect, sleep, inspect │
-│  Layer 2: State OS     snapshot, fork, rollback, resume     │
-│  Layer 3: Context      token-budget prompt assembly         │
-│  Layer 4: Knowledge    entity graph + AST codebase index    │
-│  Layer 5: Observe      traces, metrics, OpenTelemetry       │
-│  Layer 6: Governance   audit, RBAC, retention, encryption   │
-├────────────────────────────────────────────────────────────┤
-│  Engine:  BrainTrace (Python) + omem_rust (Rayon/PyO3)     │
-├────────────────────────────────────────────────────────────┤
-│  Backend: SQLite (local) │ PostgreSQL + pgvector (enterprise)│
-└────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                      Agent / MCP Client                      │
+├──────────────┬──────────────┬──────────────┬─────────────────┤
+│   Memory      │    State     │   Context    │   Knowledge     │
+│  add/recall/  │  snapshot/   │  token-      │  entity graph   │
+│  reflect/sleep│  fork/rollback│ budget     │  + AST index*   │
+├──────────────┴──────────────┴──────────────┴─────────────────┤
+│  Governance & Observability  (cross-cutting — every op)       │
+│  audit · RBAC · retention · encryption · traces · metrics     │
+│  · OTel (partial: /v1/remember path in omem-cloud)            │
+├─────────────────────────────────────────────────────────────┤
+│  Engine:  BrainTrace** (Python) + omem_rust (Rayon/PyO3)      │
+├─────────────────────────────────────────────────────────────┤
+│  Backend: SQLite (local) │ PostgreSQL + pgvector (enterprise) │
+└─────────────────────────────────────────────────────────────┘
 ```
+
+\* **FLAG — confirm before customer-facing use:** Knowledge currently lists
+  “AST codebase index”. Keep, drop, or reword? (see Phase 4 review)
+
+\*\* **FLAG — confirm before customer-facing use:** Engine internal name is
+  `BrainTrace`. Keep that name publicly, or say “core engine” only?
 
 ### Scoring Formula
 
@@ -246,7 +274,7 @@ Weights adapt per retrieval mode: `coding`, `planning`, `chat`, `recall`. The Ru
 | `omem/integrations/mcp_server.py` | MCP server — coding agent tools |
 | `rust/src/lib.rs` | Rust scoring engine (PyO3 + Rayon) |
 | `omem/backends/postgres_enterprise.py` | Enterprise multi-tenant backend |
-| `omem/agent_state.py` | Six-layer `AgentState` facade |
+| `omem/agent_state.py` | `AgentState` facade (4 product layers + cross-cutting gov/observe) |
 | `omem/core/engine/` | BrainTrace orchestrator |
 | `omem/core/brain/` | Importance, forgetting, dreaming, TMS |
 | `omem/core/retrieval/` | Fusion, BM25, vector, ranker |

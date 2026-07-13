@@ -26,3 +26,4 @@ try:
 except ImportError:
     pass
 
+setup(rust_extensions=rust_extensions)

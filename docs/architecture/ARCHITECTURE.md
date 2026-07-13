@@ -2,7 +2,9 @@
 
 **Persistent State Infrastructure for AI Systems**
 
-This document is the canonical reference for how OMem is organized. One import (`AgentState`), six product layers, one engine boundary, zero ambiguity about where code belongs.
+This document is the canonical reference for how OMem is organized. One import
+(`AgentState`), **four product layers** plus **cross-cutting Governance &
+Observability**, one engine boundary, zero ambiguity about where code belongs.
 
 ---
 
@@ -22,26 +24,24 @@ This document is the canonical reference for how OMem is organized. One import (
 ## System Overview
 
 ```text
-                    Agent Applications
-              (coding / support / ops / security)
+                    Agent / MCP Client
                             │
-                            ▼
+        ┌───────────────────┼───────────────────┐
+        ▼                   ▼                   ▼
+   ┌─────────┐        ┌─────────┐        ┌──────────┐   ┌───────────┐
+   │ Memory  │        │  State  │        │ Context  │   │ Knowledge │
+   └────┬────┘        └────┬────┘        └────┬─────┘   └─────┬─────┘
+        │                  │                   │              │
+        └──────────────────┴─────────┬─────────┴──────────────┘
+                                     │
+        ┌────────────────────────────┼────────────────────────────┐
+        │  Governance & Observability (cross-cutting — every op)   │
+        │  audit · RBAC · retention · encryption · traces · metrics│
+        └────────────────────────────┬────────────────────────────┘
+                                     ▼
               ┌─────────────────────────────┐
-              │      omem.agent_state       │  ← single product facade
-              │  memory · state · context   │
-              │  knowledge · observe · gov    │
-              └─────────────────────────────┘
-                            │
-         ┌──────────────────┼──────────────────┐
-         ▼                  ▼                  ▼
-   Layer facades       Cross-cutting        Integrations
-   (memory…governance) (provenance, runtime) (MCP, LangChain…)
-         │                  │                  │
-         └──────────────────┼──────────────────┘
-                            ▼
-              ┌─────────────────────────────┐
-              │         omem.core           │  ← private engine (BrainTrace)
-              │  engine · brain · graph     │
+              │         omem.core           │  ← private engine
+              │  engine · brain · graph     │     (internal: BrainTrace**)
               │  retrieval · utils          │
               └─────────────────────────────┘
                             │
@@ -51,25 +51,32 @@ This document is the canonical reference for how OMem is organized. One import (
     sqlite · postgres   client · server    SIMD scoring
 ```
 
+\*\* **FLAG:** confirm whether “BrainTrace” is the committed public name.
+
 ---
 
-## Six Product Layers
+## Product layers + cross-cutting concerns
 
-| Layer | Package | Responsibility | Key verbs |
-|-------|---------|----------------|-----------|
-| **1 — Memory** | `omem.memory` | Facts, experiences, preferences | `remember`, `recall`, `consolidate`, `forget` |
-| **2 — State** | `omem.state` | Goals, plans, tool outputs, checkpoints | `save`, `snapshot`, `rollback`, `fork` |
-| **3 — Context** | `omem.context` | Token-budget LLM input assembly | `build`, `estimate_savings` |
-| **4 — Knowledge** | `omem.knowledge` | Entity graph, reasoning, codebase cognition | `link`, `query`, `reason`, `ingest` |
-| **5 — Observe** | `omem.observe` | Traces, replay, cost, dashboard | `trace`, `metrics`, `replay` |
-| **6 — Governance** | `omem.governance` | RBAC, retention, audit, encryption | `set_policy`, `audit`, `delete_scope` |
+Governance and Observability are **not** “Layer 5 / Layer 6 stacked after Knowledge.”
+They wrap every product-layer operation.
 
-### Layer extensions (same layer, sub-package)
+| Kind | Package | Responsibility | Key verbs |
+|------|---------|----------------|-----------|
+| **Product — Memory** | `omem.memory` | Facts, experiences, preferences | `remember`, `recall`, `consolidate`, `forget` |
+| **Product — State** | `omem.state` | Goals, plans, tool outputs, checkpoints | `save`, `snapshot`, `rollback`, `fork` |
+| **Product — Context** | `omem.context` | Token-budget LLM input assembly | `build`, `estimate_savings` |
+| **Product — Knowledge** | `omem.knowledge` | Entity graph, reasoning; *optional AST/codebase index* \* | `link`, `query`, `reason`, `ingest` |
+| **Cross-cutting — Observe** | `omem.observe` | Traces, replay, cost, dashboard | `trace`, `metrics`, `replay` |
+| **Cross-cutting — Governance** | `omem.governance` | RBAC, retention, audit, encryption | `set_policy`, `audit`, `delete_scope` |
+
+\* **FLAG — confirm scope:** “AST codebase index” under Knowledge — keep in customer docs, drop, or reword to “codebase cognition”?
+
+### Layer extensions (same package family)
 
 | Extension | Location | Why here |
 |-----------|----------|----------|
 | Org memory (namespace hierarchy) | `omem.memory.org` | Scoped recall is a memory concern |
-| Project / codebase cognition | `omem.knowledge.codebase` | Code symbols are a knowledge subgraph |
+| Project / codebase cognition | `omem.knowledge.codebase` | Code symbols are a knowledge subgraph (**AST claim — confirm**) |
 | Local dashboard | `omem.observe.dashboard` | Visualization is observability |
 
 ---

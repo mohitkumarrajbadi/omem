@@ -53,33 +53,38 @@ Memory remains **Layer 1**. State, context, and cloud are the product differenti
 
 ## Target Framework Architecture
 
-### Six-layer model
+### Product layers + cross-cutting model
+
+Governance & Observability are **cross-cutting** (apply to every op), not
+sequential layers after Knowledge. Package folders may still be numbered
+historically as “Layer 5/6” in code comments.
 
 ```text
-Layer 1  Memory      Facts, experiences, observations, preferences
-Layer 2  State       Goals, plans, progress, tool outputs, workflow state
-Layer 3  Context     Selects optimal LLM input from memory + state + knowledge
-Layer 4  Knowledge   Entity relationships, org topology, reasoning
-Layer 5  Observe     Traces, replay, cost, recall quality
-Layer 6  Governance  Audit, RBAC, retention, compliance
+Product   Memory      Facts, experiences, observations, preferences
+Product   State       Goals, plans, progress, tool outputs, workflow state
+Product   Context     Selects optimal LLM input from memory + state + knowledge
+Product   Knowledge   Entity relationships, org topology, reasoning
+                      (+ AST codebase index — FLAG: confirm customer-doc scope)
+Cross-cut Observe     Traces, replay, cost, recall quality
+Cross-cut Governance  Audit, RBAC, retention, compliance
 ```
 
 ### End-state package layout
 
 ```text
 omem/
-├── agent_state.py          # Top-level product facade (Memory + State + Context + ...)
-├── memory/                 # Layer 1 — facts, experiences
-├── state/                  # Layer 2 — goals, plans, tool outputs, snapshots
-├── context/                # Layer 3 — optimal LLM context assembly
-├── knowledge/              # Layer 4 — graph query facade
-├── observe/                # Layer 5 — metrics, traces, replay, cost
-├── governance/             # Layer 6 — RBAC, retention, compliance
+├── agent_state.py          # Top-level product facade
+├── memory/                 # Product — facts, experiences
+├── state/                  # Product — goals, plans, tool outputs, snapshots
+├── context/                # Product — optimal LLM context assembly
+├── knowledge/              # Product — graph query facade
+├── observe/                # Cross-cutting — metrics, traces, replay, cost
+├── governance/             # Cross-cutting — RBAC, retention, compliance
 ├── provenance/             # Cross-cutting lineage
 ├── runtime/                # Multi-agent coordination
 ├── cloud/                  # HTTP client + remote backend + server
 ├── backends/               # sqlite | postgres | cloud (remote)
-├── core/                   # Existing engine (unchanged boundary)
+├── core/                   # Private engine (internal name: BrainTrace — FLAG confirm public use)
 └── integrations/           # MCP, LangChain, CrewAI, etc.
 ```
 
