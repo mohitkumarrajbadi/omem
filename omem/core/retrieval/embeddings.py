@@ -123,7 +123,7 @@ class Embedder:
             logger.warning(
                 "sentence-transformers not available (%s). "
                 "Using hash-based embedder — semantic recall will be weak. "
-                "Install with: pip install 'omem[embeddings]'",
+                "Install with: pip install 'omem-os[embeddings]'",
                 str(e),
             )
 

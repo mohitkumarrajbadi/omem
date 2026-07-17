@@ -8,18 +8,26 @@ process crashes.
 v0.7.0 Production hardening (H).
 """
 
+import atexit
 import base64
 import json
 import logging
 import os
 import queue
 import threading
-import time
+import weakref
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_WAL_PATH = os.path.expanduser("~/.omem/write_buffer.wal")
+
+
+def _stop_at_exit(buffer_ref: "weakref.ReferenceType[WriteBuffer]") -> None:
+    """Flush a live buffer before Python tears down builtins and modules."""
+    buffer = buffer_ref()
+    if buffer is not None:
+        buffer.stop()
 
 
 class WriteBuffer:
@@ -45,6 +53,7 @@ class WriteBuffer:
         self._flush_interval = flush_interval
         self._running = False
         self._thread: Optional[threading.Thread] = None
+        self._stop_event = threading.Event()
         self._total_written = 0
         self._total_errors = 0
         self._wal_path = wal_path or _DEFAULT_WAL_PATH
@@ -57,6 +66,7 @@ class WriteBuffer:
 
         # Re-enqueue any memories that survived a crash
         self._recover_from_wal()
+        atexit.register(_stop_at_exit, weakref.ref(self))
 
     # ------------------------------------------------------------------
     # WAL helpers
@@ -197,6 +207,7 @@ class WriteBuffer:
         if self._running:
             return
         self._running = True
+        self._stop_event.clear()
         self._thread = threading.Thread(
             target=self._worker, daemon=True, name="omem-write-buffer"
         )
@@ -206,6 +217,7 @@ class WriteBuffer:
     def stop(self) -> None:
         """Stop the background thread and flush remaining items."""
         self._running = False
+        self._stop_event.set()
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=5.0)
         self.flush()  # flush any remaining
@@ -271,7 +283,7 @@ class WriteBuffer:
     def _worker(self) -> None:
         """Background worker that periodically flushes the queue."""
         while self._running:
-            time.sleep(self._flush_interval)
+            self._stop_event.wait(self._flush_interval)
             if not self._queue.empty():
                 self.flush()
         # Final flush on shutdown
