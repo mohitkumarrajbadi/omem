@@ -5,7 +5,7 @@ Charter target: P95 retrieval latency < 10ms (in-process, k<=10, N<=5k).
 Usage::
 
     python -m benchmarks.slo_recall_latency
-    # or pytest tests/test_slo_recall_latency.py
+    # or pytest tests/test_memory_os_phases.py -k slo
 """
 
 from __future__ import annotations
