@@ -53,6 +53,16 @@ class PostgresBackend(Backend):
         self._enc = encryptor
 
         self.connection_string = connection_string
+        # Allow process-wide caps so multi-namespace AgentPools cannot exhaust
+        # Postgres max_connections (each namespace root opens its own pool).
+        env_min = os.environ.get("OMEM_PG_POOL_MIN")
+        env_max = os.environ.get("OMEM_PG_POOL_MAX")
+        if env_min is not None:
+            pool_min = max(1, int(env_min))
+        if env_max is not None:
+            pool_max = max(pool_min, int(env_max))
+        elif pool_max < pool_min:
+            pool_max = pool_min
         try:
             self._pool = psycopg2.pool.ThreadedConnectionPool(
                 pool_min, pool_max, dsn=connection_string
@@ -144,6 +154,10 @@ class PostgresBackend(Backend):
                     ("embedding_version", "TEXT DEFAULT ''"),
                     ("embedding_dim", "INTEGER DEFAULT 384"),
                     ("lifecycle_state", "TEXT DEFAULT 'active'"),
+                    # Tenant columns — populated on write so strict RLS
+                    # (org-scoped policies) passes under non-superuser roles.
+                    ("org_id", "TEXT NOT NULL DEFAULT ''"),
+                    ("user_id", "TEXT NOT NULL DEFAULT ''"),
                 ):
                     cur.execute(
                         """
@@ -218,7 +232,6 @@ class PostgresBackend(Backend):
             return 0
 
         def _do() -> int:
-            import psycopg2
 
             conn = self._get_conn()
             updated = 0
@@ -363,10 +376,11 @@ class PostgresBackend(Backend):
             import psycopg2
 
             def _attempt():
+                sess = resolve_pg_session_for_write(memory)
                 conn = self._get_conn()
                 try:
                     with conn.cursor() as cur:
-                        self._apply_write_session(cur, memory)
+                        apply_pg_session(cur, sess)
                         if pgvector and emb_pg:
                             cur.execute(
                                 """INSERT INTO memories
@@ -374,9 +388,10 @@ class PostgresBackend(Backend):
                                     embedding_version, embedding_dim, lifecycle_state,
                                     timestamp, importance, utility_score, access_count,
                                     last_accessed, namespace, source, active, status,
-                                    consensus_score, logical_hash, metadata, score)
+                                    consensus_score, logical_hash, metadata, score,
+                                    org_id, user_id)
                                    VALUES (%s,%s,%s,%s,%s::vector,%s,%s,%s,'active',
-                                           %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                                           %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                                    ON CONFLICT (id) DO UPDATE SET
                                    type=EXCLUDED.type, content=EXCLUDED.content,
                                    vector=EXCLUDED.vector, embedding=EXCLUDED.embedding,
@@ -393,7 +408,8 @@ class PostgresBackend(Backend):
                                    active=EXCLUDED.active, status=EXCLUDED.status,
                                    consensus_score=EXCLUDED.consensus_score,
                                    logical_hash=EXCLUDED.logical_hash,
-                                   metadata=EXCLUDED.metadata, score=EXCLUDED.score""",
+                                   metadata=EXCLUDED.metadata, score=EXCLUDED.score,
+                                   org_id=EXCLUDED.org_id, user_id=EXCLUDED.user_id""",
                                 (
                                     memory.id, memory.type.value, content,
                                     memory.vector.tobytes() if memory.vector is not None else None,
@@ -402,14 +418,16 @@ class PostgresBackend(Backend):
                                     memory.access_count, memory.last_accessed, memory.namespace,
                                     memory.source, 1 if memory.active else 0, memory.status.value,
                                     memory.consensus_score, memory.logical_hash, meta, memory.score,
+                                    sess.org_id, sess.user_id,
                                 ),
                             )
                         else:
                             cur.execute(
                                 """INSERT INTO memories
                                    (id, type, content, vector, timestamp, importance, utility_score, access_count,
-                                    last_accessed, namespace, source, active, status, consensus_score, logical_hash, metadata, score)
-                                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                    last_accessed, namespace, source, active, status, consensus_score, logical_hash, metadata, score,
+                                    org_id, user_id)
+                                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                                    ON CONFLICT (id) DO UPDATE SET
                                    type = EXCLUDED.type, content = EXCLUDED.content,
                                    vector = EXCLUDED.vector, timestamp = EXCLUDED.timestamp,
@@ -418,7 +436,8 @@ class PostgresBackend(Backend):
                                    namespace = EXCLUDED.namespace, source = EXCLUDED.source,
                                    active = EXCLUDED.active, status = EXCLUDED.status,
                                    consensus_score = EXCLUDED.consensus_score, logical_hash = EXCLUDED.logical_hash,
-                                   metadata = EXCLUDED.metadata, score = EXCLUDED.score""",
+                                   metadata = EXCLUDED.metadata, score = EXCLUDED.score,
+                                   org_id = EXCLUDED.org_id, user_id = EXCLUDED.user_id""",
                                 (
                                     memory.id, memory.type.value, content,
                                     memory.vector.tobytes() if memory.vector is not None else None,
@@ -426,6 +445,7 @@ class PostgresBackend(Backend):
                                     memory.access_count, memory.last_accessed, memory.namespace,
                                     memory.source, 1 if memory.active else 0, memory.status.value,
                                     memory.consensus_score, memory.logical_hash, meta, memory.score,
+                                    sess.org_id, sess.user_id,
                                 ),
                             )
                         cur.execute(
@@ -467,6 +487,7 @@ class PostgresBackend(Backend):
 
         # Prefer the single-row path when pgvector is on so embedding + vector
         # stay in sync (batch VALUES historically omitted the embedding column).
+        batch_sess = resolve_pg_session_for_write(memories[0])
         if self._pgvector_enabled:
             data = []
             for m in memories:
@@ -505,6 +526,8 @@ class PostgresBackend(Backend):
                         m.logical_hash,
                         meta,
                         m.score,
+                        batch_sess.org_id,
+                        batch_sess.user_id,
                     )
                 )
             if not data:
@@ -517,13 +540,14 @@ class PostgresBackend(Backend):
                     conn = self._get_conn()
                     try:
                         with conn.cursor() as cur:
-                            self._apply_write_session(cur, memories[0])
+                            apply_pg_session(cur, batch_sess)
                             query = """INSERT INTO memories
                                    (id, type, content, vector, embedding, embedding_model,
                                     embedding_version, embedding_dim, lifecycle_state,
                                     timestamp, importance, utility_score, access_count,
                                     last_accessed, namespace, source, active, status,
-                                    consensus_score, logical_hash, metadata, score)
+                                    consensus_score, logical_hash, metadata, score,
+                                    org_id, user_id)
                                    VALUES %s
                                    ON CONFLICT (id) DO UPDATE SET
                                    type=EXCLUDED.type, content=EXCLUDED.content,
@@ -541,7 +565,8 @@ class PostgresBackend(Backend):
                                    active=EXCLUDED.active, status=EXCLUDED.status,
                                    consensus_score=EXCLUDED.consensus_score,
                                    logical_hash=EXCLUDED.logical_hash,
-                                   metadata=EXCLUDED.metadata, score=EXCLUDED.score"""
+                                   metadata=EXCLUDED.metadata, score=EXCLUDED.score,
+                                   org_id=EXCLUDED.org_id, user_id=EXCLUDED.user_id"""
                             # execute_values needs templates for ::vector cast on embedding
                             self._execute_values(
                                 cur,
@@ -549,7 +574,7 @@ class PostgresBackend(Backend):
                                 data,
                                 template=(
                                     "(%s,%s,%s,%s,%s::vector,%s,%s,%s,'active',"
-                                    "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
+                                    "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
                                 ),
                             )
                             for m in memories:
@@ -594,6 +619,7 @@ class PostgresBackend(Backend):
                 m.logical_hash,
                 self._enc.encrypt(json.dumps(m.metadata)) if self._enc else json.dumps(m.metadata),
                 m.score,
+                batch_sess.org_id, batch_sess.user_id,
             )
             for m in memories
         ]
@@ -605,10 +631,11 @@ class PostgresBackend(Backend):
                 conn = self._get_conn()
                 try:
                     with conn.cursor() as cur:
-                        self._apply_write_session(cur, memories[0])
+                        apply_pg_session(cur, batch_sess)
                         query = """INSERT INTO memories
                                (id, type, content, vector, timestamp, importance, utility_score, access_count,
-                                last_accessed, namespace, source, active, status, consensus_score, logical_hash, metadata, score)
+                                last_accessed, namespace, source, active, status, consensus_score, logical_hash, metadata, score,
+                                org_id, user_id)
                                VALUES %s
                                ON CONFLICT (id) DO UPDATE SET
                                type = EXCLUDED.type, content = EXCLUDED.content,
@@ -618,7 +645,8 @@ class PostgresBackend(Backend):
                                namespace = EXCLUDED.namespace, source = EXCLUDED.source,
                                active = EXCLUDED.active, status = EXCLUDED.status,
                                consensus_score = EXCLUDED.consensus_score, logical_hash = EXCLUDED.logical_hash,
-                               metadata = EXCLUDED.metadata, score = EXCLUDED.score"""
+                               metadata = EXCLUDED.metadata, score = EXCLUDED.score,
+                               org_id = EXCLUDED.org_id, user_id = EXCLUDED.user_id"""
                         self._execute_values(cur, query, data)
                     conn.commit()
                     self._put_conn(conn)

@@ -5,21 +5,20 @@ Measures and compares:
   • Cold-start latency  (first add / recall)
   • Warm add() throughput  (ops/sec, N=1000)
   • RAG p50/p95/p99 recall latency  (N=500 queries, M=5000 memories)
-  • Cost per 1M recalls  (OMem: $0 — local; Mem0: OpenAI API pricing)
+  • Estimated third-party API fees per 1M recalls
   • Memory overhead  (RSS delta, MB)
 
 Methodology:
-  OMem  — local SQLite backend, Rust scoring when available, all-MiniLM-L6-v2
-           embeddings via sentence-transformers. Zero API calls.
-  Mem0  — simulated baseline representing the documented behavior of Mem0's
-           LLM-based approach: each add() and search() makes at least one
-           OpenAI API call for extraction/scoring. We model the documented
-           latency characteristics from Mem0's published benchmarks and the
-           OMem competitor.py measurements (~15,000ms cold start, ~18 RAG ops/s).
+  OMem  — measured local SQLite path, Rust scoring when available, and
+           all-MiniLM-L6-v2 embeddings via sentence-transformers. No required
+           third-party API calls.
+  Mem0  — by default, a modeled baseline for an LLM-based extraction/scoring
+           configuration, using prior competitor.py observations and documented
+           network/API characteristics (~15,000ms cold start, ~18 RAG ops/s).
 
-           If Mem0 is installed and OPENAI_API_KEY is set, the script will run
-           the live benchmark. Otherwise it uses published/measured latency models
-           to avoid requiring API keys for reproducibility.
+           This is not an apples-to-apples microbenchmark of equivalent
+           primitive operations. Use --live-mem0 with Mem0 installed and an
+           OPENAI_API_KEY to measure that configured system in your environment.
 
 Usage:
     # Python-only (reproducible, no API keys needed)
@@ -40,7 +39,6 @@ Results are written to distribution/benchmark_results.json.
 from __future__ import annotations
 
 import argparse
-import gc
 import json
 import os
 import random
@@ -48,7 +46,7 @@ import statistics
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
 # ── Repository root on path ───────────────────────────────────────────────────
 ROOT = Path(__file__).parent.parent
@@ -257,7 +255,7 @@ def benchmark_mem0_live(
         print("\n── Mem0 Live Benchmark ────────────────────────────────────────")
         print(f"   memories={n_memories}  queries={n_queries}  (requires API calls)")
 
-    # Mem0 uses OpenAI for extraction + ranking
+    # Cost estimate for the configured OpenAI-backed comparison.
     OPENAI_INPUT_PRICE_PER_1M  = 0.005   # gpt-4o-mini input $/1M tokens (Jun 2026)
     OPENAI_OUTPUT_PRICE_PER_1M = 0.015
     AVG_TOKENS_PER_RECALL      = 1500    # ~500 input + 1000 output for LLM re-ranking
@@ -316,6 +314,7 @@ def benchmark_mem0_live(
         "cost_per_1m_recalls_usd": round(cost_per_1m, 2),
         "requires_api_key": True,
         "local_embeddings": False,
+        "live": True,
     }
 
 
@@ -330,9 +329,9 @@ def benchmark_mem0_model(n_memories: int = 5000, n_queries: int = 500) -> Dict[s
       2. Mem0 published documentation latency characteristics
       3. OpenAI API typical round-trip times (100–800ms per call)
 
-    Mem0 architecture: each add() calls LLM for entity extraction (~1 API call).
-    Each search() calls LLM for re-ranking (~1-2 API calls). With gpt-4o-mini
-    at typical network conditions, observed latencies from competitor.py:
+    This baseline represents an LLM-backed extraction/scoring configuration.
+    It is not a claim that every Mem0 deployment or version uses the same calls.
+    With gpt-4o-mini at typical network conditions, the values used here are:
       - cold start:  ~15,000ms  (model load + first API call)
       - add ops/s:   <1          (API-bound, ~800-1500ms per add)
       - RAG p99:     ~638ms      (documented in benchmarks/competitor.py)
@@ -359,6 +358,7 @@ def benchmark_mem0_model(n_memories: int = 5000, n_queries: int = 500) -> Dict[s
         "cost_per_1m_recalls_usd": round(cost_per_1m, 2),
         "requires_api_key": True,
         "local_embeddings": False,
+        "live": False,
         "note": (
             "Modeled from OMem competitor.py measurements and Mem0 architecture. "
             "Run with --live-mem0 for actual measurements (requires OPENAI_API_KEY)."
@@ -380,7 +380,6 @@ def print_comparison(omem_r: Dict, mem0_r: Dict) -> None:
     RESET  = "\033[0m"
     BOLD   = "\033[1m"
     GREEN  = "\033[32m"
-    RED    = "\033[31m"
     YELLOW = "\033[33m"
     CYAN   = "\033[36m"
 
@@ -417,10 +416,10 @@ def print_comparison(omem_r: Dict, mem0_r: Dict) -> None:
             f"{omem_r['recall_rate_pct']:.1f}%",
             f"{mem0_r['recall_rate_pct']:.1f}%",
             ""),
-        ("Cost / 1M recalls",
+        ("Est. API fees / 1M recalls",
             f"${omem_r['cost_per_1m_recalls_usd']:.2f}",
             f"${mem0_r['cost_per_1m_recalls_usd']:.2f}",
-            "∞× cheaper"),
+            ""),
         ("Requires API key",
             "No",
             "Yes (OpenAI)",
@@ -436,14 +435,16 @@ def print_comparison(omem_r: Dict, mem0_r: Dict) -> None:
         sp_str = f"  {GREEN}{BOLD}{sp}{RESET}" if sp and "×" in sp else (f"  {sp}" if sp else "")
         print(f"  {label:<30}  {omem_val:<16}  {mem0_val:<16}{sp_str}")
 
-    print(f"\n{BOLD}{GREEN}  Key takeaways:{RESET}")
+    print(f"\n{BOLD}{GREEN}  Configuration comparison:{RESET}")
     cold_ratio = mem0_r['cold_start_ms'] / max(omem_r['cold_start_ms'], 0.1)
     p99_ratio  = mem0_r['rag_p99_ms']   / max(omem_r['rag_p99_ms'],   0.1)
-    print(f"  {GREEN}•{RESET} {cold_ratio:.0f}× faster cold start — no LLM warmup, no API call")
-    print(f"  {GREEN}•{RESET} {p99_ratio:.0f}× faster p99 RAG — Rust/SIMD scoring vs LLM re-ranking")
-    print(f"  {GREEN}•{RESET} $0 per recall — fully local, no OpenAI credits consumed")
+    print(f"  {GREEN}•{RESET} Cold-start latency ratio: {cold_ratio:.0f}×")
+    print(f"  {GREEN}•{RESET} p99 recall latency ratio: {p99_ratio:.0f}×")
+    print(f"  {GREEN}•{RESET} OMem local path: $0 required third-party API fees")
     print(f"  {GREEN}•{RESET} Works offline — air-gapped environments, edge deployments")
-    print(f"  {GREEN}•{RESET} GDPR-safe — no data sent to third-party APIs")
+    print(f"  {GREEN}•{RESET} Local infrastructure costs are not included")
+    if not mem0_r.get("live", False):
+        print(f"  {YELLOW}•{RESET} Mem0 values are modeled; use --live-mem0 for a live run")
     print()
     if mem0_r.get("note"):
         print(f"  {YELLOW}Note:{RESET} {mem0_r['note']}")
@@ -495,7 +496,7 @@ def main() -> None:
             "cold_start":    round(mem0_result["cold_start_ms"]   / max(omem_result["cold_start_ms"],   0.01), 1),
             "rag_p99":       round(mem0_result["rag_p99_ms"]      / max(omem_result["rag_p99_ms"],      0.01), 1),
             "add_throughput": round(omem_result["add_ops_per_sec"] / max(mem0_result["add_ops_per_sec"], 0.01), 1),
-            "cost_savings":  "∞ (OMem is free)",
+            "api_fee_comparison": "OMem local path requires no third-party API fees",
         },
     }
 

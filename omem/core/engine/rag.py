@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 
 import numpy as np
 
-from ...types import Memory, MemoryTier, level_matches
+from ...types import Memory, MemoryTier, level_matches, resolve_hierarchy_level
 from ..retrieval.fusion import FusionWeights
 from ..retrieval.ranker import (
     apply_reinforcement,
@@ -37,6 +37,7 @@ def _passes_tier_filter(
     include_archive: bool = False,
 ) -> bool:
     """Filter memories by tier enum and/or hierarchy level."""
+    level = resolve_hierarchy_level(level) if level else level
     if mem.tier == MemoryTier.FORGOTTEN:
         return False
     if mem.tier == MemoryTier.ARCHIVE and not include_archive and level != "archive":
@@ -201,38 +202,131 @@ class RAGMixin:
         kg,
         query_entities,
     ) -> List[Memory]:
-        """Rust-accelerated path with fusion post-processing."""
-        from ...types import MemoryType
+        """Rust-accelerated path: prep signals in Python, rank via rag_fuse_batch."""
+        from ...types import MEMORY_TYPE_COUNT, MemoryType
         from ..brain.importance import _RECENCY_HALF_LIFE
 
-        v_vecs, b_scores, recencies = [], [], []
-        for mem in candidate_mems:
-            age = max(now - mem.timestamp, 0.0)
-            v_vecs.append(mem.vector)
-            b_scores.append(mem.base_score)
-            recencies.append(2.0 ** (-age / _RECENCY_HALF_LIFE))
+        n = len(candidate_mems)
+        semantics = np.zeros(n, dtype=np.float32)
+        keywords = np.zeros(n, dtype=np.float32)
+        recencies = np.zeros(n, dtype=np.float32)
+        importances = np.zeros(n, dtype=np.float32)
+        confidences = np.zeros(n, dtype=np.float32)
+        graphs = np.zeros(n, dtype=np.float32)
+        personalizations = np.zeros(n, dtype=np.float32)
+        successes = np.zeros(n, dtype=np.float32)
+        goals = np.zeros(n, dtype=np.float32)
+        m_types = np.zeros(n, dtype=np.uint8)
 
-        m_types = np.array(
-            [m.type.value if hasattr(m.type, "value") else 0 for m in candidate_mems],
-            dtype=np.uint8,
-        )
-        boosts = np.ones(10, dtype=np.float32)
-        for t_name, b in type_boosts.items():
+        boosts = np.ones(MEMORY_TYPE_COUNT, dtype=np.float32)
+        for t_name, b in (type_boosts or {}).items():
             try:
                 t_enum = (
                     MemoryType[t_name.upper()]
                     if isinstance(t_name, str)
                     else t_name
                 )
-                boosts[t_enum.value] = b
+                if 0 <= t_enum.value < MEMORY_TYPE_COUNT:
+                    boosts[t_enum.value] = b
             except (KeyError, AttributeError):
                 pass
+
+        signal_list = []
+        from ..retrieval.bm25 import keyword_bm25_blend
+
+        overlaps = []
+        query_tokens = set()
+        try:
+            from .utils import _TOKENIZER
+
+            query_tokens = set(_TOKENIZER.findall(query.lower()))
+        except Exception:
+            pass
+        for mem in candidate_mems:
+            from ..retrieval.ranker import compute_keyword_score
+
+            ov, _ = compute_keyword_score(query_tokens, mem)
+            overlaps.append(ov)
+        kw_blend = keyword_bm25_blend(
+            [m.content for m in candidate_mems], query, overlaps
+        )
+
+        for i, mem in enumerate(candidate_mems):
+            # Semantic via vector dot with query
+            try:
+                semantics[i] = float(np.dot(query_vec, mem.vector))
+            except Exception:
+                semantics[i] = 0.0
+            sig = compute_signals(
+                mem,
+                query,
+                float(semantics[i]),
+                now,
+                kg,
+                query_entities,
+                keyword_override=kw_blend[i] if i < len(kw_blend) else None,
+            )
+            signal_list.append(sig)
+            keywords[i] = sig.keyword
+            recencies[i] = sig.recency
+            importances[i] = sig.importance
+            confidences[i] = sig.confidence
+            graphs[i] = sig.graph_combined
+            personalizations[i] = sig.personalization
+            successes[i] = sig.success
+            goals[i] = sig.goal
+            m_types[i] = mem.type.value if hasattr(mem.type, "value") else 0
+
+        weight_vec = (
+            weights.as_weight_vector()
+            if hasattr(weights, "as_weight_vector")
+            else [_W_VECTOR, _W_KEYWORD, _W_RECENCY, _W_IMPORTANCE, 0.08, 0.10, 0.07, 0.05, 0.05]
+        )
+
+        if hasattr(omem_rust, "rag_fuse_batch"):
+            scored_indices = omem_rust.rag_fuse_batch(
+                semantics,
+                keywords,
+                recencies,
+                importances,
+                confidences,
+                graphs,
+                personalizations,
+                successes,
+                goals,
+                m_types,
+                weight_vec,
+                boosts,
+                top_k * 2,
+            )
+            results = []
+            for i_in_batch, rust_score in scored_indices:
+                mem = candidate_mems[i_in_batch]
+                mem.score = float(rust_score)
+                # Keep frequency/status multipliers from Python for parity
+                sig = signal_list[i_in_batch]
+                if sig.status_multiplier == 0.0:
+                    mem.score = 0.0
+                else:
+                    mem.score = float(
+                        (rust_score + sig.frequency * 0.10) * sig.status_multiplier
+                    )
+                results.append(mem)
+            return results
+
+        # Fallback: legacy rag_score_batch + Python rescore
+        v_vecs, b_scores, rec = [], [], []
+        for mem in candidate_mems:
+            age = max(now - mem.timestamp, 0.0)
+            v_vecs.append(mem.vector)
+            b_scores.append(mem.base_score)
+            rec.append(2.0 ** (-age / _RECENCY_HALF_LIFE))
 
         scored_indices = omem_rust.rag_score_batch(
             query_vec.astype(np.float32),
             np.array(v_vecs, dtype=np.float32),
             np.array(b_scores, dtype=np.float32),
-            np.array(recencies, dtype=np.float32),
+            np.array(rec, dtype=np.float32),
             m_types,
             [_W_VECTOR, _W_IMPORTANCE, _W_RECENCY, _W_KEYWORD],
             boosts,

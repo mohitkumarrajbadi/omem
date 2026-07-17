@@ -74,6 +74,10 @@ def _template_synthesize(memories: List[Memory]) -> str:
     if not memories:
         return ""
 
+    rule = _extract_semantic_rule(memories)
+    if rule:
+        return rule
+
     # Group by type for structured synthesis
     by_type: Dict[str, List[str]] = {}
     for m in memories:
@@ -107,8 +111,8 @@ def _template_synthesize(memories: List[Memory]) -> str:
         causes = by_type["CAUSAL"]
         parts.append(f"Cause-effect patterns: {'; '.join(c[:60] for c in causes[:3])}")
 
-    if "PROCEDURAL" in by_type:
-        procs = by_type["PROCEDURAL"]
+    if "PROCEDURAL" in by_type or "SKILL" in by_type:
+        procs = by_type.get("PROCEDURAL", []) + by_type.get("SKILL", [])
         parts.append(f"Common procedures: {'; '.join(p[:60] for p in procs[:3])}")
 
     if "EPISODIC" in by_type:
@@ -120,6 +124,47 @@ def _template_synthesize(memories: List[Memory]) -> str:
         parts.append(f"Key facts: {'; '.join(f[:60] for f in facts[:3])}")
 
     return ". ".join(parts)
+
+
+_INCIDENT_RE = re.compile(
+    r"\b(incident|outage|failure|error|crash|timeout|scram|compatib|postgres|upgrade)\b",
+    re.IGNORECASE,
+)
+_VERIFY_RE = re.compile(
+    r"\b(before|always|must|should|verify|check|ensure|confirm)\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_semantic_rule(memories: List[Memory]) -> Optional[str]:
+    """Extract a durable Semantic/Decision rule from repeated experiences."""
+    if len(memories) < _MIN_CLUSTER_SIZE:
+        return None
+
+    blob = " ".join(m.content for m in memories)
+    incident_hits = _INCIDENT_RE.findall(blob)
+    if len(incident_hits) < 2:
+        return None
+
+    token_docs: Dict[str, int] = {}
+    for m in memories:
+        seen = set()
+        for w in _TOKENIZER.findall(m.content.lower()):
+            if len(w) > 3 and w not in seen:
+                token_docs[w] = token_docs.get(w, 0) + 1
+                seen.add(w)
+    themes = [t for t, c in sorted(token_docs.items(), key=lambda x: -x[1]) if c >= 2][:4]
+    if not themes:
+        return None
+
+    action = "Verify"
+    if _VERIFY_RE.search(blob):
+        action = "Always verify"
+    theme_str = " / ".join(themes[:3])
+    return (
+        f"Rule: {action} {theme_str} before repeating related operations "
+        f"(derived from {len(memories)} experiences)."
+    )
 
 
 def _llm_synthesize(
@@ -243,9 +288,13 @@ def dream_consolidate(
 
         cluster_source_ids = [m.id for m in cluster]
 
+        is_rule = insight_text.startswith("Rule:")
+        insight_type = MemoryType.SEMANTIC if is_rule else MemoryType.INSIGHT
+        insight_tier = MemoryTier.CORE if is_rule else MemoryTier.INSIGHT
+
         insight = Memory(
             id=insight_id,
-            type=MemoryType.INSIGHT,
+            type=insight_type,
             content=insight_text,
             vector=vector,
             timestamp=time.time(),
@@ -254,19 +303,24 @@ def dream_consolidate(
             source="consolidation",
             tokens=tokens,
             token_hashes=token_hashes,
-            tier=MemoryTier.INSIGHT,
+            tier=insight_tier,
             priority=MemoryPriority.HIGH,
             metadata={
                 "source_count": len(cluster),
                 "cluster_types": list(set(m.type.name for m in cluster)),
                 "abstract": True,
+                "rule": is_rule,
             },
             insight_sources=cluster_source_ids,
             consolidation_count=len(cluster),
             confidence_score=min(0.6 + len(cluster) * 0.05, 0.95),
             evidence_count=len(cluster),
             level="long_term",
+            lifecycle_stage="consolidated",
         )
+        from .lifecycle_fsm import mark_consolidated
+
+        mark_consolidated(insight)
         insight_memories.append(insight)
         result.insight_ids.append(insight_id)
 

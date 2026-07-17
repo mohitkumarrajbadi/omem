@@ -85,6 +85,24 @@ _PATTERNS: Dict[MemoryType, List[Tuple[re.Pattern, float]]] = {
         (re.compile(r"\bimmediate\b"), 0.30),
         (re.compile(r"\bdeadline\b"), 0.30),
     ],
+    MemoryType.TOOL: [
+        (re.compile(r"\btool\s+call\b"), 0.50),
+        (re.compile(r"\binvoked?\b.*\btool\b"), 0.45),
+        (re.compile(r"\bmcp\s+tool\b"), 0.45),
+        (re.compile(r"\bfunction\s+call\b"), 0.40),
+        (re.compile(r"\btool_output\b"), 0.40),
+        (re.compile(r"\bapi\s+response\b"), 0.30),
+        (re.compile(r"\brun_tool\b"), 0.40),
+    ],
+    MemoryType.SKILL: [
+        (re.compile(r"\bskill\b"), 0.40),
+        (re.compile(r"\blearned\s+workflow\b"), 0.50),
+        (re.compile(r"\breusable\s+procedure\b"), 0.45),
+        (re.compile(r"\bplaybook\b"), 0.40),
+        (re.compile(r"\brunbook\b"), 0.35),
+        (re.compile(r"\bstandard\s+operating\b"), 0.40),
+        (re.compile(r"\bwhen\s+.+\s+always\b"), 0.30),
+    ],
 }
 
 # ── TF-IDF Keywords for ML fallback ──
@@ -165,6 +183,26 @@ _TFIDF_KEYWORDS: Dict[MemoryType, List[str]] = {
         "deadline",
         "immediately",
         "emergency",
+    ],
+    MemoryType.TOOL: [
+        "tool",
+        "invoke",
+        "mcp",
+        "function",
+        "api",
+        "output",
+        "response",
+        "run_tool",
+    ],
+    MemoryType.SKILL: [
+        "skill",
+        "playbook",
+        "runbook",
+        "workflow",
+        "reusable",
+        "procedure",
+        "sop",
+        "always",
     ],
     MemoryType.SEMANTIC: [
         "is",

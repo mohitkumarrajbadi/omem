@@ -9,7 +9,19 @@ import numpy as np
 
 
 class MemoryType(Enum):
-    """Categories of memory stored in the system."""
+    """Categories of memory stored in the system.
+
+    Types are soft hints for ranking and extraction — not hard retention gates.
+    See ``type_confidence`` on ``Memory``. Charter cognitive objects map as:
+
+    - WorkingMemory → WORKING
+    - EpisodicMemory → EPISODIC
+    - SemanticMemory → SEMANTIC
+    - DecisionMemory → DECISION
+    - ToolMemory → TOOL
+    - SkillMemory → SKILL (PROCEDURAL kept for how-to steps)
+    - StateMemory → StateOS (not a MemoryType)
+    """
 
     WORKING = 0  # Short-term data
     EPISODIC = 1  # Events and experiences
@@ -21,6 +33,12 @@ class MemoryType(Enum):
     REFLECTION = 7  # Auto-generated insights
     INSIGHT = 8  # Consolidated summaries
     SENSORY = 9  # Raw, short-lived input
+    TOOL = 10  # Tool invocation traces / tool I/O
+    SKILL = 11  # Reusable learned workflows / skills
+
+
+# Number of MemoryType values — keep Rust type_boost arrays in sync
+MEMORY_TYPE_COUNT = len(MemoryType)
 
 
 class MemoryStatus(Enum):
@@ -43,13 +61,66 @@ class MemoryTier(Enum):
     INSIGHT = 5  # Consolidated results
 
 
+class LifecycleStage(Enum):
+    """Memory lifecycle along the Memory OS charter continuum."""
+
+    NEW = "new"
+    REINFORCED = "reinforced"
+    CONSOLIDATED = "consolidated"
+    COMPRESSED = "compressed"
+    ARCHIVED = "archived"
+    FORGOTTEN = "forgotten"
+
+
 class MemoryLevel(Enum):
-    """Hierarchy level for tier-targeted retrieval (CPU-style memory hierarchy)."""
+    """Hierarchy level for tier-targeted retrieval (CPU-style memory hierarchy).
+
+    Charter L0–L4 aliases resolve via ``resolve_hierarchy_level``:
+
+    - L0 Working → working
+    - L1 Episodic → short_term
+    - L2 Semantic → long_term (facts / decisions)
+    - L3 Skill → long_term (skills / procedural)
+    - L4 Archive → archive
+    """
 
     WORKING = "working"
     SHORT_TERM = "short_term"
     LONG_TERM = "long_term"
     ARCHIVE = "archive"
+
+
+# Charter L0–L4 → internal MemoryLevel.value
+HIERARCHY_ALIASES: Dict[str, str] = {
+    "l0": MemoryLevel.WORKING.value,
+    "L0": MemoryLevel.WORKING.value,
+    "working": MemoryLevel.WORKING.value,
+    "l1": MemoryLevel.SHORT_TERM.value,
+    "L1": MemoryLevel.SHORT_TERM.value,
+    "episodic": MemoryLevel.SHORT_TERM.value,
+    "short_term": MemoryLevel.SHORT_TERM.value,
+    "l2": MemoryLevel.LONG_TERM.value,
+    "L2": MemoryLevel.LONG_TERM.value,
+    "semantic": MemoryLevel.LONG_TERM.value,
+    "l3": MemoryLevel.LONG_TERM.value,
+    "L3": MemoryLevel.LONG_TERM.value,
+    "skill": MemoryLevel.LONG_TERM.value,
+    "long_term": MemoryLevel.LONG_TERM.value,
+    "l4": MemoryLevel.ARCHIVE.value,
+    "L4": MemoryLevel.ARCHIVE.value,
+    "archive": MemoryLevel.ARCHIVE.value,
+}
+
+
+def resolve_hierarchy_level(level: Optional[str]) -> Optional[str]:
+    """Normalize charter L0–L4 or legacy level names to MemoryLevel values."""
+    if level is None:
+        return None
+    key = level.strip()
+    if key in HIERARCHY_ALIASES:
+        return HIERARCHY_ALIASES[key]
+    lowered = key.lower()
+    return HIERARCHY_ALIASES.get(lowered, lowered)
 
 
 # Maps hierarchy level → allowed MemoryTier values for filtering
@@ -63,7 +134,8 @@ LEVEL_TIER_MAP: Dict[str, List["MemoryTier"]] = {
 
 def level_matches(level: str, tier: MemoryTier) -> bool:
     """Return True if a memory's tier belongs to the requested hierarchy level."""
-    allowed = LEVEL_TIER_MAP.get(level, [MemoryTier.ACTIVE])
+    resolved = resolve_hierarchy_level(level) or level
+    allowed = LEVEL_TIER_MAP.get(resolved, [MemoryTier.ACTIVE])
     return tier in allowed
 
 
@@ -201,6 +273,15 @@ class Memory:
     score: float = 0.0  # Dynamic retrieval score
     base_score: float = 0.0
     type_mask: int = 0
+    # Soft-hint confidence for primary MemoryType (0–1). Does not hard-gate recall.
+    type_confidence: float = 1.0
+    # Lifecycle stage along new → reinforced → … → forgotten
+    lifecycle_stage: str = LifecycleStage.NEW.value
+    # Outcome / goal signals for cognitive scoring (0–1)
+    success_score: float = 0.0
+    goal_alignment: float = 0.0
+    # Cold L4 object-storage pointer (S3-compatible key); content may be stubbed
+    cold_storage_key: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -219,8 +300,14 @@ class Memory:
             "status": self.status.name,
             "tier": self.tier.name,
             "priority": self.priority.name,
+            "level": self.level,
             "consensus_score": self.consensus_score,
             "confidence_score": self.confidence_score,
+            "type_confidence": self.type_confidence,
+            "lifecycle_stage": self.lifecycle_stage,
+            "success_score": self.success_score,
+            "goal_alignment": self.goal_alignment,
+            "cold_storage_key": self.cold_storage_key,
             "evidence_count": self.evidence_count,
             "node_ids": self.node_ids,
             "edge_ids": self.edge_ids,
@@ -419,6 +506,35 @@ class RetrievalExplanation:
     confidence_score: float = 0.0
     graph_score: float = 0.0
     personalization_score: float = 0.0
+    success_score: float = 0.0
+    goal_alignment_score: float = 0.0
+    retrieval_reason: str = ""
+    contributing_factors: List[str] = field(default_factory=list)
+    lookup_kind: str = "hybrid"
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "memory_id": self.memory_id,
+            "final_score": self.final_score,
+            "score_breakdown": {
+                "semantic": self.vector_score,
+                "keyword": self.keyword_score,
+                "recency": self.recency_score,
+                "importance": self.importance_score,
+                "confidence": self.confidence_score,
+                "graph": self.graph_score,
+                "personalization": self.personalization_score,
+                "frequency": self.frequency_bonus,
+                "success": self.success_score,
+                "goal": self.goal_alignment_score,
+            },
+            "retrieval_reason": self.retrieval_reason
+            or f"hybrid fusion (mode={self.mode})",
+            "contributing_factors": self.contributing_factors,
+            "lookup_kind": self.lookup_kind,
+            "mode": self.mode,
+            "matched_keywords": self.matched_keywords,
+        }
 
     def explain(self) -> str:
         lines = [
@@ -431,6 +547,12 @@ class RetrievalExplanation:
             f"  confidence:         {self.confidence_score:.4f}",
             f"  graph proximity:    {self.graph_score:.4f}",
             f"  personalization:    {self.personalization_score:.4f}",
+            f"  success:            {self.success_score:.4f}",
+            f"  goal alignment:     {self.goal_alignment_score:.4f}",
             f"  priority multiplier:{self.priority_multiplier:.2f}",
         ]
+        if self.retrieval_reason:
+            lines.append(f"  reason:             {self.retrieval_reason}")
+        if self.contributing_factors:
+            lines.append(f"  factors:            {', '.join(self.contributing_factors)}")
         return "\n".join(lines)

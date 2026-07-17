@@ -128,6 +128,67 @@ def mrr(retrieved: List[str], ground_truth: List[str]) -> float:
     return 0.0
 
 
+def ndcg_at_k(retrieved: List[str], ground_truth: List[str], k: int = 5) -> float:
+    """Normalized Discounted Cumulative Gain at k (binary relevance)."""
+    import math
+
+    if not ground_truth:
+        return 1.0
+
+    def _relevant(doc: str) -> float:
+        return 1.0 if any(gt.lower() in doc.lower() for gt in ground_truth) else 0.0
+
+    dcg = 0.0
+    for i, doc in enumerate(retrieved[:k]):
+        rel = _relevant(doc)
+        if i == 0:
+            dcg += rel
+        else:
+            dcg += rel / math.log2(i + 1)
+
+    ideal_hits = min(len(ground_truth), k)
+    idcg = 0.0
+    for i in range(ideal_hits):
+        if i == 0:
+            idcg += 1.0
+        else:
+            idcg += 1.0 / math.log2(i + 1)
+    if idcg == 0.0:
+        return 0.0
+    return dcg / idcg
+
+
+class BaselineGraphRAG:
+    """Naive GraphRAG: hybrid score + light entity co-occurrence boost."""
+
+    def __init__(self):
+        self.hybrid = BaselineHybridRAG()
+        self._entity_index: dict = {}
+
+    def add(self, content: str):
+        self.hybrid.add(content)
+        ents = set(re.findall(r"[A-Z][a-zA-Z0-9_-]{2,}", content))
+        idx = len(self.hybrid.memories) - 1
+        for e in ents:
+            self._entity_index.setdefault(e.lower(), set()).add(idx)
+
+    def search(self, query: str, top_k: int = 5) -> List[str]:
+        base = self.hybrid.search(query, top_k=top_k * 3)
+        q_ents = {e.lower() for e in re.findall(r"[A-Z][a-zA-Z0-9_-]{2,}", query)}
+        if not q_ents:
+            return base[:top_k]
+        # Prefer docs sharing query entities
+        boosted = []
+        for doc in base:
+            score = 1.0
+            for e in q_ents:
+                if e in doc.lower():
+                    score += 0.5
+            boosted.append((doc, score))
+        boosted.sort(key=lambda x: -x[1])
+        return [d for d, _ in boosted[:top_k]]
+
+
 # -- Test Scenarios --
 
 
@@ -175,6 +236,12 @@ def scenario_importance_matters():
 
     _evaluate("Vector-Only", baseline.search, queries)
     _evaluate("Hybrid RAG", hybrid.search, queries)
+    graph = BaselineGraphRAG()
+    for n in noise:
+        graph.add(n)
+    for imp in important:
+        graph.add(imp)
+    _evaluate("GraphRAG (naive)", graph.search, queries)
     _evaluate(
         "OMem", lambda q, k=5: [r.content for r in omem.recall(q, top_k=k)], queries
     )
@@ -346,6 +413,7 @@ def _evaluate(name: str, search_fn, queries: List[Tuple[str, List[str]]]):
     """Evaluate a retrieval system on queries with ground truth."""
     total_recall = 0.0
     total_mrr = 0.0
+    total_ndcg = 0.0
     total_latency = 0.0
     n = len(queries)
 
@@ -356,17 +424,21 @@ def _evaluate(name: str, search_fn, queries: List[Tuple[str, List[str]]]):
 
         r = recall_at_k(results, ground_truth, k=3)
         m = mrr(results, ground_truth)
+        n_score = ndcg_at_k(results, ground_truth, k=5)
 
         total_recall += r
         total_mrr += m
+        total_ndcg += n_score
         total_latency += latency
 
     avg_recall = total_recall / n
     avg_mrr = total_mrr / n
+    avg_ndcg = total_ndcg / n
     avg_latency = total_latency / n
 
     print(
-        f"    {name:30s}  recall@3={avg_recall:.2f}  MRR={avg_mrr:.2f}  latency={avg_latency:.1f}ms"
+        f"    {name:30s}  recall@3={avg_recall:.2f}  MRR={avg_mrr:.2f}  "
+        f"NDCG@5={avg_ndcg:.2f}  latency={avg_latency:.1f}ms"
     )
 
 

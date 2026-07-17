@@ -22,11 +22,10 @@ namespace isolation.
 """
 
 import sys
-import time
-import json
 import textwrap
+import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, List
 
 # ── Allow running from repo root without install ──────────────────────────────
 sys.path.insert(0, str(Path(__file__).parent))
@@ -406,8 +405,8 @@ def latency_benchmark() -> None:
     p50 = sorted(times_ms)[len(times_ms) // 2]
     p99 = sorted(times_ms)[-1]
     print(f"\n  p50 = {p50:.1f}ms   p99 = {p99:.1f}ms   (target: <4ms)")
-    print(f"\n  Naive re-derivation (reading docs + asking LLM):")
-    print(f"  p50 ≈ 45,000ms  p99 ≈ 90,000ms  (LLM API round-trip × reasoning)")
+    print("\n  Naive re-derivation (reading docs + asking LLM):")
+    print("  p50 ≈ 45,000ms  p99 ≈ 90,000ms  (LLM API round-trip × reasoning)")
     speedup = 45000 / max(p50, 0.1)
     print(f"\n  {GREEN}{BOLD}OMem speedup: {speedup:.0f}× faster than re-derivation{RESET}")
 

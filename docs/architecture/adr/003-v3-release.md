@@ -1,7 +1,11 @@
-# ADR-003: v3.0 Release — Package Consolidation
+# ADR-003: "v3" Architecture — Package Consolidation
 
-**Status:** Accepted  
-**Date:** 2026-06-25  
+**Status:** Accepted (architecture merged; **not yet released** — ships in 0.0.3)
+**Date:** 2026-06-25
+
+> **Naming note:** "v3" here refers to the third internal architecture
+> iteration, not a published package version. The package version line is
+> 0.0.x; the latest published release is 0.0.1 (PyPI) / v0.0.2 (GitHub).
 
 ---
 
@@ -13,7 +17,8 @@ Maintaining dual paths increased contributor confusion, duplicated package surfa
 
 ## Decision
 
-Release **v3.0.0** with the following breaking changes.
+Ship the consolidated package layout (in release 0.0.3) with the following
+breaking changes.
 
 ### Removed modules
 
@@ -49,8 +54,8 @@ rg 'omem\.(org|security|codebase|viz|classify)' .
 
 # 2. Replace using the table above
 
-# 3. Upgrade
-pip install -U omem-os>=3.0.0
+# 3. Upgrade (once 0.0.3 is published)
+pip install -U "omem-os>=0.0.3"
 
 # 4. Verify
 pytest tests/test_import_compat.py -k canonical

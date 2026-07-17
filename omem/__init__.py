@@ -38,6 +38,7 @@ from .state import (
 from .types import (
     Evidence,
     GraphNode,
+    LifecycleStage,
     Memory,
     MemoryLevel,
     MemoryPriority,
@@ -47,12 +48,13 @@ from .types import (
     Provenance,
     RelationEdge,
     RetrievalExplanation,
+    resolve_hierarchy_level,
 )
 
 try:
     __version__ = version("omem-os")
 except PackageNotFoundError:
-    __version__ = "3.0.0+dev"
+    __version__ = "0.0.3+dev"
 
 __all__ = [
     "AgentState",
@@ -100,6 +102,8 @@ __all__ = [
     "MemoryStatus",
     "Memory",
     "MemoryLevel",
+    "LifecycleStage",
+    "resolve_hierarchy_level",
     "GraphNode",
     "RelationEdge",
     "Evidence",

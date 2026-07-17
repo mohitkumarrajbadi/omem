@@ -42,7 +42,6 @@ Run:
 """
 
 import json
-import warnings
 
 import pytest
 
@@ -195,14 +194,11 @@ class TestConstruction:
         a = AgentState.from_env()
         assert a.session_id == "env-agent"
 
-    def test_cloud_routes_to_remote_when_endpoint_set(self, monkeypatch):
-        from omem.cloud.remote import RemoteAgentState
-
+    def test_cloud_endpoint_requires_separate_package(self, monkeypatch):
         monkeypatch.setenv("OMEM_ENDPOINT", "https://state.akamai.ai")
         monkeypatch.delenv("OMEM_API_KEY", raising=False)
-        agent = AgentState(backend="memory")
-        assert isinstance(agent, RemoteAgentState)
-        agent.close()
+        with pytest.raises(ImportError, match="omem-cloud package"):
+            AgentState(backend="memory")
 
     def test_stores_config(self, agent):
         assert isinstance(agent.config, AgentConfig)

@@ -174,8 +174,9 @@ def forget_sweep(
             if mem.type in _PROTECTED_TYPES:
                 continue
             if health < delete_threshold and time_in_archive > archive_ttl:
-                mem.tier = MemoryTier.FORGOTTEN
-                mem.active = False
+                from .lifecycle_fsm import mark_forgotten
+
+                mark_forgotten(mem)
                 result.deleted.append(mem.id)
             continue
 
@@ -193,15 +194,17 @@ def forget_sweep(
                 and age > _ZERO_UTILITY_TTL
                 and mem.type not in _PROTECTED_TYPES
             ):
-                mem.tier = MemoryTier.ARCHIVE
-                mem.active = False
+                from .lifecycle_fsm import mark_archived
+
+                mark_archived(mem)
                 mem.archived_at = now
                 result.archived.append(mem.id)
                 continue
 
             if health < archive_threshold:
-                mem.tier = MemoryTier.ARCHIVE
-                mem.active = False
+                from .lifecycle_fsm import mark_archived
+
+                mark_archived(mem)
                 mem.archived_at = now
                 result.archived.append(mem.id)
             else:

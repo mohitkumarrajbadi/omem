@@ -15,12 +15,14 @@ from omem.types import (
 
 
 class TestMemoryType:
-    def test_all_ten_values(self):
-        assert len(MemoryType) == 10
+    def test_all_twelve_values(self):
+        assert len(MemoryType) == 12
 
     def test_enum_values(self):
         assert MemoryType.WORKING.value == 0
         assert MemoryType.ACTIVE.value == 6
+        assert MemoryType.TOOL.value == 10
+        assert MemoryType.SKILL.value == 11
 
     def test_names(self):
         names = {m.name for m in MemoryType}
@@ -35,6 +37,8 @@ class TestMemoryType:
             "REFLECTION",
             "SENSORY",
             "INSIGHT",
+            "TOOL",
+            "SKILL",
         }
 
 
@@ -100,6 +104,12 @@ class TestAutoClassify:
 
     def test_active(self):
         assert auto_classify("Urgent: server is down") == MemoryType.ACTIVE
+
+    def test_tool(self):
+        assert auto_classify("MCP tool call returned status 200") == MemoryType.TOOL
+
+    def test_skill(self):
+        assert auto_classify("Learned workflow: always run migrate before deploy") == MemoryType.SKILL
 
     def test_semantic_fallback(self):
         assert auto_classify("The capital of France is Paris") == MemoryType.SEMANTIC

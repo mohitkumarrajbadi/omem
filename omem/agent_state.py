@@ -54,8 +54,8 @@ from .context.engine import ContextBundle, ContextEngine, ContextRequest
 from .governance.layer import GovernanceOS
 from .knowledge.layer import KnowledgeOS
 from .memory.layer import MemoryOS
-from .observe.events import ObserveOS, TraceEvent, new_trace_id
 from .memory.org.layer import OrgMemoryOS
+from .observe.events import ObserveOS, TraceEvent, new_trace_id
 from .provenance.layer import ProvenanceOS
 from .runtime.layer import RuntimeOS
 from .state.backend import InMemoryStateBackend, SQLiteStateBackend
@@ -713,6 +713,10 @@ class AgentState:
             Consolidation result dict.
         """
         return self._memory.consolidate(speed=speed)
+
+    def archive(self, memory_id: str) -> bool:
+        """Force L4 archive for a memory. Shorthand for ``agent.memory.archive``."""
+        return self._memory.archive(memory_id)
 
     # ------------------------------------------------------------------
     # Session-scoped state shortcuts

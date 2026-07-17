@@ -210,11 +210,26 @@ class LifecycleMixin:
         # 1. Aging and TTL
         deactivated = self.run_decay()
 
-        # 2. Tier scheduling (working → short-term → long-term)
-        from ..brain.scheduler import build_centrality_map, schedule_tier_transitions
+        # 2. L0→L4 hierarchy conveyor (+ optional cold spill)
+        from ..brain.hierarchy import run_hierarchy_conveyor
+        from ..brain.scheduler import build_centrality_map
 
         centralities = build_centrality_map(getattr(self, "knowledge_graph", None))
-        schedule_tier_transitions(self.kv.all(), graph_centralities=centralities)
+        cold = None
+        try:
+            from ...backends.cold_archive import ColdArchive
+
+            cold = ColdArchive()
+            if not cold.config.enabled and cold.config.backend == "local":
+                # Local cold spill during sleep is opt-in via env; still construct for API
+                cold = cold if cold.config.enabled else None
+        except Exception:
+            cold = None
+        hierarchy = run_hierarchy_conveyor(
+            self.kv.all(),
+            graph_centralities=centralities,
+            cold_archive=cold,
+        )
 
         # 3. Importance-based forgetting
         f_result = self.forget()
@@ -240,6 +255,11 @@ class LifecycleMixin:
             "deleted": len(f_result.deleted),
             "purged": purged,
             "dream": d_result,
+            "hierarchy": {
+                "promoted": len(hierarchy.get("promoted", [])),
+                "archived": len(hierarchy.get("archived", [])),
+                "cold_spilled": len(hierarchy.get("cold_spilled", [])),
+            },
         }
 
     def snapshot(self, path: str):

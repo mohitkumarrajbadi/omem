@@ -215,6 +215,20 @@ class WriteBuffer:
         self._wal_append(memory)
         self._queue.put(memory)
 
+    def enqueue_batch(self, memories) -> int:
+        """Enqueue many memories for async classify→index→persist drain.
+
+        Returns count accepted. Prefer this path for ingest throughput benches.
+        """
+        count = 0
+        for memory in memories:
+            self.enqueue(memory)
+            count += 1
+        return count
+
+    def pending_count(self) -> int:
+        return self._queue.qsize()
+
     def flush(self) -> int:
         """Force-persist all pending memories. Returns count written."""
         if self._backend is None:

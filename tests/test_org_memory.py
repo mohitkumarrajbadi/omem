@@ -177,6 +177,25 @@ class TestOrgMemoryOS:
         mid = agent.org.remember("Special memo", scope="custom/docs")
         assert mid
 
+    def test_remember_forwards_force_on_experience_path(self, agent, monkeypatch):
+        forwarded = {}
+
+        def add_experience(content, **kwargs):
+            forwarded.update(kwargs)
+            return "forced-experience-id"
+
+        monkeypatch.setattr(agent.memory.omem, "add_experience", add_experience)
+
+        mid = agent.org.remember(
+            "Forced experience",
+            scope="org",
+            source="experience",
+            force=True,
+        )
+
+        assert mid == "forced-experience-id"
+        assert forwarded["force"] is True
+
     def test_recall_scoped_team_finds_org_memory(self, agent):
         agent.org._team_id = "eng"
         agent.org._org_id = "acme"

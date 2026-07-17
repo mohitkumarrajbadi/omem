@@ -47,11 +47,15 @@ Observability**, one engine boundary, zero ambiguity about where code belongs.
                             │
          ┌──────────────────┼──────────────────┐
          ▼                  ▼                  ▼
-    omem.backends      omem.cloud         rust/ (PyO3)
-    sqlite · postgres   client · server    SIMD scoring
+    omem.backends      omem-cloud*        rust/ (PyO3)
+    sqlite · postgres   separate add-on    SIMD scoring
 ```
 
 \*\* **FLAG:** confirm whether “BrainTrace” is the committed public name.
+
+\* The commercial `omem-cloud` distribution is maintained in a separate
+repository. It installs the optional `omem.cloud` namespace; no cloud source is
+shipped by `omem-os`.
 
 ---
 
@@ -71,6 +75,8 @@ They wrap every product-layer operation.
 
 \* **FLAG — confirm scope:** “AST codebase index” under Knowledge — keep in customer docs, drop, or reword to “codebase cognition”?
 
+Memory OS charter map: [MEMORY_OS.md](./MEMORY_OS.md)
+
 ### Layer extensions (same package family)
 
 | Extension | Location | Why here |
@@ -87,8 +93,10 @@ They wrap every product-layer operation.
 |---------|------|
 | `omem.provenance` | Lineage: who created what, when, with what confidence |
 | `omem.runtime` | Multi-agent registry, sync, crash recovery |
-| `omem.cloud` | HTTP client, remote backend, FastAPI server |
 | `omem.backends` | Storage engines: SQLite, PostgreSQL, (future) cloud adapter |
+
+The separately installed commercial `omem-cloud` package provides the
+`omem.cloud` HTTP client, remote facade, and service implementation.
 
 ---
 
@@ -170,6 +178,7 @@ Local mode (default)
 Cloud mode
   OMEM_ENDPOINT        — remote State API
   OMEM_API_KEY         — tenant auth
+  requires separately installed omem-cloud distribution
   Postgres + object storage (managed by OMem Cloud)
 ```
 
@@ -199,7 +208,7 @@ New state checkpoint semantics                → state/
 New context packing strategy                  → context/
 New graph edge type                           → core/graph/ + knowledge/layer.py
 New MCP tool                                  → integrations/
-New cloud route                               → cloud/routes/ (when split)
+New cloud route                               → sibling omem-cloud repository
 New benchmark                                 → benchmarks/ or eval/ (dev-only)
 New integration adapter                       → integrations/
 ```
@@ -234,7 +243,6 @@ omem/
 │   └── encryption.py           # Field-level encryption
 ├── provenance/                 # Lineage
 ├── runtime/                    # Multi-agent coordination
-├── cloud/                      # Client + server
 ├── backends/                   # sqlite | postgres
 ├── core/                       # Private engine
 └── integrations/               # MCP, LangChain, CrewAI, LlamaIndex
@@ -247,19 +255,13 @@ Dev-only (not product layers): `benchmarks/eval/`, `benchmarks/`, `examples/`, `
 
 ---
 
-## Cloud Roadmap (structure target)
+## Cloud package boundary
 
-```text
-cloud/
-├── client.py           # OMemCloudClient
-├── backend.py          # CloudBackend (implements backends.Backend)
-├── server.py           # App factory (thin)
-├── routes/             # memory, state, context, knowledge, runtime
-├── middleware/         # auth, tenancy, rate limits
-└── models/             # Pydantic request/response schemas
-```
-
-Current state: monolithic `server.py`. Split when Cloud C2–C3 land.
+Cloud client and service code lives in the private sibling `omem-cloud`
+repository and is not part of this package tree. `AgentState` retains only an
+optional integration hook: when `OMEM_ENDPOINT` is configured, it imports
+`omem.cloud.remote` from the separately installed commercial distribution or
+raises an actionable installation error.
 
 ---
 

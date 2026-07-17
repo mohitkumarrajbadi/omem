@@ -40,7 +40,6 @@ from ..core.utils.circuit_breaker import CircuitBreaker
 from ..core.utils.retry import retry_with_backoff
 from ..types import Memory, MemoryStatus, MemoryType
 from .base import Backend
-from .postgres import PostgresBackend
 from .pg_session import resolve_pg_session
 
 logger = logging.getLogger(__name__)

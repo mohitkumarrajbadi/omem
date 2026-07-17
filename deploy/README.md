@@ -2,6 +2,11 @@
 
 Infrastructure for the **Akamai Agent State Cloud** tech preview on Linode.
 
+> **Cloud stack note:** Docker Compose files and cloud service entrypoints that
+> invoke `omem.cloud.*` live in the sibling **`omem-cloud`** repository. This
+> OSS repo ships local SQLite/Postgres backends only; install `omem-cloud`
+> separately for managed API deployment.
+
 Full details: [AKAMAI_LINODE_DEPLOYMENT.md](../docs/roadmap/AKAMAI_LINODE_DEPLOYMENT.md)
 
 ## Directory layout

@@ -6,8 +6,8 @@ from typing import Dict, List, Optional
 
 import numpy as np
 
-from ..brain.classify import auto_classify_multi
 from ...types import PRIORITY_MULTIPLIER, Memory, MemoryPriority, MemoryTier, MemoryType
+from ..brain.classify import auto_classify_multi
 from ..brain.importance import estimate_importance, estimate_priority
 from ..brain.ingestion import apply_ingest_to_memory, ingest_experience
 from ..brain.noise_gate import check_noise
@@ -110,6 +110,7 @@ class AddMixin:
                     base_score=base_score,
                     type_mask=t_mask,
                     confidence_score=conf,
+                    type_confidence=float(type_scores[0][1]) if type_scores else 1.0,
                     provenance=source,
                     freshness=now,
                     level="working",

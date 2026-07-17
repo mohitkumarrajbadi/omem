@@ -1,6 +1,6 @@
 > **Technical documentation for extending, integrating, and contributing to OMem.**
 >
-> *Version: 0.1.0*
+> *Documents the unreleased 0.0.3 development line (latest published release: 0.0.1 on PyPI, v0.0.2 on GitHub).*
 
 ---
 

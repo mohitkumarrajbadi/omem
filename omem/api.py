@@ -3,7 +3,6 @@
 Unified interface for managing memory: add, update, rag, compress, and forget.
 """
 
-import base64
 import logging
 import os
 from typing import Callable, Dict, List, Optional
@@ -118,6 +117,7 @@ class OMem:
         confidence: float = 1.0,
         importance: Optional[float] = None,
         metadata: Optional[Dict] = None,
+        force: bool = False,
     ) -> str:
         """Graph-first ingestion for unstructured experience text."""
         memory_id = self.brain.add_experience(
@@ -127,6 +127,7 @@ class OMem:
             confidence=confidence,
             importance=importance,
             metadata=metadata,
+            force=force,
         )
         self._audit.log("add_experience", memory_id=memory_id, namespace=namespace)
         return memory_id
@@ -405,6 +406,25 @@ class OMem:
         Returns True if restored, False if not archived.
         """
         return self.brain.restore(memory_id)
+
+    def archive(self, memory_id: str) -> bool:
+        """Force L4 archive transition for a single memory."""
+        import time as _time
+
+        from .types import LifecycleStage, MemoryStatus, MemoryTier
+
+        mem = self.get(memory_id)
+        if mem is None:
+            return False
+        mem.tier = MemoryTier.ARCHIVE
+        mem.level = "archive"
+        mem.status = MemoryStatus.ARCHIVED
+        mem.lifecycle_stage = LifecycleStage.ARCHIVED.value
+        mem.archived_at = mem.archived_at or _time.time()
+        if hasattr(self.brain, "kv"):
+            self.brain.kv.set(mem.id, mem)
+        self._audit.log("archive", namespace=mem.namespace, memory_id=memory_id)
+        return True
 
     def inspect(
         self,

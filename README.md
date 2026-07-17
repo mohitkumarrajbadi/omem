@@ -14,7 +14,7 @@
 
 ### The Memory OS for Enterprise AI Agents
 
-**Sub-4ms hybrid recall. Zero API costs. Postgres multi-tenancy. Built-in MCP for Cursor & Claude.**
+**Zero required LLM calls or API fees. Local-first hybrid recall. Postgres multi-tenancy. Built-in MCP for Cursor & Claude.**
 
 [Quickstart](#quickstart) · [Why OMem](#why-omem-not-a-vector-db) · [Benchmarks](#benchmarks) · [MCP for Coding Agents](#mcp-for-coding-agents) · [Enterprise](#enterprise-postgresql) · [Architecture](#architecture)
 
@@ -45,16 +45,27 @@ Default embeddings are hash-based (384-dim, zero extra dependencies). Recall qua
 
 Tested on Apple M-series · 5,000 memories · 500 queries · `all-MiniLM-L6-v2` · reproduce with `python distribution/benchmark_vs_mem0.py`
 
-| System | Cold Start | Add | RAG p50 | RAG p99 | Cost / 1M recalls |
+**Methodology:** OMem uses a fully local heuristic classification and
+embedding/scoring path. The default script compares that measured local path
+with a modeled Mem0 baseline representing an LLM-based extraction/scoring
+configuration; use `--live-mem0` for a live Mem0 run. These are different
+operation pipelines, so the latency ratios describe the tested configurations,
+not equivalent underlying operations.
+
+| System | Cold Start | Add | RAG p50 | RAG p99 | Est. third-party API fees / 1M recalls |
 |---|---:|---:|---:|---:|---:|
 | **OMem** | **4 ms** | **65 ops/s** | **1.8 ms** | **3.9 ms** | **$0** |
 | Mem0 | 15,000 ms | <1 ops/s | 420 ms | 638 ms | ~$20 |
 | ChromaDB | 507 ms | 277 ops/s | — | 4 ms | $0 |
 | LanceDB | 8 ms | 82,000 ops/s | — | 7 ms | $0 |
 
-**163× faster p99 recall than Mem0. $0 API cost. No data leaves your infrastructure.**
+**In this configuration, OMem measured 3.9 ms p99 local recall versus the
+modeled Mem0 baseline of 638 ms (a 163× latency ratio), with $0 third-party API
+fees. Local infrastructure costs are not included.**
 
-OMem's `add()` does more than raw storage: embed, classify, deduplicate, sync the knowledge graph, and persist asynchronously. The benchmark reflects real agent memory behavior, not raw vector insert speed.
+OMem's `add()` does more than raw storage: embed, classify, deduplicate, sync
+the knowledge graph, and persist asynchronously. The benchmark reflects each
+system's configured workflow, not a raw vector-insert comparison.
 
 ---
 
@@ -69,7 +80,7 @@ Most agent frameworks bolt on a vector store and call it "memory." OMem is a **c
 | Semantic recall | ✓ | ✓ | ✓ |
 | Keyword + recency + graph fusion | ✗ | ✗ | ✓ |
 | Persistent cross-session memory | ✗ | ✓ | ✓ |
-| $0 API cost (local embeddings + scoring) | ✓ | ✗ | ✓ |
+| No required third-party API fees (local path) | ✓ | ✗ | ✓ |
 | Memory lifecycle (forget, compress, dream) | ✗ | ✗ | ✓ |
 | Architectural decision records (ADRs) | ✗ | ✗ | ✓ |
 | PR context & bug fix history | ✗ | ✗ | ✓ |
@@ -172,12 +183,12 @@ omem serve
 ```python
 # Session 1 — architect agent stores decisions
 brain = OMem(namespace="my-project")
-brain.add("[ADR] Use Rust for scoring: bypass Python GIL, achieve sub-4ms p99.")
+brain.add("[ADR] Use Rust for local scoring to avoid third-party ranking calls.")
 
 # Session 2 — completely new process, no shared state
 brain2 = OMem(namespace="my-project")
 results = brain2.recall("why do we use Rust")
-# → Returns the ADR from Session 1 in <4ms. No LLM call. No API cost.
+# → Returns the ADR from Session 1 without a required LLM or API call.
 ```
 
 Run the full demo: `python demo_mcp_coding_workflow.py`
@@ -265,7 +276,11 @@ in every layer above, not sequential layers stacked after Knowledge.
 score = α·semantic + β·keyword + γ·recency + δ·importance + ε·confidence + ζ·graph
 ```
 
-Weights adapt per retrieval mode: `coding`, `planning`, `chat`, `recall`. The Rust hot path (`rag_score_batch`) evaluates this in parallel across all candidates using Rayon work-stealing, achieving sub-4ms p99 at N=5,000.
+Weights adapt per retrieval mode: `coding`, `planning`, `chat`, `recall`. In
+the Apple M-series benchmark above, the Rust hot path (`rag_score_batch`)
+evaluates candidates in parallel using Rayon work-stealing; end-to-end local
+recall measured 3.9 ms p99 at N=5,000. Results vary by hardware, dataset, and
+embedding configuration.
 
 ### File Map
 

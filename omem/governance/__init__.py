@@ -25,6 +25,14 @@ from .layer import (
     RetentionReport,
     Role,
 )
+from .tenant import (
+    TenantBinding,
+    TenantScope,
+    assert_same_org,
+    harden_namespace,
+    namespaces_isolated,
+    resolve_tenant_from_binding,
+)
 
 __all__ = [
     "AuditLogger",
@@ -38,4 +46,10 @@ __all__ = [
     "ROLE_ADMIN",
     "ROLE_EDITOR",
     "ROLE_VIEWER",
+    "TenantScope",
+    "TenantBinding",
+    "resolve_tenant_from_binding",
+    "assert_same_org",
+    "namespaces_isolated",
+    "harden_namespace",
 ]

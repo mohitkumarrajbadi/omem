@@ -1,25 +1,45 @@
-# How We Built a 4ms AI Memory OS Using Rust and SIMD to Replace Expensive LLM API Calls
+# How We Built a Local AI Memory OS with Rust and Hybrid Scoring
 
 *Posted to HackerNews — Engineering · AI Infrastructure · Rust · Systems Programming*
 
 ---
 
-The dominant architecture for AI agent "memory" today is surprisingly naïve: throw everything into a vector database, pay OpenAI $0.005 per query to rank results, and call it done. We took a different path. This post explains how we built OMem — a sub-4ms AI memory operating system using Rust, Rayon parallelism, and heuristic scoring — and why our approach is not just faster but structurally cheaper for the enterprise use case we are targeting.
+Many AI memory systems use model calls for extraction, classification, or
+ranking. OMem takes a different path: local embeddings, heuristic
+classification, and multi-signal scoring accelerated with Rust and Rayon. This
+post explains that architecture and the trade-off it makes: lower latency and
+no required third-party API fees in exchange for heuristic rather than
+LLM-based extraction.
 
-The short version: **we replaced LLM re-ranking with a multi-signal heuristic fusion that runs in parallel Rust, and the results are 16× faster at p99 with $0 API cost.**
+The short version: **OMem's default path requires no LLM calls or API fees. In
+our Apple M-series benchmark it measured 3.9 ms p99 local recall at 5,000
+memories.**
 
 ---
 
 ## The Problem With LLM-Based Memory
 
-Mem0, one of our main competitors, takes what I'd call the "LLM-native" approach. When an agent adds a memory, Mem0 calls an LLM (typically GPT-4o-mini) to extract entities and decide what to store. When an agent recalls memories, Mem0 calls the LLM again to re-rank candidates. The result is:
+The Mem0 configuration represented by our comparison uses an LLM-based
+extraction/scoring pipeline. That is a different category of operation from
+OMem's local heuristic path. Our default reproducible script models the Mem0
+baseline from prior measurements and documented API-bound behavior; it does
+not run Mem0 live unless invoked with `--live-mem0` and an API key. In that
+modeled configuration:
 
-- **Cold start: ~15,000ms** — you're waiting for a network round-trip to OpenAI before the first memory is stored.
-- **RAG p99: ~638ms** — every recall fires an API call.
-- **Cost: ~$0.02 per 1,000 recalls** — this adds up to $20/M, which is prohibitive for always-on agents.
-- **Privacy risk**: your agent's entire knowledge base transits OpenAI's infrastructure on every operation.
+- **Cold start: ~15,000ms** — the modeled value includes model initialization
+  and a network-bound extraction request.
+- **RAG p99: ~638ms** — the modeled scoring path includes a third-party request.
+- **Estimated API cost: ~$0.02 per 1,000 recalls** — approximately $20/M,
+  excluding infrastructure.
+- **Data handling consideration:** content included in a model request leaves
+  the local process and is governed by the configured provider's policies.
 
-These aren't theoretical concerns. Our `benchmarks/competitor.py` measured Mem0 at `<1 add op/s` and 18 RAG ops/s on a realistic 5,000-memory dataset. For an enterprise coding agent running 24/7, this is a non-starter.
+The modeled figures use prior `benchmarks/competitor.py` observations and
+documented network/API characteristics. They are useful for comparing the
+tested configurations, but they are not an apples-to-apples microbenchmark of
+equivalent underlying operations. Run
+`python distribution/benchmark_vs_mem0.py --live-mem0` to collect live Mem0
+results in your own environment.
 
 The LLM approach made sense when the only way to rank text was to ask a model. But in 2025, we have better tools.
 
@@ -184,7 +204,11 @@ The trigger patterns are learned heuristics:
 - `"note|fyi|reminder"` → importance × 0.6
 - `"decision|chose|migration|refactor"` → importance × 1.4
 
-Are these as accurate as GPT-4o for importance classification? No. Are they 10,000× faster and $0? Yes. For the 80% of cases where content clearly signals its own importance, the heuristic works. For the remaining 20%, the fusion scoring mechanism compensates through recency and access patterns.
+These heuristics are not equivalent to model-based classification and the
+benchmark does not establish classification-quality parity. Their advantage is
+that they execute locally without required third-party API calls; applications
+that need stronger semantic judgment should evaluate the optional embedding or
+model-backed paths against their own data.
 
 ---
 
@@ -237,22 +261,34 @@ This means even if there is a bug in the application layer that forgets to inclu
 
 On Apple M-series, 5,000 memories, 500 queries, `all-MiniLM-L6-v2` embeddings:
 
-| Metric | OMem | Mem0 | Speedup |
+The OMem column is measured locally. Unless `--live-mem0` is used, the Mem0
+column is a modeled baseline for an LLM-based extraction/scoring configuration.
+Because the systems perform different operation pipelines, the ratios describe
+these configurations rather than equivalent primitive operations.
+
+| Metric | OMem (measured) | Mem0 (modeled default) | Ratio |
 |---|---|---|---|
 | Cold start | 4ms | 15,000ms | **3,750×** |
 | Add throughput | 65 ops/s | <1 ops/s | **65×** |
 | RAG p50 | 1.8ms | 420ms | **233×** |
 | RAG p99 | 3.9ms | 638ms | **163×** |
-| Cost / 1M recalls | $0 | ~$20 | **∞** |
+| Third-party API fees / 1M recalls | $0 | ~$20 | — |
 | API key required | No | Yes | — |
 
-The cost advantage compounds. An enterprise coding agent fleet making 100,000 recalls/day would spend $2,000/month on Mem0's API costs. OMem's cost is the electricity bill for a `c5.xlarge` instance.
+At the modeled rate of $20 per million recalls, 100,000 recalls/day is
+approximately $60/month in third-party API fees. OMem's local path has no
+third-party API fee, but its compute, storage, and operational costs are not
+included here.
 
 ---
 
 ## What We Learned
 
-**Don't reach for LLMs when regex will do.** Importance classification, conflict detection, entity extraction — all of these have pattern-based approximations that are 99% as accurate and 10,000× faster for the common case. Reserve the LLM for the edge cases.
+**Use the least expensive method that meets the quality requirement.**
+Importance classification, conflict detection, and entity extraction can use
+fast pattern-based approximations, but their quality must be evaluated for the
+target dataset. Reserve model calls for cases where the additional semantic
+judgment justifies their latency and cost.
 
 **Rayon is remarkably easy for this use case.** The scoring workload is embarrassingly parallel — no shared mutable state, fixed-size input, fixed-size output. Rayon's `par_iter()` adds parallelism in one line. The correctness story is straightforward because you're not coordinating anything.
 
@@ -270,10 +306,12 @@ We're working on:
 2. **Multi-language AST indexing** — extending codebase memory beyond Python to TypeScript/Go/Rust.
 3. **Federated memory** — allowing agent fleets at the same org to share a read-only "org memory" namespace while maintaining write isolation.
 
-The code is open source: [github.com/mohitkumarrajbadi/omem](https://github.com/mohitkumarrajbadi/omem). The benchmark is reproducible: `python distribution/benchmark_vs_mem0.py`.
+The code is open source: [github.com/mohitkumarrajbadi/omem](https://github.com/mohitkumarrajbadi/omem). Reproduce the local OMem run and modeled comparison with `python distribution/benchmark_vs_mem0.py`, or add `--live-mem0` for a live comparison.
 
 If you're building AI agents and paying per-recall for memory, we'd like to show you a different path.
 
 ---
 
-*Questions or corrections? The technical details in this post are directly verifiable in the linked source files. `rust/src/lib.rs` contains the full Rust implementation. `benchmarks/competitor.py` contains the Mem0 measurements.*
+*Questions or corrections? `rust/src/lib.rs` contains the Rust implementation.
+`distribution/benchmark_vs_mem0.py` documents which results are measured and
+which are modeled.*

@@ -104,14 +104,13 @@ Repository = "https://github.com/mohitkumarrajbadi/omem"
 Issues = "https://github.com/mohitkumarrajbadi/omem/issues"
 Changelog = "https://github.com/mohitkumarrajbadi/omem/releases"
 
-[tool.setuptools.package-data]
-"omem.cloud.storage" = ["*.sql", "migrations/*.sql"]
-
 [tool.setuptools_scm]
 # Used when building from a git checkout without a version tag, or in
 # editable installs.  The real version is always embedded into the wheel /
 # sdist at publish time via SETUPTOOLS_SCM_PRETEND_VERSION in CI.
-fallback_version = "3.0.0"
+# Kept in line with the actual release history: latest published tag is
+# v0.0.2 (GitHub) / 0.0.1 (PyPI); 0.0.3 is the next unreleased version.
+fallback_version = "0.0.3"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

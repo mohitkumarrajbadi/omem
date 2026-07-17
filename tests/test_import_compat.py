@@ -12,6 +12,8 @@ These tests must stay green throughout the v2 transition.
 
 import importlib
 
+import pytest
+
 # ---------------------------------------------------------------------------
 # V1 stable API
 # ---------------------------------------------------------------------------
@@ -122,10 +124,10 @@ def test_runtime_package_importable():
     assert RuntimeOS is not None
 
 
-def test_cloud_package_importable():
-    import omem.cloud
-    from omem.cloud.client import OMemCloudClient  # noqa: F401
-    assert OMemCloudClient is not None
+def test_cloud_client_not_shipped_in_oss():
+    """Commercial omem.cloud client lives in omem-cloud; OSS must not bundle it."""
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("omem.cloud.client")
 
 
 # ---------------------------------------------------------------------------
@@ -226,7 +228,6 @@ def test_canonical_paths_importable():
 
 def test_v3_legacy_shim_paths_raise_import_error():
     """v3.0 — legacy import paths raise ImportError with migration hint (ADR-003)."""
-    import importlib
 
     import pytest
 

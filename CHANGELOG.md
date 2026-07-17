@@ -5,15 +5,28 @@ All notable changes to OMem will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.0.0] - 2026-06-25
+> **Version note:** the latest published release is **0.0.1 on PyPI** and
+> **v0.0.2 on GitHub**. Everything under *Unreleased* below — including the
+> architecture work previously labeled "v3.0" internally — has **not** been
+> released. The next release will be **0.0.3**.
+
+## [Unreleased] — targeting 0.0.3
+
+This section consolidates the internal "v2"/"v3.0" architecture milestones
+(June 2026). These version labels were used in commit messages and design docs
+but were never published to PyPI or tagged on GitHub; they ship for the first
+time in the next release.
 
 ### Added
 
 - **Six-layer product architecture** — `memory`, `state`, `context`, `knowledge`, `observe`, `governance`
 - **`AgentState`** — unified product facade composing all layers
-- Cross-cutting packages: `provenance`, `runtime`, `cloud`
+- Cross-cutting packages: `provenance`, `runtime`
 - Layer extensions: `memory/org/`, `knowledge/codebase/`, `observe/dashboard/`
 - Governance modules consolidated: `governance/audit.py`, `governance/encryption.py`
+- Memory OS charter work: BM25 fusion, per-type retrieval strategies, lifecycle
+  FSM, L0–L4 hierarchy conveyor, batch ingest pipeline, cold archive spill,
+  tenant namespace hardening
 - Architecture docs: `docs/architecture/ARCHITECTURE.md`, ADR-002, ADR-003
 - Eval harness relocated to `benchmarks/eval/`
 
@@ -27,105 +40,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `omem.classify` → `omem.core.brain.classify`
 - Docker: root `Dockerfile` / `docker-compose.yml` removed; use `deploy/docker/`
 - Design notes moved from `issues/` to `docs/ideas/`
-- `AgentState` and all layer facades marked **stable**
 
 ### Removed
 
 - `omem/org/`, `omem/security/`, `omem/codebase/`, `omem/viz/` packages (directories deleted)
 - Legacy imports now raise `ImportError` with migration hints via guard modules (`org.py`, `security.py`, …)
 - `omem/eval/` (use `benchmarks/eval/` for dev benchmarks)
-
-[3.0.0]: https://github.com/mohitkumarrajbadi/omem/releases/tag/v3.0.0
-
----
-
-## [0.1.0] - 2026-05-16
-
-### Stable
-
-This release marks the first publicly stable version of OMem. The core API is locked for the v0.1.x series.
-
-#### Core API (stable)
-- `OMem.add()` — embedding, auto-classification, dedup, entity-graph sync, async persist
-- `OMem.recall()` — hybrid RAG (vector + keyword + recency + importance) with Graph-RAG expansion
-- `OMem.sleep()` — full maintenance cycle: compress, forget, reflect, dream
-- `OMem.inspect()` — per-memory score breakdown for retrieval debugging
-- `OMem.reflect()` — generate REFLECTION-type insights from episodic memories
-- `OMem.resolve_conflict()` — TMS conflict detection and resolution
-- `OMem.entities()` — knowledge graph entity listing
-- `OMem.stats()` — memory system statistics
-
-#### SQLite backend (stable)
-- Handles 100 000+ memories; thread-safe WAL mode; zero configuration
-
-#### PostgreSQL backend (beta)
-- Multi-process / distributed deployments; connection-string config
-
-#### MCP server (stable)
-- `omem serve` — stdio MCP server for Claude Desktop and Cursor IDE
-- Full tool set: `remember`, `recall`, `reflect`, `maintain`, `resolve_conflict`,
-  `remember_action`, `recall_action`, `query_codebase`, `sync_codebase`, `ingest_codebase`
-- Full resource set: `omem://recent`, `omem://top_insights`, `omem://status`, `omem://graph`
-
-#### Tooling
-- CLI (`omem health`, `omem demo`, `omem dashboard`, `omem benchmark`, …)
-- Web dashboard (`omem dashboard`) with memory table and knowledge-graph visualization
-- Published on PyPI as `omem-os`
-
-[0.1.0]: https://github.com/mohitkumarrajbadi/omem/releases/tag/v0.1.0
+- Commercial cloud layer (`omem/cloud/`) detached from the open-source package;
+  it now lives in the separate `omem-cloud` repository
 
 ---
 
-## [0.8.0] - 2026-04-11
+## [0.0.2] - 2026-05-23
 
-### Added
-- Comprehensive test script for full functionality validation
-- Context-type filtering in recall function (architecture, bugs, decisions, etc.)
-- Time-range filtering in recall function (today, recent, last_week)
-- Memory lifecycle maintenance system
-- Truth maintenance system for conflict detection and resolution
-- Enhanced memory metadata with quality-based retrieval filtering
-- MCP server integration for Claude Desktop
-- Rust-powered SIMD operations for vector similarity
-- Hybrid scoring (vector + keyword + recency + importance)
-- Memory consolidation via dream cycles
-- Namespace isolation for multi-agent systems
-- Secret detection to prevent credential leakage
-- Knowledge graph support with entity linking
-- Export and visualization tools
-
-### Changed
-- Improved README with centered layout and better documentation
-- Updated import paths for cleaner API surface
-- Enhanced retrieval scoring with quality metrics
-- Optimized performance for sub-millisecond retrieval
-- Refactored project structure for better modularity
+GitHub release only (tag `v0.0.2`); not published to PyPI.
 
 ### Fixed
-- Memory lifecycle error handling
-- Thread safety improvements in concurrent operations
-- Import path inconsistencies
 
-## [0.7.0] - 2026-03-15
-
-### Added
-- Rust core implementation for performance
-- Benchmarking suite for latency and throughput testing
-- Example applications (memory assistant, demo scripts)
+- Python 3.13 wheel compilation via PyO3 forward-compatibility flag
+- `setuptools-rust` added to `build-system.requires` (fixes cibuildwheel)
+- Seamless `pip install`: auto-configured env vars, `mcp` included in core deps
+- Deterministic audit-log tests; ruff lint cleanup
 
 ### Changed
-- Renamed project from memx-ai to omem-os
-- Major v2 cognitive architecture upgrade
 
-## [0.1.0] - 2026-02-01
+- Standardized and alphabetized module imports across the codebase
+- Test suite overhauled for correctness and coverage
+
+[0.0.2]: https://github.com/mohitkumarrajbadi/omem/releases/tag/v0.0.2
+
+---
+
+## [0.0.1] - 2026-05-06
+
+First public release on PyPI (`pip install omem-os`). Pre-alpha.
 
 ### Added
-- Initial release
-- Basic memory add, recall, and delete operations
-- SQLite backend for persistence
-- Sentence-transformer embeddings
-- FAISS vector indexing
 
-[0.8.0]: https://github.com/mohitkumarrajbadi/omem/compare/v0.7.0...v0.8.0
-[0.7.0]: https://github.com/mohitkumarrajbadi/omem/compare/v0.1.0...v0.7.0
-[0.1.0]: https://github.com/mohitkumarrajbadi/omem/releases/tag/v0.1.0
+- `OMem.add()` — embedding, auto-classification, dedup, entity-graph sync, async persist
+- `OMem.recall()` — hybrid RAG (vector + keyword + recency + importance) with Graph-RAG expansion
+- `OMem.sleep()` — maintenance cycle: compress, forget, reflect, dream
+- `OMem.inspect()` — per-memory score breakdown for retrieval debugging
+- `OMem.reflect()`, `OMem.resolve_conflict()` (TMS), `OMem.entities()`, `OMem.stats()`
+- SQLite backend (thread-safe WAL mode, zero configuration); PostgreSQL backend (beta)
+- MCP server (`omem serve`) for Claude Desktop and Cursor
+- CLI, web dashboard, Rust-accelerated scoring (PyO3 + Rayon)
+
+[0.0.1]: https://pypi.org/project/omem-os/0.0.1/
+
+---
+
+## [1.0.0] - 2026-04-25 [YANKED]
+
+Published to PyPI with an incorrect version number and yanked shortly after
+(yank reason: "incorrect version, use 0.0.1"). No code from this upload is
+current; it predates the 0.0.1 release. Listed here so the version history
+has no silent gaps.
+
+---
+
+## Pre-release history (never published)
+
+Earlier drafts of this changelog listed `0.1.0`, `0.7.0`, and `0.8.0`
+milestones (February–May 2026, partly under the project's previous name,
+`memx-ai`). Those version numbers were internal development milestones only —
+none were tagged on GitHub or published to PyPI. Their features (Rust core,
+hybrid scoring, MCP integration, truth maintenance, knowledge graph, namespace
+isolation) shipped publicly in 0.0.1 and 0.0.2 above.

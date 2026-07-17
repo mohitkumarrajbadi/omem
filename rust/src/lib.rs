@@ -35,7 +35,7 @@ pub fn score_memory_simd(
     recency: f32,
     mem_type: u8,
     weights: &[f32; 4],
-    type_boosts: &[f32; 10],
+    type_boosts: &[f32; 12],
 ) -> f32 {
     let mut dot = 0.0;
     for i in 0..query.len() {
@@ -49,6 +49,40 @@ pub fn score_memory_simd(
     };
 
     (dot * weights[0] + base_score * weights[1] + recency * weights[2]) * t_boost
+}
+
+/// Full hybrid fusion matching Python ``fuse_score`` + type boost.
+/// weights layout: [semantic, keyword, recency, importance, confidence, graph, personalization, success, goal]
+#[inline(always)]
+pub fn fuse_score_simd(
+    semantic: f32,
+    keyword: f32,
+    recency: f32,
+    importance: f32,
+    confidence: f32,
+    graph: f32,
+    personalization: f32,
+    success: f32,
+    goal: f32,
+    mem_type: u8,
+    weights: &[f32; 9],
+    type_boosts: &[f32; 12],
+) -> f32 {
+    let fused = weights[0] * semantic
+        + weights[1] * keyword
+        + weights[2] * recency
+        + weights[3] * importance
+        + weights[4] * confidence
+        + weights[5] * graph
+        + weights[6] * personalization
+        + weights[7] * success
+        + weights[8] * goal;
+    let t_boost = if (mem_type as usize) < type_boosts.len() {
+        type_boosts[mem_type as usize]
+    } else {
+        1.0
+    };
+    fused * t_boost
 }
 
 fn lower_tokens(text: &str, stopwords: &HashSet<String>, min_len: usize, max_len: usize) -> Vec<String> {
@@ -362,7 +396,7 @@ fn rag_score_batch(
     for (slot, value) in w.iter_mut().zip(weights.iter()) {
         *slot = *value;
     }
-    let mut boosts = [1.0f32; 10];
+    let mut boosts = [1.0f32; 12];
     for (slot, value) in boosts.iter_mut().zip(type_boosts.iter()) {
         *slot = *value;
     }
@@ -393,6 +427,92 @@ fn rag_score_batch(
         .collect();
 
     Ok(result)
+}
+
+/// Rank candidates with full hybrid fusion signals (Python prepels; Rust ranks).
+///
+/// Signal arrays are parallel (len = n). ``weights`` is length 9 matching
+/// ``FusionWeights.as_weight_vector``. ``type_boosts`` length up to 12.
+#[pyfunction]
+#[pyo3(signature = (
+    semantics, keywords, recencies, importances, confidences, graphs,
+    personalizations, successes, goals, mem_types, weights, type_boosts, top_k
+))]
+fn rag_fuse_batch(
+    semantics: PyReadonlyArray1<f32>,
+    keywords: PyReadonlyArray1<f32>,
+    recencies: PyReadonlyArray1<f32>,
+    importances: PyReadonlyArray1<f32>,
+    confidences: PyReadonlyArray1<f32>,
+    graphs: PyReadonlyArray1<f32>,
+    personalizations: PyReadonlyArray1<f32>,
+    successes: PyReadonlyArray1<f32>,
+    goals: PyReadonlyArray1<f32>,
+    mem_types: PyReadonlyArray1<u8>,
+    weights: Vec<f32>,
+    type_boosts: Vec<f32>,
+    top_k: usize,
+) -> PyResult<Vec<(usize, f32)>> {
+    let s = semantics.as_slice()?;
+    let k = keywords.as_slice()?;
+    let r = recencies.as_slice()?;
+    let imp = importances.as_slice()?;
+    let c = confidences.as_slice()?;
+    let g = graphs.as_slice()?;
+    let p = personalizations.as_slice()?;
+    let suc = successes.as_slice()?;
+    let goal = goals.as_slice()?;
+    let types = mem_types.as_slice()?;
+
+    let n = s.len();
+    if n == 0 || top_k == 0 {
+        return Ok(Vec::new());
+    }
+    for arr in [&k[..], &r[..], &imp[..], &c[..], &g[..], &p[..], &suc[..], &goal[..]] {
+        if arr.len() != n {
+            return Err(PyRuntimeError::new_err(
+                "rag_fuse_batch: signal array length mismatch",
+            ));
+        }
+    }
+    if types.len() != n {
+        return Err(PyRuntimeError::new_err(
+            "rag_fuse_batch: mem_types length mismatch",
+        ));
+    }
+
+    let mut w = [0.0f32; 9];
+    for (slot, value) in w.iter_mut().zip(weights.iter()) {
+        *slot = *value;
+    }
+    let mut boosts = [1.0f32; 12];
+    for (slot, value) in boosts.iter_mut().zip(type_boosts.iter()) {
+        *slot = *value;
+    }
+
+    let scores: Vec<f32> = (0..n)
+        .into_par_iter()
+        .map(|i| {
+            fuse_score_simd(
+                s[i], k[i], r[i], imp[i], c[i], g[i], p[i], suc[i], goal[i],
+                types[i], &w, &boosts,
+            )
+        })
+        .collect();
+
+    let mut heap: BinaryHeap<ScoredIndex> = BinaryHeap::with_capacity(top_k + 1);
+    for (index, &score) in scores.iter().enumerate() {
+        heap.push(ScoredIndex { index, score });
+        if heap.len() > top_k {
+            heap.pop();
+        }
+    }
+
+    Ok(heap
+        .into_sorted_vec()
+        .into_iter()
+        .map(|scored| (scored.index, scored.score))
+        .collect())
 }
 
 // ── COGNITION: Forgetting Engine ──
@@ -553,6 +673,54 @@ fn cognition_detect_conflicts(
     Ok(results)
 }
 
+/// BFS over an adjacency list: for each seed, return up to ``max_nodes``
+/// neighbor node indices within ``depth`` hops (Rayon-parallel over seeds).
+#[pyfunction]
+#[pyo3(signature = (adjacency, seeds, depth=2, max_nodes=32))]
+fn graph_bfs_batch(
+    adjacency: Vec<Vec<usize>>,
+    seeds: Vec<usize>,
+    depth: usize,
+    max_nodes: usize,
+) -> PyResult<Vec<Vec<usize>>> {
+    let n = adjacency.len();
+    let results: Vec<Vec<usize>> = seeds
+        .into_par_iter()
+        .map(|seed| {
+            if seed >= n {
+                return Vec::new();
+            }
+            let mut visited = HashSet::new();
+            let mut out = Vec::new();
+            let mut frontier = vec![seed];
+            visited.insert(seed);
+            for _ in 0..depth {
+                let mut next = Vec::new();
+                for node in frontier {
+                    if node >= n {
+                        continue;
+                    }
+                    for &nbr in &adjacency[node] {
+                        if visited.insert(nbr) {
+                            out.push(nbr);
+                            next.push(nbr);
+                            if out.len() >= max_nodes {
+                                return out;
+                            }
+                        }
+                    }
+                }
+                frontier = next;
+                if frontier.is_empty() {
+                    break;
+                }
+            }
+            out
+        })
+        .collect();
+    Ok(results)
+}
+
 #[pymodule]
 fn omem_rust(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(tokenize_bm25, m)?)?;
@@ -562,9 +730,11 @@ fn omem_rust(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(sleep_cycle, m)?)?;
     m.add_function(wrap_pyfunction!(embed_local_model, m)?)?;
     m.add_function(wrap_pyfunction!(rag_score_batch, m)?)?;
+    m.add_function(wrap_pyfunction!(rag_fuse_batch, m)?)?;
     m.add_function(wrap_pyfunction!(cognition_forget_sweep, m)?)?;
     m.add_function(wrap_pyfunction!(cognition_cluster_batch, m)?)?;
     m.add_function(wrap_pyfunction!(cognition_classify_batch, m)?)?;
     m.add_function(wrap_pyfunction!(cognition_detect_conflicts, m)?)?;
+    m.add_function(wrap_pyfunction!(graph_bfs_batch, m)?)?;
     Ok(())
 }

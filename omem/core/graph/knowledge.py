@@ -28,7 +28,11 @@ except ImportError:
 
 
 class EntityType(Enum):
-    """Types of entities extracted from memory content."""
+    """Types of entities extracted from memory content.
+
+    Charter coverage: People, Projects, Systems, Documents, Incidents, Tasks
+    (plus technology / organization / location / concept).
+    """
 
     PERSON = "person"
     TECHNOLOGY = "technology"
@@ -36,6 +40,10 @@ class EntityType(Enum):
     ORGANIZATION = "organization"
     LOCATION = "location"
     CONCEPT = "concept"
+    SYSTEM = "system"
+    DOCUMENT = "document"
+    INCIDENT = "incident"
+    TASK = "task"
 
 
 class EdgeType(Enum):
@@ -193,6 +201,50 @@ def extract_entities(content: str) -> List[Entity]:
         ):
             entities.append(Entity(name=name, type=EntityType.LOCATION))
             seen.add(key)
+
+    # Charter entity types: systems, documents, incidents, tasks, projects
+    for pattern, etype in (
+        (
+            re.compile(
+                r"\b((?:[A-Z][\w-]+(?:Service|API|Cluster|DB|Database|System|Gateway|Worker)))\b"
+            ),
+            EntityType.SYSTEM,
+        ),
+        (
+            re.compile(
+                r"\b((?:RFC|ADR|PR|DOC)[- ]?\d+|README(?:\.\w+)?|[A-Za-z0-9_-]+\.md)\b",
+                re.IGNORECASE,
+            ),
+            EntityType.DOCUMENT,
+        ),
+        (
+            re.compile(
+                r"\b((?:INC|INCIDENT|OUTAGE)[- ]?\d+|incident\s+[A-Za-z0-9_-]+)\b",
+                re.IGNORECASE,
+            ),
+            EntityType.INCIDENT,
+        ),
+        (
+            re.compile(
+                r"\b((?:TASK|TODO|TICKET|JIRA)[- ]?[A-Z0-9-]+)\b",
+                re.IGNORECASE,
+            ),
+            EntityType.TASK,
+        ),
+        (
+            re.compile(
+                r"\b(?:project|repo(?:sitory)?)\s+([A-Za-z0-9_./-]+)\b",
+                re.IGNORECASE,
+            ),
+            EntityType.PROJECT,
+        ),
+    ):
+        for match in pattern.finditer(content):
+            name = match.group(1).strip()
+            key = f"{etype.value}:{name.lower()}"
+            if key not in seen and len(name) > 1:
+                entities.append(Entity(name=name, type=etype))
+                seen.add(key)
 
     return entities
 
@@ -596,8 +648,44 @@ class KnowledgeGraph:
         return result
 
     def traverse(self, entity_name: str, depth: int = 2) -> List[str]:
+        """BFS entity traversal; uses Rust ``graph_bfs_batch`` when available."""
+        seed = entity_name.lower()
+        # Prefer Rust parallel BFS over adjacency list
+        try:
+            import omem_rust
+
+            if hasattr(omem_rust, "graph_bfs_batch"):
+                labels = list(self._entities.keys())
+                if not labels:
+                    return []
+                index = {lab: i for i, lab in enumerate(labels)}
+                if seed not in index:
+                    return []
+                adj: List[List[int]] = [[] for _ in labels]
+                for src, edges in self._edges.items():
+                    if src not in index:
+                        continue
+                    si = index[src]
+                    for e in edges:
+                        tgt = e.target.lower() if hasattr(e, "target") else str(e.target).lower()
+                        if tgt in index:
+                            adj[si].append(index[tgt])
+                for src, edges in self._reverse_edges.items():
+                    if src not in index:
+                        continue
+                    si = index[src]
+                    for e in edges:
+                        tgt = e.source.lower() if hasattr(e, "source") else str(e.source).lower()
+                        if tgt in index:
+                            adj[si].append(index[tgt])
+                found = omem_rust.graph_bfs_batch(adj, [index[seed]], depth, 64)
+                if found:
+                    return [labels[i] for i in found[0] if i < len(labels)]
+        except Exception:
+            pass
+
         visited: Set[str] = set()
-        queue = [(entity_name.lower(), 0)]
+        queue = [(seed, 0)]
         result: List[str] = []
 
         while queue:
@@ -641,6 +729,34 @@ class KnowledgeGraph:
 
     def all_edges(self) -> List[Edge]:
         return list(self._edge_index.values())
+
+    def persist_edges(
+        self,
+        backend,
+        namespace: str = "default",
+    ) -> int:
+        """Flush graph edges to a durable backend (Postgres ``save_edge``).
+
+        Returns number of edges written. No-op if backend lacks ``save_edge``.
+        """
+        if backend is None or not hasattr(backend, "save_edge"):
+            return 0
+        written = 0
+        for edge in self.all_edges():
+            try:
+                backend.save_edge(
+                    namespace=namespace,
+                    source_id=edge.source,
+                    target_id=edge.target,
+                    relation_type=edge.edge_type.value
+                    if hasattr(edge.edge_type, "value")
+                    else str(edge.edge_type),
+                    confidence=float(edge.confidence),
+                )
+                written += 1
+            except Exception as exc:
+                logger.warning("edge persist failed: %s", exc)
+        return written
 
     def to_dict(self) -> Dict:
         return {
