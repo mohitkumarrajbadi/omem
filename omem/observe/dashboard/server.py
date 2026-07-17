@@ -106,7 +106,7 @@ button:hover { opacity: 0.85; transform: translateY(-1px); }
 <body>
 <div class="header">
   <h1>OMem Dashboard</h1>
-  <span class="badge">Memory OS v0.1.0</span>
+  <span class="badge">Local preview</span>
   <span class="badge" id="mem-count">—</span>
 </div>
 <div class="grid">

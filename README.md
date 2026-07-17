@@ -16,6 +16,9 @@
 
 **Zero required LLM calls or API fees. Local-first hybrid recall. Postgres multi-tenancy. Built-in MCP for Cursor & Claude.**
 
+**Current development line: 0.0.3 (unreleased).** Latest public artifacts:
+0.0.1 on PyPI and v0.0.2 on GitHub.
+
 [Quickstart](#quickstart) · [Why OMem](#why-omem-not-a-vector-db) · [Benchmarks](#benchmarks) · [MCP for Coding Agents](#mcp-for-coding-agents) · [Enterprise](#enterprise-postgresql) · [Architecture](#architecture)
 
 </div>
@@ -26,18 +29,22 @@
 
 | Layer | Status |
 |-------|--------|
-| Memory | Stable |
-| State | Stable |
-| Context | Stable |
-| Knowledge | Partial — link/query API works; graph projection is in-memory, durable edges incomplete |
-| Observe | Partial — Prometheus metrics work; Grafana dashboards are basic |
-| Governance | Stable (local SQLite audit) / Preview (cloud RBAC + namespace headers) |
+| Memory | Stable — local API and lifecycle covered by the OSS test suite |
+| State | Stable — snapshots, rollback, forks, and checkpoints covered |
+| Context | Stable — token budgeting and context assembly covered |
+| Knowledge | Beta — link/query/reasoning covered; codebase indexing remains Alpha |
+| Observe | Beta — local traces and metrics covered; dashboard remains Alpha |
+| Governance | Stable for local audit/retention; tenant and cloud enforcement remain Beta |
 
 For managed, multi-tenant hosting see [OMem Cloud](../omem-cloud/).
 
 ### Known limitations
 
-Default embeddings are hash-based (384-dim, zero extra dependencies). Recall quality is lower than `sentence-transformers` or OpenAI embeddings. For production semantic quality, install the optional `[embeddings]` extra: `pip install omem-os[embeddings]`.
+**The default 384-dimensional hash embeddings prioritize zero-configuration
+installation, not semantic quality. Recall quality is weaker than with
+`sentence-transformers` or OpenAI embeddings.** For production semantic
+retrieval, install the optional model-backed extra:
+`pip install "omem-os[embeddings]"`.
 
 ---
 
@@ -397,34 +404,52 @@ pytest tests/ -v
 
 ## Stability
 
+These labels reflect the current OSS test boundary. The local Python suite
+covers Memory, State, Context, Knowledge, Observe, Governance, SQLite, and
+adapter behavior. It does **not** run a live PostgreSQL service, a real
+Cursor/Claude MCP client, upstream LangChain/CrewAI agents, or browser-based
+dashboard tests.
+
 | Component | Status |
 |---|---|
-| Core API: `add`, `recall`, `sleep`, `inspect` | Stable |
-| SQLite backend | Stable |
-| MCP server (Cursor / Claude) | Stable |
-| Coding agent tools (ADRs, PRs, bugs) | Stable |
-| PostgreSQL backend | Beta |
-| Enterprise multi-tenant backend | Beta |
-| Codebase AST indexing | Alpha |
+| Core API: `add`, `recall`, `sleep`, `inspect` | Stable — unit and end-to-end local coverage |
+| SQLite backend | Stable — persistent and in-memory behavior covered |
+| MCP server (Cursor / Claude) | Beta — imports and tool structures covered; no real-client CI |
+| Coding agent tools (ADRs, PRs, bugs) | Beta — implemented; no end-to-end MCP client coverage |
+| PostgreSQL backend | Beta — implementation present; no live-Postgres OSS CI |
+| Enterprise multi-tenant backend | Beta — isolation design present; live RLS verification belongs to omem-cloud |
+| Codebase AST indexing | Alpha — Python-only parser; import coverage, no repository-scale CI |
+| Local dashboard | Alpha — server implemented; import coverage, no browser/end-to-end CI |
 | Managed cloud API (omem-cloud) | [Commercial](https://omem.dev/cloud) |
-| LangChain integration | Beta |
-| CrewAI integration | Alpha |
+| LangChain-style adapter | Beta — adapter contract covered; no upstream LangChain CI |
+| CrewAI-style shared-memory adapter | Alpha — standalone adapter; no upstream CrewAI CI |
 
 ---
 
 ## FAQ
 
 **Does OMem call an LLM internally?**
-No. Importance scoring, entity extraction, and memory ranking all use local heuristics and Rust-accelerated algorithms. No API keys required.
+Not on the default path. Importance scoring, entity extraction, and memory
+ranking use local heuristics and Rust-accelerated algorithms, so no API key is
+required. Optional embedding providers can make external model/API calls when
+explicitly configured.
 
 **How is this different from a vector database?**
 Vector databases store vectors. OMem manages the full memory lifecycle: importance scoring, conflict resolution, forgetting, consolidation, state snapshots, knowledge graph, governance, and MCP integration. It is an operating system for memory, not a storage layer.
 
 **What is the Rust layer actually doing?**
-`rag_score_batch` parallelizes hybrid scoring (vector + BM25 + recency + importance + type boost) across all candidate memories using Rayon's work-stealing thread pool. At N=5,000, this runs in ~1ms on Apple M-series.
+`rag_fuse_batch` parallelizes multi-signal fusion across candidate memories
+using Rayon's work-stealing thread pool; Rust also accelerates BM25 and graph
+BFS when the compiled extension is available. Python fallbacks preserve
+correctness without Rust. See the benchmark methodology above for the measured
+hardware and workload.
 
 **How does multi-tenant isolation work?**
-Three independent layers: (1) application-level `org_id`/`user_id` WHERE clauses, (2) PostgreSQL row-level security policies that block cross-tenant reads at the DB layer, (3) per-connection `SET LOCAL omem.org_id` session variables.
+The enterprise Postgres design uses three layers: (1) application-level
+`org_id`/`user_id` filters, (2) PostgreSQL row-level security policies, and
+(3) per-connection `SET LOCAL omem.org_id` session variables. The OSS unit
+suite covers tenant scoping logic but does not run live PostgreSQL RLS tests;
+those integration checks belong to `omem-cloud`.
 
 **Is my data sent anywhere?**
 No. OMem is local-first. The default SQLite backend stores everything on disk at `~/.omem/brain.db`. The enterprise Postgres backend runs in your own infrastructure. No telemetry, no cloud dependency.

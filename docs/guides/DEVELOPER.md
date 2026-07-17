@@ -239,6 +239,12 @@ omem benchmark --n 10000
 ```
 Ensure that `add()` operations remain under `5ms` and `RAG` latency remains under `30ms`.
 
+Competitor framing must match the public README: OMem results are measured on
+the local heuristic/embedding path, while the default Mem0 values in
+`distribution/benchmark_vs_mem0.py` are modeled for an LLM-based
+extraction/scoring configuration. Use `--live-mem0` for a live run, and do not
+describe the two pipelines as equivalent primitive operations.
+
 ### Code Style & Linting
 
 - **Typing**: Strict type hinting is enforced (`def add(text: str, importance: float = 0.5) -> str:`).
