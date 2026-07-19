@@ -448,6 +448,76 @@ class GovernanceOS:
             since_ts=since_ts,
         )
 
+    def export_audit(
+        self,
+        *,
+        format: str = "json",
+        path: Optional[str] = None,
+        namespace: Optional[str] = None,
+        operation: Optional[str] = None,
+        memory_id: Optional[str] = None,
+        since_ts: Optional[float] = None,
+        limit: int = 10_000,
+    ) -> str:
+        """Export the audit trail as JSON or JSONL for design-partner review.
+
+        Args:
+            format:     ``"json"`` (array) or ``"jsonl"`` (one object per line).
+            path:       Optional filesystem path. When set, writes there and
+                        returns the path. When unset, returns the serialized body.
+            namespace:  Optional filter (same as ``audit()``).
+            operation:  Optional operation filter.
+            memory_id:  Optional memory id filter.
+            since_ts:   Optional Unix timestamp lower bound.
+            limit:      Max entries (newest first). Cap raised vs ``audit()``
+                        default so partners can dump a meaningful window.
+
+        Returns:
+            Serialized body, or the output path when ``path`` is set.
+        """
+        import json as _json
+
+        fmt = (format or "json").lower().strip()
+        if fmt not in ("json", "jsonl"):
+            raise ValueError("format must be 'json' or 'jsonl'")
+
+        self.flush_audit()
+        entries = self.audit(
+            namespace=namespace,
+            operation=operation,
+            memory_id=memory_id,
+            since_ts=since_ts,
+            limit=limit,
+        )
+        if fmt == "jsonl":
+            body = "\n".join(_json.dumps(e, default=str) for e in entries)
+            if entries:
+                body += "\n"
+        else:
+            body = _json.dumps(
+                {
+                    "exported_at": time.time(),
+                    "count": len(entries),
+                    "filters": {
+                        "namespace": namespace,
+                        "operation": operation,
+                        "memory_id": memory_id,
+                        "since_ts": since_ts,
+                        "limit": limit,
+                    },
+                    "entries": entries,
+                },
+                indent=2,
+                default=str,
+            )
+            body += "\n"
+
+        if path:
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(body)
+            return path
+        return body
+
     # ------------------------------------------------------------------
     # Deletion workflows
     # ------------------------------------------------------------------

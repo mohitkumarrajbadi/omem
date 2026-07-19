@@ -2431,6 +2431,57 @@ def observe_export_otel(session: Optional[str], db: Optional[str], out: Optional
         click.echo(payload)
 
 
+@observe_group.command("push-otel")
+@click.option("--session", default=None, help="Session ID filter for in-process traces.")
+@click.option("--db", default=None, envvar="OMEM_DB")
+@click.option(
+    "--endpoint",
+    default=None,
+    envvar="OMEM_OTEL_ENDPOINT",
+    help="OTLP/HTTP collector URL (also reads OTEL_EXPORTER_OTLP_ENDPOINT).",
+)
+@click.option("--service-name", default="omem", show_default=True)
+def observe_push_otel(
+    session: Optional[str],
+    db: Optional[str],
+    endpoint: Optional[str],
+    service_name: str,
+):
+    """POST in-process traces to an OTLP/HTTP collector.
+
+    ObserveOS is in-process: this pushes events recorded in the current
+    Python process (or events you record before calling push). For live
+    pipelines, call ``agent.observe.push_otel()`` after instrumented work.
+    """
+    from .agent_state import AgentState
+
+    agent = AgentState(session_id=session, db_path=db, otel_endpoint=endpoint)
+    if agent.observe.event_count(session) == 0:
+        click.echo(
+            "Warning: no in-process observe events to push "
+            "(ObserveOS is process-local). Use the Python API after work.",
+            err=True,
+        )
+    try:
+        result = agent.observe.push_otel(
+            endpoint=endpoint,
+            session_id=session,
+            service_name=service_name,
+        )
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if result.get("ok"):
+        click.echo(
+            f"Pushed {result['span_count']} span(s) → {result['endpoint']} "
+            f"(HTTP {result['status_code']})"
+        )
+    else:
+        raise click.ClickException(
+            f"OTLP push failed (HTTP {result.get('status_code')}): "
+            f"{result.get('error', 'unknown')} → {result.get('endpoint')}"
+        )
+
+
 cli.add_command(observe_group)
 
 
@@ -2558,17 +2609,51 @@ def governance_enforce(db: Optional[str]):
 @click.option("--namespace", default=None, help="Filter by namespace.")
 @click.option("--op", default=None, help="Filter by operation.")
 @click.option("--limit", default=20, show_default=True)
+@click.option(
+    "--format",
+    "fmt",
+    type=click.Choice(["table", "json", "jsonl"], case_sensitive=False),
+    default="table",
+    show_default=True,
+    help="table for humans; json/jsonl for design-partner export.",
+)
+@click.option("--out", "out_path", default=None, help="Write export to this path.")
 @click.option("--db", default=None, envvar="OMEM_DB")
-def governance_audit(namespace: Optional[str], op: Optional[str], limit: int, db: Optional[str]):
-    """Query the audit log."""
+def governance_audit(
+    namespace: Optional[str],
+    op: Optional[str],
+    limit: int,
+    fmt: str,
+    out_path: Optional[str],
+    db: Optional[str],
+):
+    """Query or export the audit log (JSON/JSONL for design partners)."""
     from .agent_state import AgentState
+
     agent = AgentState(db_path=db)
+    if fmt.lower() in ("json", "jsonl"):
+        body_or_path = agent.governance.export_audit(
+            format=fmt.lower(),
+            path=out_path,
+            namespace=namespace,
+            operation=op,
+            limit=limit,
+        )
+        if out_path:
+            click.echo(click.style(f"✓ Wrote {limit}+ filter window → {body_or_path}", fg="green"))
+        else:
+            click.echo(body_or_path)
+        return
+
     entries = agent.governance.audit(namespace=namespace, operation=op, limit=limit)
     click.echo(f"Audit log ({len(entries)} entries)")
     for e in entries:
         import datetime
+
         ts = datetime.datetime.fromtimestamp(e["ts"]).strftime("%Y-%m-%d %H:%M:%S")
-        click.echo(f"  {ts}  {e['operation']:<20}  {e['namespace']:<20}  {e.get('memory_id','')[:12]}")
+        click.echo(
+            f"  {ts}  {e['operation']:<20}  {e['namespace']:<20}  {e.get('memory_id', '')[:12]}"
+        )
 
 
 @governance_group.command("delete")

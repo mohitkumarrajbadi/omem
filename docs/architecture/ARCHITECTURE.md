@@ -40,9 +40,9 @@ Observability**, one engine boundary, zero ambiguity about where code belongs.
         └────────────────────────────┬────────────────────────────┘
                                      ▼
               ┌─────────────────────────────┐
-              │         omem.core           │  ← private engine
-              │  engine · brain · graph     │     (internal: BrainTrace**)
-              │  retrieval · utils          │
+              │         omem.core           │  ← private core engine
+              │  engine · brain · graph     │     (internal class names
+              │  retrieval · utils          │      are not customer-facing)
               └─────────────────────────────┘
                             │
          ┌──────────────────┼──────────────────┐
@@ -50,8 +50,6 @@ Observability**, one engine boundary, zero ambiguity about where code belongs.
     omem.backends      omem-cloud*        rust/ (PyO3)
     sqlite · postgres   separate add-on    SIMD scoring
 ```
-
-\*\* **FLAG:** confirm whether “BrainTrace” is the committed public name.
 
 \* The commercial `omem-cloud` distribution is maintained in a separate
 repository. It installs the optional `omem.cloud` namespace; no cloud source is
@@ -69,11 +67,9 @@ They wrap every product-layer operation.
 | **Product — Memory** | `omem.memory` | Facts, experiences, preferences | `remember`, `recall`, `consolidate`, `forget` |
 | **Product — State** | `omem.state` | Goals, plans, tool outputs, checkpoints | `save`, `snapshot`, `rollback`, `fork` |
 | **Product — Context** | `omem.context` | Token-budget LLM input assembly | `build`, `estimate_savings` |
-| **Product — Knowledge** | `omem.knowledge` | Entity graph, reasoning; *optional AST/codebase index* \* | `link`, `query`, `reason`, `ingest` |
+| **Product — Knowledge** | `omem.knowledge` | Entity graph, reasoning; optional Python-only AST index (Alpha) | `link`, `query`, `reason`, `ingest` |
 | **Cross-cutting — Observe** | `omem.observe` | Traces, replay, cost, dashboard | `trace`, `metrics`, `replay` |
 | **Cross-cutting — Governance** | `omem.governance` | RBAC, retention, audit, encryption | `set_policy`, `audit`, `delete_scope` |
-
-\* **FLAG — confirm scope:** “AST codebase index” under Knowledge — keep in customer docs, drop, or reword to “codebase cognition”?
 
 Memory OS charter map: [MEMORY_OS.md](./MEMORY_OS.md)
 
@@ -82,7 +78,7 @@ Memory OS charter map: [MEMORY_OS.md](./MEMORY_OS.md)
 | Extension | Location | Why here |
 |-----------|----------|----------|
 | Org memory (namespace hierarchy) | `omem.memory.org` | Scoped recall is a memory concern |
-| Project / codebase cognition | `omem.knowledge.codebase` | Code symbols are a knowledge subgraph (**AST claim — confirm**) |
+| Project / codebase cognition | `omem.knowledge.codebase` | Code symbols are a knowledge subgraph — Python-only AST index (Alpha) |
 | Local dashboard | `omem.observe.dashboard` | Visualization is observability |
 
 ---

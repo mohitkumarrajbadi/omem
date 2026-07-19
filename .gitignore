@@ -9,24 +9,16 @@ build/
 *.egg-info/
 *.egg
 
-# Virtual environments
-.venv/
-venv/
-env/
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
 # Data
 *.db
 data/
+benchmarks/data/
+
+# Virtual environments
+.venv/
+.venv-*/
+venv/
+env/
 
 # Testing
 .pytest_cache/

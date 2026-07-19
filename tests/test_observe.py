@@ -206,7 +206,7 @@ class TestOtelExport:
         spans = ss[0]["spans"]
         assert len(spans) == 1
         span = spans[0]
-        assert span["operationName"] == "recall"
+        assert span["name"] == "recall"
         assert "traceId" in span
         assert "spanId" in span
 
@@ -220,6 +220,44 @@ class TestOtelExport:
         attrs = export["resourceSpans"][0]["resource"]["attributes"]
         names = {a["key"]: a["value"]["stringValue"] for a in attrs}
         assert names["service.name"] == "my-agent"
+
+    def test_push_otel_requires_endpoint(self, obs):
+        with pytest.raises(ValueError, match="OTLP endpoint"):
+            obs.push_otel()
+
+    def test_push_otel_http(self, obs, monkeypatch):
+        import json
+
+        obs.record(_event("recall", session_id="push1"))
+        captured = {}
+
+        class _Resp:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        def fake_urlopen(req, timeout=5.0):
+            captured["url"] = req.full_url
+            captured["body"] = json.loads(req.data.decode("utf-8"))
+            return _Resp()
+
+        monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+        result = obs.push_otel(
+            endpoint="http://collector.example:4318",
+            session_id="push1",
+        )
+        assert result["ok"] is True
+        assert result["span_count"] == 1
+        assert result["endpoint"].endswith("/v1/traces")
+        assert captured["url"].endswith("/v1/traces")
+        assert "resourceSpans" in captured["body"]
+        assert captured["body"]["resourceSpans"][0]["scopeSpans"][0]["spans"][0][
+            "name"
+        ] == "recall"
 
 
 # ──────────────────────────────────────────────────────────────────────────────

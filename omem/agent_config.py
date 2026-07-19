@@ -59,6 +59,13 @@ class AgentConfig:
                                  based approximation when None.
         auto_checkpoint:         When True (default), write a crash-recovery
                                  checkpoint on context-manager ``__exit__``.
+        encryption_key:          Optional AES-256 key material (64-char hex or
+                                 base64url of 32 bytes). Also read from
+                                 ``OMEM_ENCRYPTION_KEY`` when unset.
+        otel_endpoint:           OTLP/HTTP collector URL for observe push
+                                 (e.g. ``http://localhost:4318/v1/traces``).
+                                 Also read from ``OMEM_OTEL_ENDPOINT`` /
+                                 ``OTEL_EXPORTER_OTLP_ENDPOINT``.
     """
 
     session_id: Optional[str] = None
@@ -73,6 +80,10 @@ class AgentConfig:
 
     # Memory engine
     embedding_model: str = "all-MiniLM-L6-v2"
+    encryption_key: Optional[str] = None
+
+    # Observability
+    otel_endpoint: Optional[str] = None
 
     # Context engine
     context_cache_ttl: float = 30.0
@@ -122,6 +133,9 @@ class AgentConfig:
         ``OMEM_CONTEXT_TOP_K``                       ``context_top_k_memories``
         ``OMEM_TOKEN_MODEL``                         ``token_model``
         ``OMEM_AUTO_CHECKPOINT``                     ``auto_checkpoint``
+        ``OMEM_ENCRYPTION_KEY`` / ``OMEM_SECRET_KEY`` ``encryption_key``
+        ``OMEM_OTEL_ENDPOINT`` /
+        ``OTEL_EXPORTER_OTLP_ENDPOINT``              ``otel_endpoint``
         ============================================ ==========================
         """
         def _int(var: str, default: int) -> int:
@@ -153,6 +167,14 @@ class AgentConfig:
             embedding_model=os.environ.get(
                 "OMEM_EMBEDDING_MODEL", "all-MiniLM-L6-v2"
             ),
+            encryption_key=(
+                os.environ.get("OMEM_ENCRYPTION_KEY")
+                or os.environ.get("OMEM_SECRET_KEY")
+            ),
+            otel_endpoint=(
+                os.environ.get("OMEM_OTEL_ENDPOINT")
+                or os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+            ),
             context_cache_ttl=_float("OMEM_CONTEXT_CACHE_TTL", 30.0),
             context_budget_tokens=_int("OMEM_CONTEXT_BUDGET", 6000),
             context_default_mode=os.environ.get("OMEM_CONTEXT_MODE", "planning"),
@@ -173,7 +195,7 @@ class AgentConfig:
     # ------------------------------------------------------------------
 
     def to_dict(self) -> Dict[str, Any]:
-        """Serializable dict — excludes api_key for safety."""
+        """Serializable dict — excludes api_key / encryption_key for safety."""
         return {
             "session_id": self.session_id,
             "namespace": self.namespace,
@@ -182,6 +204,7 @@ class AgentConfig:
             "endpoint": self.endpoint,
             "org": self.org,
             "embedding_model": self.embedding_model,
+            "otel_endpoint": self.otel_endpoint,
             "context_cache_ttl": self.context_cache_ttl,
             "context_default_mode": self.context_default_mode,
             "context_budget_tokens": self.context_budget_tokens,

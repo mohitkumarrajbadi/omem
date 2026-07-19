@@ -4,7 +4,7 @@ Every state transition, context build, recall decision, and memory
 write emits a ``TraceEvent``. These events power:
   - Real-time metrics: latency, token savings, hit rate
   - Step-by-step session replay for debugging
-  - OpenTelemetry-compatible export (OTLP JSON)
+  - OpenTelemetry OTLP/HTTP export + collector push
   - CLI dashboard
 
 Architecture:
@@ -219,12 +219,12 @@ class ObserveOS:
 
     Every operation in ``AgentState`` calls ``observe.record(event)``
     immediately after completion. ``ObserveOS`` stores all events in a
-    thread-safe ring buffer and exposes three query modes:
+    thread-safe ring buffer and exposes:
 
     1. **Metrics** — aggregated statistics (latency, savings, hit rates)
     2. **Traces** — raw event list for a session
     3. **Replay** — iterator for step-by-step session reconstruction
-    4. **OTel export** — OTLP-compatible JSON for Jaeger/Zipkin/Grafana Tempo
+    4. **OTel export / push** — OTLP/HTTP JSON for Jaeger, Tempo, Honeycomb, etc.
 
     Usage::
 
@@ -232,14 +232,15 @@ class ObserveOS:
         # … do things …
         m = agent.observe.metrics(session_id="demo")
         print(f"Recall p99: {m['recall_latency_p99_ms']}ms")
-        print(f"Context savings: {m['context_tokens_saved_pct']}%")
+        agent.observe.push_otel(endpoint="http://localhost:4318/v1/traces")
 
     Thread safety: All methods are thread-safe.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, otel_endpoint: Optional[str] = None) -> None:
         self._store = _EventStore()
-        logger.debug("ObserveOS initialized")
+        self._otel_endpoint = (otel_endpoint or "").strip() or None
+        logger.debug("ObserveOS initialized (otel=%s)", bool(self._otel_endpoint))
 
     # ------------------------------------------------------------------
     # Recording (called by AgentState instrumentation)
@@ -345,14 +346,14 @@ class ObserveOS:
         for sess_id, sess_events in by_session.items():
             spans = []
             for event in sess_events:
-                # Represent each event as a span
+                # Represent each event as an OTLP span (JSON encoding)
                 span = {
                     "traceId": _hex_id(sess_id, 32),
                     "spanId": _hex_id(event.id, 16),
-                    "operationName": event.event_type,
+                    "name": event.event_type,
                     "startTimeUnixNano": str(int(event.timestamp * 1e9)),
                     "endTimeUnixNano": str(int((event.timestamp + event.duration_ms / 1000) * 1e9)),
-                    "kind": 2,  # CLIENT span
+                    "kind": 2,  # SPAN_KIND_CLIENT
                     "attributes": [
                         {"key": "session.id", "value": {"stringValue": sess_id}},
                         {"key": "namespace", "value": {"stringValue": event.namespace}},
@@ -362,7 +363,7 @@ class ObserveOS:
                         ],
                     ],
                     "status": {
-                        "code": 2 if event.payload.get("error") else 1,
+                        "code": 2 if event.payload.get("error") else 1,  # ERROR : OK
                     },
                 }
                 spans.append(span)
@@ -386,6 +387,90 @@ class ObserveOS:
                 "scopeSpans": scope_spans,
             }]
         }
+
+    def push_otel(
+        self,
+        endpoint: Optional[str] = None,
+        session_id: Optional[str] = None,
+        service_name: str = "omem",
+        service_version: str = "0.5.0",
+        timeout_s: float = 5.0,
+    ) -> Dict[str, Any]:
+        """Serialize traces as OTLP/HTTP JSON and POST to a collector.
+
+        Args:
+            endpoint:        Collector URL. Defaults to the endpoint configured
+                             at construction / ``OMEM_OTEL_ENDPOINT`` /
+                             ``OTEL_EXPORTER_OTLP_ENDPOINT``. Paths without
+                             ``/v1/traces`` get that suffix appended.
+            session_id:      Optional session filter (same as ``export_otel``).
+            service_name:    OTel ``service.name``.
+            service_version: OTel ``service.version``.
+            timeout_s:       HTTP timeout in seconds.
+
+        Returns:
+            Dict with ``ok``, ``status_code``, ``endpoint``, and ``span_count``.
+
+        Raises:
+            ValueError: If no endpoint is configured.
+            OSError / urllib errors: On transport failure.
+        """
+        import json
+        import os
+        import urllib.error
+        import urllib.request
+
+        dest = (endpoint or self._otel_endpoint or "").strip()
+        if not dest:
+            dest = (
+                os.environ.get("OMEM_OTEL_ENDPOINT", "").strip()
+                or os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "").strip()
+            )
+        if not dest:
+            raise ValueError(
+                "No OTLP endpoint configured. Pass endpoint=... or set "
+                "OMEM_OTEL_ENDPOINT / OTEL_EXPORTER_OTLP_ENDPOINT."
+            )
+        if "/v1/traces" not in dest.rstrip("/"):
+            dest = dest.rstrip("/") + "/v1/traces"
+
+        payload = self.export_otel(
+            session_id=session_id,
+            service_name=service_name,
+            service_version=service_version,
+        )
+        span_count = sum(
+            len(ss.get("spans", []))
+            for rs in payload.get("resourceSpans", [])
+            for ss in rs.get("scopeSpans", [])
+        )
+        body = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            dest,
+            data=body,
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "omem-observe/0.5",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+                status = getattr(resp, "status", 200)
+                return {
+                    "ok": 200 <= int(status) < 300,
+                    "status_code": int(status),
+                    "endpoint": dest,
+                    "span_count": span_count,
+                }
+        except urllib.error.HTTPError as exc:
+            return {
+                "ok": False,
+                "status_code": int(exc.code),
+                "endpoint": dest,
+                "span_count": span_count,
+                "error": str(exc.reason or exc),
+            }
 
     # ------------------------------------------------------------------
     # Session management

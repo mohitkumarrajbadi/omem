@@ -1,0 +1,96 @@
+{
+  "generated_at": "2026-07-19T12:27:49Z",
+  "methodology": "Retrieval answer-containment (LME) / answer-or-evidence (LoCoMo); STATE-Bench native; BEAM-style synthetic. No LLM judge. sentence-transformers MiniLM.",
+  "results": {
+    "state_bench": {
+      "benchmark": "STATE-Bench",
+      "variant": "v1.0",
+      "overall_score": 80.6,
+      "suites": {
+        "memory": {
+          "score": 100,
+          "passed": 5,
+          "total": 5
+        },
+        "state": {
+          "score": 100,
+          "passed": 5,
+          "total": 5
+        },
+        "context": {
+          "score": 66.7,
+          "passed": 2,
+          "total": 3
+        },
+        "continuity": {
+          "score": 66.7,
+          "passed": 2,
+          "total": 3
+        },
+        "explainability": {
+          "score": 100,
+          "passed": 3,
+          "total": 3
+        },
+        "concurrency": {
+          "score": 50,
+          "passed": 1,
+          "total": 2
+        }
+      },
+      "timestamp": "2026-07-19T12:27:49Z"
+    },
+    "longmemeval": {
+      "benchmark": "LongMemEval",
+      "variant": "oracle_retrieval_answer_containment",
+      "dataset": "xiaowu0162/longmemeval-cleaned (longmemeval_oracle.json)",
+      "n_questions": 40,
+      "k": 5,
+      "hit_at_k_pct": 72.5,
+      "latency_p50_ms": 26.25,
+      "latency_p99_ms": 38.45,
+      "by_question_type": {
+        "temporal-reasoning": 72.5
+      },
+      "note": "Retrieval-only metric: gold answer string appears in top-k memories. Not an LLM-judge End-to-End QA score."
+    },
+    "locomo": {
+      "benchmark": "LoCoMo",
+      "variant": "retrieval_answer_or_evidence",
+      "dataset": "snap-research/locomo (locomo10.json)",
+      "n_questions": 80,
+      "k": 5,
+      "hit_at_k_pct": 66.2,
+      "answer_hit_at_k_pct": 25.0,
+      "evidence_hit_at_k_pct": 63.8,
+      "latency_p50_ms": 17.44,
+      "by_category": {
+        "2": 63.6,
+        "3": 41.7,
+        "1": 75.8,
+        "4": 100.0
+      },
+      "note": "Hit if gold answer string OR annotated evidence dialog appears in top-k. Not generative QA with an LLM judge."
+    },
+    "beam_style": {
+      "benchmark": "BEAM-style abilities",
+      "variant": "synthetic_ability_suite",
+      "dataset": "internal synthetic (not official BEAM parquet)",
+      "n_abilities": 10,
+      "pass_pct": 100.0,
+      "abilities": {
+        "temporal_reasoning": "pass",
+        "contradiction_resolution": "pass",
+        "entity_tracking": "pass",
+        "multi_hop": "pass",
+        "instruction_retention": "pass",
+        "preference_consistency": "pass",
+        "event_ordering": "pass",
+        "scoped_access": "pass",
+        "refusal_of_stale": "pass",
+        "audit_provenance": "pass"
+      },
+      "note": "Synthetic stress of abilities commonly scored in BEAM (temporal, contradiction, multi-hop, etc.). Not a claim on the official BEAM leaderboard."
+    }
+  }
+}

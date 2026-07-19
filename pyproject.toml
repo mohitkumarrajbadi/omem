@@ -11,7 +11,7 @@ include = ["omem*"]
 [project]
 name = "omem-os"
 dynamic = ["version"]
-description = "Persistent State Infrastructure for AI Systems — memory, state, context, knowledge, observability, and governance for agents at scale."
+description = "Governed Agent Memory — prove what agents knew, when, and who can see it. Memory, state, audit, retention, and tenant hardening for production agents."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"

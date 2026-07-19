@@ -6,22 +6,60 @@
 [![Rust](https://img.shields.io/badge/rust-powered-orange?style=for-the-badge&logo=rust)](./rust/src/lib.rs)
 [![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)](./LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-Cursor%20%2F%20Claude-purple?style=for-the-badge)](./docs/guides/MCP_SETUP.md)
-[![STATE-Bench](https://img.shields.io/badge/STATE--Bench-81.2%2F100-brightgreen?style=for-the-badge)](./benchmarks/state_bench.py)
+[![STATE-Bench](https://img.shields.io/badge/STATE--Bench-80.6%2F100-brightgreen?style=for-the-badge)](./benchmarks/state_bench.py)
 
 <br>
 
 # OMem
 
-### The Memory OS for Enterprise AI Agents
+### Governed Agent Memory
 
-**Zero required LLM calls or API fees. Local-first hybrid recall. Postgres multi-tenancy. Built-in MCP for Cursor & Claude.**
+**Every memory system can tell your agent what it remembers.
+OMem can prove it — what it knew, when it knew it, and who is allowed to see it.**
+
+Local-first hybrid recall · audit / retention / tenant hardening as architecture ·
+optional Postgres multi-tenancy · MCP for Cursor & Claude · design-partner tech preview for cloud.
 
 **Current development line: 0.0.3 (unreleased).** Latest public artifacts:
 0.0.1 on PyPI and v0.0.2 on GitHub.
 
-[Quickstart](#quickstart) · [Why OMem](#why-omem-not-a-vector-db) · [Benchmarks](#benchmarks) · [MCP for Coding Agents](#mcp-for-coding-agents) · [Enterprise](#enterprise-postgresql) · [Architecture](#architecture)
+[Quickstart](#quickstart) · [Why governed memory](#why-governed-agent-memory) · [Design partners](./docs/design-partner/README.md) · [Benchmarks](#benchmarks) · [Architecture](#architecture)
 
 </div>
+
+---
+
+## Why Governed Agent Memory
+
+Agent memory is a crowded category. Storing embeddings is table stakes.
+What enterprises still cannot answer in an audit or security review:
+
+> *Prove what the agent knew at time T. Show who approved that fact.
+> Show that Org A cannot read Org B. Show that PAN never sat plaintext on disk.*
+
+OMem treats **Provenance + Governance + Runtime** as first-class layers beside
+Memory / State / Knowledge — not bolt-ons. That is the wedge.
+
+| Question | Typical memory layer | **OMem** |
+|---|---|---|
+| What did we recall? | ✓ | ✓ |
+| When was it valid / superseded? | Weak | Provenance + belief revision |
+| Who is allowed to see it? | Bolt-on / missing | `harden_namespace`, tenant scopes |
+| Can SecOps export the trail? | Rarely | `governance.export_audit` / CLI JSON |
+| Encryption at rest | Often “roadmap” | AES-256-GCM when key present |
+| Roll back agent state? | Rarely | Git-like state fork / rollback |
+
+Marketing one-liners (pick one):
+
+- *Mem0 remembers. Zep remembers when. OMem remembers — and can show the auditor who approved it.*
+- *Built for the market’s next question: not “does it recall,” but “can you defend it in an audit.”*
+- *The compliance team’s favorite AI memory layer.*
+
+**Not competing as “another Mem0.”** Competing as the governance-and-audit layer
+every memory system is missing — closer to Atlan-for-agents than to a vector DB.
+
+Design-partner pack: [docs/design-partner/](./docs/design-partner/README.md) ·
+Guarantees: [docs/guarantees/TENANT_HARDENING.md](./docs/guarantees/TENANT_HARDENING.md)
 
 ---
 
@@ -32,11 +70,12 @@
 | Memory | Stable — local API and lifecycle covered by the OSS test suite |
 | State | Stable — snapshots, rollback, forks, and checkpoints covered |
 | Context | Stable — token budgeting and context assembly covered |
-| Knowledge | Beta — link/query/reasoning covered; codebase indexing remains Alpha |
-| Observe | Beta — local traces and metrics covered; dashboard remains Alpha |
-| Governance | Stable for local audit/retention; tenant and cloud enforcement remain Beta |
+| Knowledge | Beta — link/query/reasoning covered; Python-only AST index remains Alpha |
+| Observe | Beta — local traces **Stable**; OTLP JSON export/push covers **in-process** ObserveOS events only (not full auto-instrumentation); HTTP-path OTel is **omem-cloud only** (partial `/v1/remember`); dashboard remains Alpha |
+| Governance | Stable for local audit/retention/encryption; tenant and cloud enforcement remain Beta |
 
-For managed, multi-tenant hosting see [OMem Cloud](../omem-cloud/).
+For managed, multi-tenant hosting see [OMem Cloud](../omem-cloud/)
+(**design-partner tech preview** — not GA).
 
 ### Known limitations
 
@@ -46,41 +85,61 @@ installation, not semantic quality. Recall quality is weaker than with
 retrieval, install the optional model-backed extra:
 `pip install "omem-os[embeddings]"`.
 
+**OTel / OTLP:** HTTP-path OpenTelemetry instrumentation is currently available
+only in omem-cloud, and only partially (`/v1/remember`). omem-os can
+export/push OTLP JSON for **in-process** ObserveOS traces; it does **not**
+claim full OpenTelemetry auto-instrumentation of the runtime. Broader OTel
+coverage is on the near-term roadmap.
+
 ---
 
 ## Benchmarks
 
-Tested on Apple M-series · 5,000 memories · 500 queries · `all-MiniLM-L6-v2` · reproduce with `python distribution/benchmark_vs_mem0.py`
+These numbers are measured against our own system end-to-end. For a modeled
+comparison against other frameworks and its methodology caveats, see
+[distribution/benchmark_methodology.md](./distribution/benchmark_methodology.md).
 
-**Methodology:** OMem uses a fully local heuristic classification and
-embedding/scoring path. The default script compares that measured local path
-with a modeled Mem0 baseline representing an LLM-based extraction/scoring
-configuration; use `--live-mem0` for a live Mem0 run. These are different
-operation pipelines, so the latency ratios describe the tested configurations,
-not equivalent underlying operations.
+Honest retrieval / state scores — **no LLM judge**. Full report:
+[`distribution/public_benchmark_results.json`](./distribution/public_benchmark_results.json).
 
-| System | Cold Start | Add | RAG p50 | RAG p99 | Est. third-party API fees / 1M recalls |
-|---|---:|---:|---:|---:|---:|
-| **OMem** | **4 ms** | **65 ops/s** | **1.8 ms** | **3.9 ms** | **$0** |
-| Mem0 | 15,000 ms | <1 ops/s | 420 ms | 638 ms | ~$20 |
-| ChromaDB | 507 ms | 277 ops/s | — | 4 ms | $0 |
-| LanceDB | 8 ms | 82,000 ops/s | — | 7 ms | $0 |
+```bash
+pip install "omem-os[embeddings]"
+python -m benchmarks.public_memory_suite --subset 40 --k 5
+omem bench --json    # STATE-Bench only
+```
 
-**In this configuration, OMem measured 3.9 ms p99 local recall versus the
-modeled Mem0 baseline of 638 ms (a 163× latency ratio), with $0 third-party API
-fees. Local infrastructure costs are not included.**
+| Benchmark | Metric | Score | Caveat |
+|---|---|---:|---|
+| **STATE-Bench** | Overall | **80.6/100** | Native agent-state suites |
+| **LongMemEval** (oracle, n=40) | Answer in top-5 | **72.5%** | Retrieval-only, not E2E QA |
+| **LoCoMo** (80 QA) | Answer **or** evidence in top-5 | **66.2%** | Not generative QA |
+| **BEAM-style** (10 abilities) | Ability pass rate | **100%** | Synthetic suite, **not** official BEAM |
 
-OMem's `add()` does more than raw storage: embed, classify, deduplicate, sync
-the knowledge graph, and persist asynchronously. The benchmark reflects each
-system's configured workflow, not a raw vector-insert comparison.
+These numbers are for diligence checkboxes (“we tested this”), not leaderboard claims.
+
+### STATE-Bench breakdown
+
+| Suite | Score | What it measures |
+|---|---|---|
+| **Memory** | 100/100 | Recall@K, MRR, latency |
+| **State** | 100/100 | Snapshot, rollback, fork, checkpoint recovery |
+| **Explainability** | 100/100 | Score decomposition, provenance, latency |
+| **Context** | 67/100 | Token savings, budget adherence |
+| **Continuity** | 67/100 | Crash recovery, workflow resume |
+| **Concurrency** | 50/100 | Parallel agent throughput |
+| **Overall** | **80.6/100** | `STATE-Bench v1.0` · `all-MiniLM-L6-v2` |
+
+Reproduce with `python benchmarks/state_bench.py --json`.
 
 ---
 
-## Why OMem, Not a Vector DB
+## Why OMem still beats a vector DB
 
-Most agent frameworks bolt on a vector store and call it "memory." OMem is a **complete memory operating system** — it answers the questions production agents actually ask:
+Governance is the wedge; recall is still table stakes. OMem is a **memory OS**
+for production agents — not a vector store with marketing:
 
-> *Why did we make this architectural decision? What did PR #142 change? Have we seen this bug before? Can I roll back? Can I audit?*
+> *Why did we make this architectural decision? What did PR #142 change?
+> Have we seen this bug before? Can I roll back? Can I audit?*
 
 | What agents need | Vector DB | Mem0 | **OMem** |
 |---|:---:|:---:|:---:|
@@ -89,10 +148,10 @@ Most agent frameworks bolt on a vector store and call it "memory." OMem is a **c
 | Persistent cross-session memory | ✗ | ✓ | ✓ |
 | No required third-party API fees (local path) | ✓ | ✗ | ✓ |
 | Memory lifecycle (forget, compress, dream) | ✗ | ✗ | ✓ |
+| Audit export / retention / encryption | ✗ | Bolt-on | **First-class** |
 | Architectural decision records (ADRs) | ✗ | ✗ | ✓ |
-| PR context & bug fix history | ✗ | ✗ | ✓ |
 | State fork / rollback (git-like) | ✗ | ✗ | ✓ |
-| Enterprise multi-tenant isolation | ✗ | ✗ | ✓ |
+| Tenant hardening primitives | ✗ | ✗ | ✓ |
 | MCP for Cursor / Claude | ✗ | ✗ | ✓ |
 
 ---
@@ -180,9 +239,9 @@ omem serve
 | `recall_pr_context` | Answer "why was this changed?" without reading git log |
 | `remember_bug_fix` | Root cause + fix for recurring issues |
 | `recall_bugs` | Surface prior fixes before re-investigating the same error |
-| `query_codebase` | Semantic AST search — replaces grep for code navigation |
-| `ingest_codebase` | One-time full AST index of the repository |
-| `sync_codebase` | Incremental post-commit update via git diff |
+| `query_codebase` | Semantic AST search — Python-only AST index (Alpha); replaces grep for code navigation |
+| `ingest_codebase` | One-time full Python-only AST index of the repository (Alpha) |
+| `sync_codebase` | Incremental post-commit update via git diff (Python-only AST index, Alpha) |
 | `get_codebase_summary` | Birds-eye view: ADRs + recent PRs + memory stats |
 
 ### Demo: Context Survives Process Boundaries
@@ -214,7 +273,7 @@ Run the full demo: `python demo_mcp_coding_workflow.py`
 
 ## OMem Cloud
 
-**OMem Cloud** is a commercial product that wraps the open-source core with a production-grade managed service: multi-tenant API, PostgreSQL + pgvector backend, background worker, Prometheus/Grafana observability, NGINX, and one-command Linode/Akamai deployment via Terraform.
+**OMem Cloud** is a commercial product that wraps the open-source core with a production-grade managed service: multi-tenant API, PostgreSQL + pgvector backend, background worker, Prometheus/Grafana observability, NGINX, and one-command Linode/Akamai deployment via Terraform. **Status: design-partner tech preview — not GA.** OMem Cloud's SOC2 Type I evidence collection is **not yet started**, tracked in [docs/guarantees/TENANT_HARDENING.md](./docs/guarantees/TENANT_HARDENING.md).
 
 | Feature | omem-os (open source) | omem-cloud (commercial) |
 |---|---|---|
@@ -259,23 +318,21 @@ in every layer above, not sequential layers stacked after Knowledge.
 ├──────────────┬──────────────┬──────────────┬─────────────────┤
 │   Memory      │    State     │   Context    │   Knowledge     │
 │  add/recall/  │  snapshot/   │  token-      │  entity graph   │
-│  reflect/sleep│  fork/rollback│ budget     │  + AST index*   │
+│  reflect/sleep│  fork/rollback│ budget     │  + Python-only  │
+│               │               │            │    AST index    │
+│               │               │            │    (Alpha)      │
 ├──────────────┴──────────────┴──────────────┴─────────────────┤
 │  Governance & Observability  (cross-cutting — every op)       │
 │  audit · RBAC · retention · encryption · traces · metrics     │
-│  · OTel (partial: /v1/remember path in omem-cloud)            │
+│  · OTel export — omem-cloud only for HTTP-path instrumentation
+│    (partial: /v1/remember); not automatic request tracing in omem-os
+│  · OSS ObserveOS: optional OTLP JSON export/push for in-process traces
 ├─────────────────────────────────────────────────────────────┤
-│  Engine:  BrainTrace** (Python) + omem_rust (Rayon/PyO3)      │
+│  Engine:  core engine (Python) + omem_rust (Rayon/PyO3)       │
 ├─────────────────────────────────────────────────────────────┤
 │  Backend: SQLite (local) │ PostgreSQL + pgvector (enterprise) │
 └─────────────────────────────────────────────────────────────┘
 ```
-
-\* **FLAG — confirm before customer-facing use:** Knowledge currently lists
-  “AST codebase index”. Keep, drop, or reword? (see Phase 4 review)
-
-\*\* **FLAG — confirm before customer-facing use:** Engine internal name is
-  `BrainTrace`. Keep that name publicly, or say “core engine” only?
 
 ### Scoring Formula
 
@@ -297,10 +354,11 @@ embedding configuration.
 | `rust/src/lib.rs` | Rust scoring engine (PyO3 + Rayon) |
 | `omem/backends/postgres_enterprise.py` | Enterprise multi-tenant backend |
 | `omem/agent_state.py` | `AgentState` facade (4 product layers + cross-cutting gov/observe) |
-| `omem/core/engine/` | BrainTrace orchestrator |
+| `omem/core/engine/` | Core engine orchestrator (internal module layout) |
 | `omem/core/brain/` | Importance, forgetting, dreaming, TMS |
 | `omem/core/retrieval/` | Fusion, BM25, vector, ranker |
-| `distribution/benchmark_vs_mem0.py` | Reproducible benchmark |
+| `distribution/benchmark_vs_mem0.py` | Modeled latency comparison (see methodology notes) |
+| `distribution/benchmark_methodology.md` | Caveats for modeled competitor comparison |
 | `distribution/engineering_blog.md` | Technical deep-dive |
 | `demo_mcp_coding_workflow.py` | Cross-session context demo |
 
@@ -340,27 +398,6 @@ Full score decomposition for every recall decision:
 ║      type=SEMANTIC  → [ADR] Use PostgreSQL for production
 ╚══════════════════════════════════════════════════
 ```
-
----
-
-## STATE-Bench
-
-The only benchmark that measures what agent state systems actually need:
-
-```bash
-omem bench              # run all suites (~2 seconds)
-omem bench --json       # CI-friendly output
-```
-
-| Suite | Score | What it measures |
-|---|---|---|
-| **State** | 100/100 | Snapshot, rollback, fork, checkpoint recovery |
-| **Explainability** | 100/100 | Score decomposition, provenance, latency |
-| **Concurrency** | 100/100 | Parallel agent throughput (3,000+ ops/s) |
-| **Context** | 67/100 | Token savings, budget adherence |
-| **Continuity** | 67/100 | Crash recovery, workflow resume |
-| **Memory** | 54/100 | Recall@K, MRR, latency |
-| **Overall** | **81/100** | `STATE-Bench v1.0` |
 
 ---
 

@@ -159,6 +159,17 @@ class SQLiteBackend(Backend):
         return self._row_to_memory(row)
 
     def search(self, query: str, limit: int = 10) -> List[Memory]:
+        # Encrypted content cannot be matched via SQL LIKE — decrypt then filter.
+        if self._enc:
+            needle = query.lower()
+            hits: List[Memory] = []
+            for row in self._conn.execute("SELECT * FROM memories").fetchall():
+                mem = self._row_to_memory(row)
+                if needle in mem.content.lower():
+                    hits.append(mem)
+                    if len(hits) >= limit:
+                        break
+            return hits
         rows = self._conn.execute(
             "SELECT * FROM memories WHERE content LIKE ? LIMIT ?",
             (f"%{query}%", limit),

@@ -277,11 +277,18 @@ class AgentState:
         api_key: Optional[str] = None,
         org: Optional[str] = None,
         config: Optional[AgentConfig] = None,
+        encryption_key: Optional[str] = None,
+        otel_endpoint: Optional[str] = None,
         **omem_kwargs: Any,
     ) -> None:
         # Resolve config: explicit config takes precedence over kwargs
         if config is not None:
             _cfg = config
+            # Allow explicit kwargs to override an existing config object
+            if encryption_key is not None and not _cfg.encryption_key:
+                _cfg.encryption_key = encryption_key
+            if otel_endpoint is not None and not _cfg.otel_endpoint:
+                _cfg.otel_endpoint = otel_endpoint
         else:
             _cfg = AgentConfig(
                 session_id=session_id,
@@ -291,6 +298,8 @@ class AgentState:
                 endpoint=endpoint or os.environ.get("OMEM_ENDPOINT"),
                 api_key=api_key or os.environ.get("OMEM_API_KEY"),
                 org=org,
+                encryption_key=encryption_key,
+                otel_endpoint=otel_endpoint,
             )
 
         self._config = _cfg
@@ -325,13 +334,16 @@ class AgentState:
         _audit_logger = AuditLogger(db_path=_audit_db)
 
         # ── Memory layer (Phase 1) ────────────────────────────────────
+        _omem_kwargs = dict(omem_kwargs)
+        if _cfg.encryption_key and "encryption_key" not in _omem_kwargs:
+            _omem_kwargs["encryption_key"] = _cfg.encryption_key
         _omem = OMem(
             backend=_cfg.backend,
             db_path=_cfg.db_path,
             model=_cfg.embedding_model,
             audit_db_path=_audit_db,
             audit_logger=_audit_logger,
-            **omem_kwargs,
+            **_omem_kwargs,
         )
         self._omem = _omem
         self._memory = MemoryOS(_omem)
@@ -357,7 +369,10 @@ class AgentState:
         self._knowledge = KnowledgeOS(omem=_omem)
 
         # ── Observability (Phase 6) ───────────────────────────────────
-        self._observe = ObserveOS()
+        _otel = _cfg.otel_endpoint or os.environ.get("OMEM_OTEL_ENDPOINT") or os.environ.get(
+            "OTEL_EXPORTER_OTLP_ENDPOINT"
+        )
+        self._observe = ObserveOS(otel_endpoint=_otel)
 
         # ── Provenance (Phase 7) ──────────────────────────────────────
         self._provenance = ProvenanceOS()
