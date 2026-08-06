@@ -216,7 +216,30 @@ pip install "omem-os[mcp]"
 omem serve
 ```
 
-### Add to `claude_desktop_config.json` / Cursor MCP settings
+### Add to Claude Code / OpenCode / Cursor MCP settings
+
+**Personal production (shared memory across tools):** see [`docs/guides/PERSONAL_MCP.md`](./docs/guides/PERSONAL_MCP.md)
+
+```json
+{
+  "mcpServers": {
+    "omem": {
+      "command": "omem",
+      "args": ["serve", "--namespace", "personal", "--db-path", "~/.omem/brain.db"]
+    }
+  }
+}
+```
+
+Ready-made configs: `deploy/mcp/claude_code.mcp.json`, `opencode.mcp.json`, `cursor.mcp.json`.
+
+Verify:
+
+```bash
+python3 scripts/mcp_personal_smoke.py
+```
+
+### Add to `claude_desktop_config.json` (legacy short form)
 
 ```json
 {
@@ -501,6 +524,6 @@ MIT — see [LICENSE](./LICENSE).
 
 <div align="center">
 
-**[Engineering Blog](./distribution/engineering_blog.md) · [Benchmark](./distribution/benchmark_vs_mem0.py) · [MCP Setup](./docs/guides/MCP_SETUP.md) · [OMem Cloud](https://omem.dev/cloud)**
+**[Engineering Blog](./distribution/engineering_blog.md) · [Benchmark](./distribution/benchmark_vs_mem0.py) · [MCP Setup](./docs/guides/MCP_SETUP.md) · [Personal MCP (Claude Code + OpenCode)](./docs/guides/PERSONAL_MCP.md) · [OMem Cloud](https://omem.dev/cloud)**
 
 </div>

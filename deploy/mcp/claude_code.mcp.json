@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "omem": {
+      "command": "omem",
+      "args": [
+        "serve",
+        "--namespace", "personal",
+        "--db-path", "~/.omem/brain.db"
+      ]
+    }
+  }
+}

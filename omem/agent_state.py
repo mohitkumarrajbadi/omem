@@ -353,7 +353,7 @@ class AgentState:
             _state_backend = InMemoryStateBackend()
         else:
             _state_backend = SQLiteStateBackend(_state_db)
-        self._state = StateOS(backend=_state_backend)
+        self._state = StateOS(backend=_state_backend, namespace=_cfg.namespace)
 
         # ── Context layer (Phase 3) ───────────────────────────────────
         self._context = ContextEngine(

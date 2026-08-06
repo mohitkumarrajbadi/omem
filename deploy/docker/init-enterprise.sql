@@ -99,16 +99,24 @@ ALTER TABLE memories ENABLE ROW LEVEL SECURITY;
 -- Allow superuser (migrations, admin) to bypass RLS.
 ALTER TABLE memories FORCE ROW LEVEL SECURITY;
 
--- Tenant isolation policy: a session can only read/write its own rows.
+-- Tenant isolation policy: fail closed when session vars are unset/empty.
+-- (Legacy COALESCE(NULLIF(...), org_id) collapsed to always-true — removed.)
 DROP POLICY IF EXISTS memories_tenant_rls ON memories;
 CREATE POLICY memories_tenant_rls ON memories
     AS PERMISSIVE
     FOR ALL
     TO PUBLIC
     USING (
-        org_id  = COALESCE(NULLIF(current_setting('omem.org_id',  true), ''), org_id)
-        AND
-        user_id = COALESCE(NULLIF(current_setting('omem.user_id', true), ''), user_id)
+        current_setting('omem.org_id', true) <> ''
+        AND org_id = current_setting('omem.org_id', true)
+        AND (
+            current_setting('omem.user_id', true) = ''
+            OR user_id = current_setting('omem.user_id', true)
+        )
+    )
+    WITH CHECK (
+        current_setting('omem.org_id', true) <> ''
+        AND org_id = current_setting('omem.org_id', true)
     );
 
 -- ─── Updated_at trigger ───────────────────────────────────────────────────────

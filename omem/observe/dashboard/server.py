@@ -13,6 +13,7 @@ Or:  omem dashboard
 import http.server
 import json
 import logging
+import os
 import socketserver
 import threading
 import webbrowser
@@ -301,7 +302,8 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
     def _send(self, data, content_type="application/json", code=200):
         self.send_response(code)
         self.send_header("Content-Type", content_type)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        # Loopback-only dashboard — no cross-origin wildcard.
+        self.send_header("Access-Control-Allow-Origin", "null")
         self.end_headers()
         if isinstance(data, str):
             self.wfile.write(data.encode())
@@ -374,6 +376,27 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
+        token = os.environ.get("OMEM_OBSERVE_TOKEN", "").strip()
+        if token:
+            auth = self.headers.get("Authorization", "")
+            if auth != f"Bearer {token}":
+                self._send({"error": "unauthorized"}, code=401)
+                return
+        elif os.environ.get("OMEM_OBSERVE_ALLOW_MUTATE", "").strip().lower() not in (
+            "1",
+            "true",
+            "yes",
+        ):
+            self._send(
+                {
+                    "error": (
+                        "mutations disabled — set OMEM_OBSERVE_ALLOW_MUTATE=1 "
+                        "or OMEM_OBSERVE_TOKEN for local destructive ops"
+                    )
+                },
+                code=403,
+            )
+            return
         if path == "/api/compress":
             result = self.omem.compress()
             self._send(result)
@@ -387,13 +410,31 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             self._send({"error": "not found"}, code=404)
 
 
-def serve(omem: Optional[OMem] = None, port: int = 7900, open_browser: bool = True):
-    """Start the OMem dashboard server."""
+def serve(
+    omem: Optional[OMem] = None,
+    port: int = 7900,
+    open_browser: bool = True,
+    host: str = "127.0.0.1",
+):
+    """Start the OMem dashboard server.
+
+    Binds to loopback by default. Pass ``host="0.0.0.0"`` only on trusted
+    networks — the dashboard has no authentication.
+    """
     DashboardHandler.omem = omem or OMem()
 
-    with socketserver.TCPServer(("", port), DashboardHandler) as httpd:
+    if host in ("", "0.0.0.0", "::"):
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Observe dashboard binding to %s with no auth — local/dev only",
+            host or "0.0.0.0",
+        )
+
+    with socketserver.TCPServer((host, port), DashboardHandler) as httpd:
         httpd.allow_reuse_address = True
-        url = f"http://localhost:{port}"
+        display = "localhost" if host in ("127.0.0.1", "::1", "localhost") else host
+        url = f"http://{display}:{port}"
         print(f"OMem Dashboard running at {url}")
 
         if open_browser:

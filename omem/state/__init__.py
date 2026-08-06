@@ -29,6 +29,7 @@ from .exceptions import (
     CheckpointNotFoundError,
     ForkError,
     MergeError,
+    SessionNamespaceConflictError,
     SessionNotFoundError,
     SnapshotNotFoundError,
     StateError,
@@ -50,6 +51,7 @@ __all__ = [
     # Exceptions
     "StateError",
     "SessionNotFoundError",
+    "SessionNamespaceConflictError",
     "SnapshotNotFoundError",
     "CheckpointNotFoundError",
     "ForkError",

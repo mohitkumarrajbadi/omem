@@ -1119,17 +1119,99 @@ def codebase(ctx: click.Context, query: str, namespace: str, depth: int, top_k: 
     type=click.Choice(["stdio"]),
     help="Transport for the MCP server.",
 )
+@click.option(
+    "--namespace",
+    "-n",
+    default=None,
+    envvar="OMEM_NAMESPACE",
+    help="Shared memory namespace (set the same value in every MCP client).",
+)
+@click.option(
+    "--db-path",
+    default=None,
+    envvar="OMEM_DB_PATH",
+    type=click.Path(),
+    help="SQLite path for durable memory (default: ~/.omem/brain.db).",
+)
+@click.option(
+    "--project-root",
+    default=None,
+    envvar="OMEM_PROJECT_ROOT",
+    type=click.Path(exists=False),
+    help="Project directory used for git-root namespace detection when --namespace is unset.",
+)
+@click.option(
+    "--backend",
+    default=None,
+    envvar="OMEM_BACKEND",
+    type=click.Choice(["sqlite", "postgres"]),
+    help="Storage backend (sqlite recommended for personal use).",
+)
 @click.pass_context
-def serve(ctx: click.Context, transport: str):
-    """Start the MCP server (Claude Desktop, Cursor, agents)."""
-    note(f"Starting OMem MCP server (transport: {transport})")
-    note("Ready. Connect from Claude Desktop, Cursor, or any MCP client.\n")
+def serve(
+    ctx: click.Context,
+    transport: str,
+    namespace: Optional[str],
+    db_path: Optional[str],
+    project_root: Optional[str],
+    backend: Optional[str],
+):
+    """Start the MCP server (Claude Code, OpenCode, Cursor, Claude Desktop).
+
+    \b
+    Personal multi-tool setup (same memory in Claude Code + OpenCode):
+
+        omem serve --namespace personal --db-path ~/.omem/brain.db
+
+    Put the same flags (or env vars) in every client's MCP config.
+    """
+    # Apply env before importing/configuring the MCP module brain.
+    # Default durable SQLite path so personal MCP never silently uses a transient store.
+    if not db_path:
+        db_path = os.path.expanduser("~/.omem/brain.db")
+    if namespace:
+        os.environ["OMEM_NAMESPACE"] = namespace
+    os.environ["OMEM_DB_PATH"] = os.path.expanduser(db_path)
+    if project_root:
+        os.environ["OMEM_PROJECT_ROOT"] = os.path.abspath(os.path.expanduser(project_root))
+    if backend:
+        os.environ["OMEM_BACKEND"] = backend
+    else:
+        os.environ.setdefault("OMEM_BACKEND", "sqlite")
 
     try:
-        from .integrations.mcp_server import mcp
+        from .integrations.mcp_server import (
+            configure_mcp_server,
+            get_project_namespace,
+            mcp,
+            _mcp_db_path,
+            _mcp_backend,
+        )
+
+        configure_mcp_server(
+            db_path=db_path,
+            namespace=namespace,
+            project_root=project_root,
+            backend=backend or "sqlite",
+        )
+        # stdio MCP: never write banners to stdout (corrupts the protocol)
+        click.echo(
+            f"Starting OMem MCP server (transport: {transport})",
+            err=True,
+        )
+        click.echo(f"  namespace   {get_project_namespace()}", err=True)
+        click.echo(
+            f"  db_path     {_mcp_db_path() or os.path.expanduser('~/.omem/brain.db')}",
+            err=True,
+        )
+        click.echo(f"  backend     {_mcp_backend()}", err=True)
+        click.echo(
+            "Ready for Claude Code, OpenCode, Cursor, or Claude Desktop.",
+            err=True,
+        )
         mcp.run(transport=transport)
     except KeyboardInterrupt:
-        click.echo("\nMCP server stopped.")
+        click.echo("\nMCP server stopped.", err=True)
     except Exception as e:
         failure(f"MCP server failed to start: {e}")
         sys.exit(1)

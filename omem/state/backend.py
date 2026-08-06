@@ -28,6 +28,11 @@ from ..types import StateCheckpoint, StatePayload, StateSnapshot
 logger = logging.getLogger(__name__)
 
 
+def _namespace_matches(payload_namespace: str, namespace: Optional[str]) -> bool:
+    """True when no namespace filter is set, or it equals the stored namespace."""
+    return namespace is None or payload_namespace == namespace
+
+
 class StateBackend(ABC):
     """Abstract persistence interface for the state layer."""
 
@@ -35,15 +40,30 @@ class StateBackend(ABC):
 
     @abstractmethod
     def save_session(self, payload: StatePayload) -> None:
-        """Upsert a session (create or replace)."""
+        """Upsert a session (create or replace).
+
+        Refuses to overwrite a session that already exists under a different
+        namespace (cross-tenant collision on session_id).
+        """
 
     @abstractmethod
-    def load_session(self, session_id: str) -> Optional[StatePayload]:
-        """Return the live StatePayload for a session, or None."""
+    def load_session(
+        self,
+        session_id: str,
+        namespace: Optional[str] = None,
+    ) -> Optional[StatePayload]:
+        """Return the live StatePayload for a session, or None.
+
+        When ``namespace`` is set, only return a match in that namespace.
+        """
 
     @abstractmethod
-    def delete_session(self, session_id: str) -> bool:
-        """Delete session record. Returns True if it existed."""
+    def delete_session(
+        self,
+        session_id: str,
+        namespace: Optional[str] = None,
+    ) -> bool:
+        """Delete session record. Returns True if a matching row was deleted."""
 
     @abstractmethod
     def list_sessions(self, namespace: Optional[str] = None) -> List[str]:
@@ -56,11 +76,19 @@ class StateBackend(ABC):
         """Append a snapshot (snapshots are immutable; never overwrite)."""
 
     @abstractmethod
-    def get_snapshot(self, snapshot_id: str) -> Optional[StateSnapshot]:
-        """Return a snapshot by ID, or None."""
+    def get_snapshot(
+        self,
+        snapshot_id: str,
+        namespace: Optional[str] = None,
+    ) -> Optional[StateSnapshot]:
+        """Return a snapshot by ID, or None (namespace-scoped when set)."""
 
     @abstractmethod
-    def list_snapshots(self, session_id: str) -> List[StateSnapshot]:
+    def list_snapshots(
+        self,
+        session_id: str,
+        namespace: Optional[str] = None,
+    ) -> List[StateSnapshot]:
         """Return all snapshots for a session, oldest first."""
 
     # Checkpoints
@@ -70,11 +98,19 @@ class StateBackend(ABC):
         """Store a crash-recovery checkpoint."""
 
     @abstractmethod
-    def get_checkpoint(self, checkpoint_id: str) -> Optional[StateCheckpoint]:
-        """Return a checkpoint by ID, or None."""
+    def get_checkpoint(
+        self,
+        checkpoint_id: str,
+        namespace: Optional[str] = None,
+    ) -> Optional[StateCheckpoint]:
+        """Return a checkpoint by ID, or None (namespace-scoped when set)."""
 
     @abstractmethod
-    def list_checkpoints(self, session_id: str) -> List[StateCheckpoint]:
+    def list_checkpoints(
+        self,
+        session_id: str,
+        namespace: Optional[str] = None,
+    ) -> List[StateCheckpoint]:
         """Return all checkpoints for a session, oldest first."""
 
     # Fork lineage
@@ -125,16 +161,39 @@ class InMemoryStateBackend(StateBackend):
 
     def save_session(self, payload: StatePayload) -> None:
         with self._lock:
+            existing = self._sessions.get(payload.session_id)
+            if existing is not None and existing.namespace != payload.namespace:
+                from .exceptions import SessionNamespaceConflictError
+
+                raise SessionNamespaceConflictError(
+                    payload.session_id,
+                    existing.namespace,
+                    payload.namespace,
+                )
             self._sessions[payload.session_id] = copy.deepcopy(payload)
 
-    def load_session(self, session_id: str) -> Optional[StatePayload]:
+    def load_session(
+        self,
+        session_id: str,
+        namespace: Optional[str] = None,
+    ) -> Optional[StatePayload]:
         with self._lock:
             p = self._sessions.get(session_id)
-            return copy.deepcopy(p) if p is not None else None
+            if p is None or not _namespace_matches(p.namespace, namespace):
+                return None
+            return copy.deepcopy(p)
 
-    def delete_session(self, session_id: str) -> bool:
+    def delete_session(
+        self,
+        session_id: str,
+        namespace: Optional[str] = None,
+    ) -> bool:
         with self._lock:
-            return self._sessions.pop(session_id, None) is not None
+            p = self._sessions.get(session_id)
+            if p is None or not _namespace_matches(p.namespace, namespace):
+                return False
+            del self._sessions[session_id]
+            return True
 
     def list_sessions(self, namespace: Optional[str] = None) -> List[str]:
         with self._lock:
@@ -154,19 +213,33 @@ class InMemoryStateBackend(StateBackend):
             if snapshot.id not in self._session_snapshots[snapshot.session_id]:
                 self._session_snapshots[snapshot.session_id].append(snapshot.id)
 
-    def get_snapshot(self, snapshot_id: str) -> Optional[StateSnapshot]:
+    def get_snapshot(
+        self,
+        snapshot_id: str,
+        namespace: Optional[str] = None,
+    ) -> Optional[StateSnapshot]:
         with self._lock:
             s = self._snapshots.get(snapshot_id)
-            return copy.deepcopy(s) if s is not None else None
+            if s is None or not _namespace_matches(s.payload.namespace, namespace):
+                return None
+            return copy.deepcopy(s)
 
-    def list_snapshots(self, session_id: str) -> List[StateSnapshot]:
+    def list_snapshots(
+        self,
+        session_id: str,
+        namespace: Optional[str] = None,
+    ) -> List[StateSnapshot]:
         with self._lock:
             ids = self._session_snapshots.get(session_id, [])
-            return [
-                copy.deepcopy(self._snapshots[i])
-                for i in ids
-                if i in self._snapshots
-            ]
+            out = []
+            for i in ids:
+                s = self._snapshots.get(i)
+                if s is None:
+                    continue
+                if not _namespace_matches(s.payload.namespace, namespace):
+                    continue
+                out.append(copy.deepcopy(s))
+            return out
 
     # Checkpoints
 
@@ -176,19 +249,33 @@ class InMemoryStateBackend(StateBackend):
             self._session_checkpoints.setdefault(checkpoint.session_id, [])
             self._session_checkpoints[checkpoint.session_id].append(checkpoint.id)
 
-    def get_checkpoint(self, checkpoint_id: str) -> Optional[StateCheckpoint]:
+    def get_checkpoint(
+        self,
+        checkpoint_id: str,
+        namespace: Optional[str] = None,
+    ) -> Optional[StateCheckpoint]:
         with self._lock:
             c = self._checkpoints.get(checkpoint_id)
-            return copy.deepcopy(c) if c is not None else None
+            if c is None or not _namespace_matches(c.payload.namespace, namespace):
+                return None
+            return copy.deepcopy(c)
 
-    def list_checkpoints(self, session_id: str) -> List[StateCheckpoint]:
+    def list_checkpoints(
+        self,
+        session_id: str,
+        namespace: Optional[str] = None,
+    ) -> List[StateCheckpoint]:
         with self._lock:
             ids = self._session_checkpoints.get(session_id, [])
-            return [
-                copy.deepcopy(self._checkpoints[i])
-                for i in ids
-                if i in self._checkpoints
-            ]
+            out = []
+            for i in ids:
+                c = self._checkpoints.get(i)
+                if c is None:
+                    continue
+                if not _namespace_matches(c.payload.namespace, namespace):
+                    continue
+                out.append(copy.deepcopy(c))
+            return out
 
     # Fork lineage
 
@@ -312,6 +399,15 @@ class SQLiteStateBackend(StateBackend):
     # Sessions
 
     def save_session(self, payload: StatePayload) -> None:
+        existing = self.load_session(payload.session_id)
+        if existing is not None and existing.namespace != payload.namespace:
+            from .exceptions import SessionNamespaceConflictError
+
+            raise SessionNamespaceConflictError(
+                payload.session_id,
+                existing.namespace,
+                payload.namespace,
+            )
         j = json.dumps(payload.to_dict(), default=str)
         self._exec(
             """INSERT INTO state_sessions (session_id, namespace, payload_json, version, updated_at)
@@ -320,26 +416,49 @@ class SQLiteStateBackend(StateBackend):
                    namespace    = excluded.namespace,
                    payload_json = excluded.payload_json,
                    version      = state_sessions.version + 1,
-                   updated_at   = excluded.updated_at""",
+                   updated_at   = excluded.updated_at
+               WHERE state_sessions.namespace = excluded.namespace""",
             (payload.session_id, payload.namespace, j, payload.version, payload.updated_at),
             "save_session",
         )
 
-    def load_session(self, session_id: str) -> Optional[StatePayload]:
-        rows = self._query(
-            "SELECT payload_json FROM state_sessions WHERE session_id = ?",
-            (session_id,),
-        )
+    def load_session(
+        self,
+        session_id: str,
+        namespace: Optional[str] = None,
+    ) -> Optional[StatePayload]:
+        if namespace is None:
+            rows = self._query(
+                "SELECT payload_json FROM state_sessions WHERE session_id = ?",
+                (session_id,),
+            )
+        else:
+            rows = self._query(
+                "SELECT payload_json FROM state_sessions "
+                "WHERE session_id = ? AND namespace = ?",
+                (session_id, namespace),
+            )
         if not rows:
             return None
         return StatePayload.from_dict(json.loads(rows[0][0]))
 
-    def delete_session(self, session_id: str) -> bool:
-        cur = self._exec(
-            "DELETE FROM state_sessions WHERE session_id = ?",
-            (session_id,),
-            "delete_session",
-        )
+    def delete_session(
+        self,
+        session_id: str,
+        namespace: Optional[str] = None,
+    ) -> bool:
+        if namespace is None:
+            cur = self._exec(
+                "DELETE FROM state_sessions WHERE session_id = ?",
+                (session_id,),
+                "delete_session",
+            )
+        else:
+            cur = self._exec(
+                "DELETE FROM state_sessions WHERE session_id = ? AND namespace = ?",
+                (session_id, namespace),
+                "delete_session",
+            )
         return cur.rowcount > 0
 
     def list_sessions(self, namespace: Optional[str] = None) -> List[str]:
@@ -367,7 +486,11 @@ class SQLiteStateBackend(StateBackend):
             "save_snapshot",
         )
 
-    def get_snapshot(self, snapshot_id: str) -> Optional[StateSnapshot]:
+    def get_snapshot(
+        self,
+        snapshot_id: str,
+        namespace: Optional[str] = None,
+    ) -> Optional[StateSnapshot]:
         rows = self._query(
             "SELECT id, session_id, parent_id, label, payload_json, memory_ref, created_at "
             "FROM state_snapshots WHERE id = ?",
@@ -375,15 +498,25 @@ class SQLiteStateBackend(StateBackend):
         )
         if not rows:
             return None
-        return self._row_to_snapshot(rows[0])
+        snap = self._row_to_snapshot(rows[0])
+        if not _namespace_matches(snap.payload.namespace, namespace):
+            return None
+        return snap
 
-    def list_snapshots(self, session_id: str) -> List[StateSnapshot]:
+    def list_snapshots(
+        self,
+        session_id: str,
+        namespace: Optional[str] = None,
+    ) -> List[StateSnapshot]:
         rows = self._query(
             "SELECT id, session_id, parent_id, label, payload_json, memory_ref, created_at "
             "FROM state_snapshots WHERE session_id = ? ORDER BY created_at ASC",
             (session_id,),
         )
-        return [self._row_to_snapshot(r) for r in rows]
+        snaps = [self._row_to_snapshot(r) for r in rows]
+        if namespace is None:
+            return snaps
+        return [s for s in snaps if s.payload.namespace == namespace]
 
     def _row_to_snapshot(self, row: tuple) -> StateSnapshot:
         sid, session_id, parent_id, label, payload_json, memory_ref, created_at = row
@@ -412,7 +545,11 @@ class SQLiteStateBackend(StateBackend):
             "save_checkpoint",
         )
 
-    def get_checkpoint(self, checkpoint_id: str) -> Optional[StateCheckpoint]:
+    def get_checkpoint(
+        self,
+        checkpoint_id: str,
+        namespace: Optional[str] = None,
+    ) -> Optional[StateCheckpoint]:
         rows = self._query(
             "SELECT id, session_id, payload_hash, payload_json, created_at "
             "FROM state_checkpoints WHERE id = ?",
@@ -420,15 +557,25 @@ class SQLiteStateBackend(StateBackend):
         )
         if not rows:
             return None
-        return self._row_to_checkpoint(rows[0])
+        chk = self._row_to_checkpoint(rows[0])
+        if not _namespace_matches(chk.payload.namespace, namespace):
+            return None
+        return chk
 
-    def list_checkpoints(self, session_id: str) -> List[StateCheckpoint]:
+    def list_checkpoints(
+        self,
+        session_id: str,
+        namespace: Optional[str] = None,
+    ) -> List[StateCheckpoint]:
         rows = self._query(
             "SELECT id, session_id, payload_hash, payload_json, created_at "
             "FROM state_checkpoints WHERE session_id = ? ORDER BY rowid ASC",
             (session_id,),
         )
-        return [self._row_to_checkpoint(r) for r in rows]
+        chks = [self._row_to_checkpoint(r) for r in rows]
+        if namespace is None:
+            return chks
+        return [c for c in chks if c.payload.namespace == namespace]
 
     def _row_to_checkpoint(self, row: tuple) -> StateCheckpoint:
         cid, session_id, payload_hash, payload_json, created_at = row

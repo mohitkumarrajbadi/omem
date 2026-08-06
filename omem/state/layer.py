@@ -35,6 +35,7 @@ from .backend import InMemoryStateBackend, SQLiteStateBackend, StateBackend
 from .exceptions import (
     CheckpointNotFoundError,
     ForkError,
+    SessionNamespaceConflictError,
     SessionNotFoundError,
     SnapshotNotFoundError,
 )
@@ -91,6 +92,7 @@ class StateOS:
         self,
         backend: Optional[StateBackend] = None,
         db_path: Optional[str] = None,
+        namespace: Optional[str] = None,
     ) -> None:
         if backend is not None:
             self._backend = backend
@@ -99,6 +101,16 @@ class StateOS:
         else:
             self._backend = InMemoryStateBackend()
         self._lock = threading.RLock()
+        # When set, every read/write is scoped to this namespace (multi-tenant).
+        self._namespace: Optional[str] = namespace
+
+    def bind_namespace(self, namespace: Optional[str]) -> None:
+        """Pin this StateOS instance to a namespace (AgentState / cloud)."""
+        self._namespace = namespace
+
+    def _ns(self, override: Optional[str] = None) -> Optional[str]:
+        """Effective namespace filter for a call."""
+        return override if override is not None else self._namespace
 
     # ------------------------------------------------------------------
     # Session CRUD
@@ -112,6 +124,9 @@ class StateOS:
         """
         if payload.session_id != session_id:
             payload = dataclasses.replace(payload, session_id=session_id)
+        ns = self._ns()
+        if ns is not None and payload.namespace != ns:
+            payload = dataclasses.replace(payload, namespace=ns)
         payload = dataclasses.replace(payload, updated_at=time.time())
         with self._lock:
             self._backend.save_session(payload)
@@ -123,7 +138,7 @@ class StateOS:
         Raises:
             SessionNotFoundError: if no session with this ID exists.
         """
-        payload = self._backend.load_session(session_id)
+        payload = self._backend.load_session(session_id, namespace=self._ns())
         if payload is None:
             raise SessionNotFoundError(session_id)
         return payload
@@ -133,13 +148,25 @@ class StateOS:
         session_id: str,
         namespace: str = "default",
     ) -> StatePayload:
-        """Return the session's state, creating a blank one if it doesn't exist."""
-        payload = self._backend.load_session(session_id)
-        if payload is None:
-            payload = StatePayload(session_id=session_id, namespace=namespace)
-            with self._lock:
-                self._backend.save_session(payload)
-            logger.debug("state.get_or_create created session=%r", session_id)
+        """Return the session's state, creating a blank one if it doesn't exist.
+
+        Refuses to return or overwrite a session that already exists under a
+        different namespace (cross-tenant session_id collision).
+        """
+        ns = self._ns(namespace) or namespace
+        payload = self._backend.load_session(session_id, namespace=ns)
+        if payload is not None:
+            return payload
+        # Detect cross-namespace collision before creating.
+        foreign = self._backend.load_session(session_id)
+        if foreign is not None and foreign.namespace != ns:
+            raise SessionNamespaceConflictError(
+                session_id, foreign.namespace, ns
+            )
+        payload = StatePayload(session_id=session_id, namespace=ns)
+        with self._lock:
+            self._backend.save_session(payload)
+        logger.debug("state.get_or_create created session=%r ns=%r", session_id, ns)
         return payload
 
     def update(self, session_id: str, **fields: Any) -> StatePayload:
@@ -163,9 +190,15 @@ class StateOS:
             )
 
         with self._lock:
-            payload = self._backend.load_session(session_id)
+            payload = self._backend.load_session(session_id, namespace=self._ns())
             if payload is None:
                 raise SessionNotFoundError(session_id)
+            # Bound namespace must not be escaped via update(namespace=...).
+            if self._ns() is not None and "namespace" in fields:
+                if fields["namespace"] != self._ns():
+                    raise SessionNamespaceConflictError(
+                        session_id, payload.namespace, str(fields["namespace"])
+                    )
             payload = dataclasses.replace(
                 payload,
                 updated_at=time.time(),
@@ -192,7 +225,7 @@ class StateOS:
     def advance(self, session_id: str) -> StatePayload:
         """Increment the step counter.  Sets status='done' when past last plan step."""
         with self._lock:
-            payload = self._backend.load_session(session_id)
+            payload = self._backend.load_session(session_id, namespace=self._ns())
             if payload is None:
                 raise SessionNotFoundError(session_id)
             new_step = payload.step + 1
@@ -211,7 +244,7 @@ class StateOS:
     def record_tool(self, session_id: str, result: ToolResult) -> StatePayload:
         """Append a tool invocation result to the session state."""
         with self._lock:
-            payload = self._backend.load_session(session_id)
+            payload = self._backend.load_session(session_id, namespace=self._ns())
             if payload is None:
                 raise SessionNotFoundError(session_id)
             new_outputs = payload.tool_outputs + [result]
@@ -230,7 +263,7 @@ class StateOS:
     def set_workflow(self, session_id: str, key: str, value: Any) -> StatePayload:
         """Set a single key in the session's workflow_state dict."""
         with self._lock:
-            payload = self._backend.load_session(session_id)
+            payload = self._backend.load_session(session_id, namespace=self._ns())
             if payload is None:
                 raise SessionNotFoundError(session_id)
             new_wf = {**payload.workflow_state, key: value}
@@ -278,7 +311,7 @@ class StateOS:
             SessionNotFoundError: if the session does not exist.
         """
         with self._lock:
-            payload = self._backend.load_session(session_id)
+            payload = self._backend.load_session(session_id, namespace=self._ns())
             if payload is None:
                 raise SessionNotFoundError(session_id)
             snap = StateSnapshot(
@@ -299,7 +332,7 @@ class StateOS:
 
     def list_snapshots(self, session_id: str) -> List[StateSnapshot]:
         """Return all snapshots for a session, oldest first."""
-        return self._backend.list_snapshots(session_id)
+        return self._backend.list_snapshots(session_id, namespace=self._ns())
 
     def get_snapshot(self, snapshot_id: str) -> StateSnapshot:
         """Return a snapshot by ID.
@@ -307,7 +340,7 @@ class StateOS:
         Raises:
             SnapshotNotFoundError: if the snapshot does not exist.
         """
-        snap = self._backend.get_snapshot(snapshot_id)
+        snap = self._backend.get_snapshot(snapshot_id, namespace=self._ns())
         if snap is None:
             raise SnapshotNotFoundError(snapshot_id)
         return snap
@@ -328,12 +361,12 @@ class StateOS:
         Raises:
             SnapshotNotFoundError: if the snapshot does not exist.
         """
-        snap = self._backend.get_snapshot(snapshot_id)
+        snap = self._backend.get_snapshot(snapshot_id, namespace=self._ns())
         if snap is None:
             raise SnapshotNotFoundError(snapshot_id)
 
         with self._lock:
-            current = self._backend.load_session(snap.session_id)
+            current = self._backend.load_session(snap.session_id, namespace=self._ns())
             new_version = (current.version + 1) if current else 1
             restored = dataclasses.replace(
                 snap.payload,
@@ -375,14 +408,14 @@ class StateOS:
             SnapshotNotFoundError: if the snapshot does not exist.
             ForkError: if the child_session_id is already in use.
         """
-        snap = self._backend.get_snapshot(snapshot_id)
+        snap = self._backend.get_snapshot(snapshot_id, namespace=self._ns())
         if snap is None:
             raise SnapshotNotFoundError(snapshot_id)
 
         child_id = new_session_id or _new_id("sess")
 
         with self._lock:
-            existing = self._backend.load_session(child_id)
+            existing = self._backend.load_session(child_id, namespace=self._ns())
             if existing is not None:
                 raise ForkError(
                     f"Session {child_id!r} already exists. "
@@ -428,15 +461,15 @@ class StateOS:
             MergeError: if both sessions originate from the same parent
                         and the target cannot be resolved.
         """
-        winning = self._backend.load_session(winning_session_id)
+        winning = self._backend.load_session(winning_session_id, namespace=self._ns())
         if winning is None:
             raise SessionNotFoundError(winning_session_id)
-        losing = self._backend.load_session(losing_session_id)
+        losing = self._backend.load_session(losing_session_id, namespace=self._ns())
         if losing is None:
             raise SessionNotFoundError(losing_session_id)
 
         with self._lock:
-            current = self._backend.load_session(winning_session_id)
+            current = self._backend.load_session(winning_session_id, namespace=self._ns())
             merged = dataclasses.replace(
                 winning,
                 version=(current.version if current else winning.version) + 1,
@@ -467,7 +500,7 @@ class StateOS:
         Raises:
             SessionNotFoundError: if the session does not exist.
         """
-        payload = self._backend.load_session(session_id)
+        payload = self._backend.load_session(session_id, namespace=self._ns())
         if payload is None:
             raise SessionNotFoundError(session_id)
 
@@ -497,12 +530,12 @@ class StateOS:
         Raises:
             CheckpointNotFoundError: if the checkpoint does not exist.
         """
-        chk = self._backend.get_checkpoint(checkpoint_id)
+        chk = self._backend.get_checkpoint(checkpoint_id, namespace=self._ns())
         if chk is None:
             raise CheckpointNotFoundError(checkpoint_id)
 
         with self._lock:
-            current = self._backend.load_session(chk.session_id)
+            current = self._backend.load_session(chk.session_id, namespace=self._ns())
             new_version = (current.version + 1) if current else 1
             recovered = dataclasses.replace(
                 chk.payload,
@@ -523,7 +556,7 @@ class StateOS:
         Raises:
             CheckpointNotFoundError: if no checkpoints exist.
         """
-        checkpoints = self._backend.list_checkpoints(session_id)
+        checkpoints = self._backend.list_checkpoints(session_id, namespace=self._ns())
         if not checkpoints:
             raise CheckpointNotFoundError(
                 f"No checkpoints found for session {session_id!r}"
@@ -536,7 +569,7 @@ class StateOS:
 
     def list_checkpoints(self, session_id: str) -> List[StateCheckpoint]:
         """Return all checkpoints for a session, oldest first."""
-        return self._backend.list_checkpoints(session_id)
+        return self._backend.list_checkpoints(session_id, namespace=self._ns())
 
     # ------------------------------------------------------------------
     # Inspection helpers
@@ -544,7 +577,7 @@ class StateOS:
 
     def session_exists(self, session_id: str) -> bool:
         """Return True if the session exists in storage."""
-        return self._backend.load_session(session_id) is not None
+        return self._backend.load_session(session_id, namespace=self._ns()) is not None
 
     def fork_parent(self, child_session_id: str) -> Optional[str]:
         """Return the parent snapshot ID for a forked session, or None."""
@@ -556,11 +589,11 @@ class StateOS:
 
     def summary(self, session_id: str) -> Dict[str, Any]:
         """Return a human-friendly summary dict for a session."""
-        payload = self._backend.load_session(session_id)
+        payload = self._backend.load_session(session_id, namespace=self._ns())
         if payload is None:
             raise SessionNotFoundError(session_id)
-        snaps = self._backend.list_snapshots(session_id)
-        chks = self._backend.list_checkpoints(session_id)
+        snaps = self._backend.list_snapshots(session_id, namespace=self._ns())
+        chks = self._backend.list_checkpoints(session_id, namespace=self._ns())
         parent = self._backend.get_fork_parent(session_id)
         return {
             "session_id": session_id,

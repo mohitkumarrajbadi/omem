@@ -117,8 +117,24 @@ class ToolSnippet:
         )
 
 
-# Initialize OMem instance (always available)
-omem = OMem()
+# Initialize OMem instance — env-aware for personal / multi-client MCP.
+# Set OMEM_DB_PATH + OMEM_NAMESPACE before import (or call configure_mcp_server).
+def _mcp_db_path() -> Optional[str]:
+    raw = (os.environ.get("OMEM_DB_PATH") or "").strip()
+    if raw:
+        path = os.path.expanduser(raw)
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        return path
+    return None
+
+
+def _mcp_backend() -> str:
+    return (os.environ.get("OMEM_BACKEND") or "sqlite").strip() or "sqlite"
+
+
+omem = OMem(backend=_mcp_backend(), db_path=_mcp_db_path())
 
 # MCP instance — real server when mcp is installed, silent stub otherwise.
 # The stub lets this module be imported and its functions called without mcp,
@@ -129,17 +145,74 @@ else:
     mcp = _NoOpMCP()  # type: ignore[assignment]
 
 
+def configure_mcp_server(
+    *,
+    db_path: Optional[str] = None,
+    namespace: Optional[str] = None,
+    project_root: Optional[str] = None,
+    backend: Optional[str] = None,
+) -> OMem:
+    """Rebind the MCP brain to a durable store + shared namespace.
+
+    Call this from ``omem serve`` *before* ``mcp.run()`` so Claude Code,
+    OpenCode, and Cursor all share the same SQLite file and namespace.
+    """
+    global omem
+    _durable_flush()
+    if namespace:
+        os.environ["OMEM_NAMESPACE"] = namespace.strip()
+    if project_root:
+        os.environ["OMEM_PROJECT_ROOT"] = os.path.abspath(
+            os.path.expanduser(project_root)
+        )
+    if db_path:
+        os.environ["OMEM_DB_PATH"] = os.path.expanduser(db_path)
+    if backend:
+        os.environ["OMEM_BACKEND"] = backend
+    omem = OMem(backend=_mcp_backend(), db_path=_mcp_db_path())
+    logger.info(
+        "MCP configured namespace=%s db=%s backend=%s",
+        get_project_namespace(),
+        _mcp_db_path() or "~/.omem/brain.db",
+        _mcp_backend(),
+    )
+    return omem
+
+
+def _durable_flush() -> None:
+    """Flush write buffer so another MCP client process can see recent writes."""
+    global omem
+    try:
+        brain = getattr(omem, "brain", None)
+        if brain is not None and hasattr(brain, "write_buffer"):
+            brain.write_buffer.flush()
+        audit = getattr(omem, "_audit", None)
+        if audit is not None and hasattr(audit, "flush"):
+            audit.flush()
+    except Exception as exc:
+        logger.debug("MCP durable flush skipped: %s", exc)
+
+
 def get_project_namespace() -> str:
-    """Detect the current project namespace based on directory structure."""
-    curr = os.getcwd()
-    # 1. Search for .git root
+    """Resolve the active project namespace.
+
+    Precedence:
+      1. ``OMEM_NAMESPACE`` (recommended for personal multi-tool sharing)
+      2. Git root basename under ``OMEM_PROJECT_ROOT`` or cwd
+      3. Basename of cwd
+    """
+    forced = (os.environ.get("OMEM_NAMESPACE") or "").strip()
+    if forced:
+        return forced
+
+    root = (os.environ.get("OMEM_PROJECT_ROOT") or "").strip()
+    curr = os.path.abspath(os.path.expanduser(root)) if root else os.getcwd()
     temp = curr
     while temp != os.path.dirname(temp):
         if os.path.exists(os.path.join(temp, ".git")):
             return os.path.basename(temp)
         temp = os.path.dirname(temp)
-    # 2. Fallback to current directory basename
-    return os.path.basename(curr)
+    return os.path.basename(curr) or "default"
 
 
 def format_memory_summary(memories: List[Any]) -> str:
@@ -180,6 +253,33 @@ def _memory_to_dict(m: Any) -> Dict[str, Any]:
 
 
 @mcp.tool()
+def mcp_status():
+    """Show OMem MCP runtime status: namespace, db path, memory counts.
+
+    Call this first when connecting from Claude Code or OpenCode to confirm
+    both tools share the same durable store.
+    """
+    ns = get_project_namespace()
+    stats = omem.stats()
+    db = _mcp_db_path() or os.path.expanduser("~/.omem/brain.db")
+    project_mems = omem.all(namespace=ns)
+    return {
+        "ok": True,
+        "namespace": ns,
+        "db_path": db,
+        "backend": _mcp_backend(),
+        "total_memories": stats.get("total", 0),
+        "project_memories": len(project_mems),
+        "omem_namespace_env": (os.environ.get("OMEM_NAMESPACE") or "") or None,
+        "omem_project_root": (os.environ.get("OMEM_PROJECT_ROOT") or "") or None,
+        "hint": (
+            "Set the same OMEM_NAMESPACE + OMEM_DB_PATH in Claude Code and OpenCode "
+            "so memory is shared seamlessly."
+        ),
+    }
+
+
+@mcp.tool()
 def remember(
     content: str,
     importance: Optional[float] = None,
@@ -198,6 +298,7 @@ def remember(
     mem_id = omem.add(
         content, importance=importance, namespace=namespace, metadata=metadata
     )
+    _durable_flush()
     return f"Memory stored in {namespace} (ID: {mem_id})"
 
 
@@ -227,6 +328,21 @@ def recall(
         namespace=namespace,
         project_only=project_only,
     )
+
+    # Lexical fallback when local hash embedder returns nothing (no sentence-transformers).
+    if not results:
+        needle = query.lower().strip()
+        pool = list(omem.all(namespace=namespace))
+        if not project_only:
+            pool.extend(omem.all(namespace="global"))
+        scored = []
+        for m in pool:
+            hay = (m.content or "").lower()
+            if needle and needle in hay:
+                scored.append(m)
+            elif any(tok and tok in hay for tok in needle.split() if len(tok) > 3):
+                scored.append(m)
+        results = scored[:k]
 
     # Build the structured infra-grade response
     mem_data = []
@@ -569,6 +685,7 @@ def remember_decision(
         metadata=meta,
         force=True,
     )
+    _durable_flush()
     return {
         "status": "stored",
         "memory_id": mem_id,
@@ -758,6 +875,7 @@ def remember_bug_fix(
         metadata=meta,
         force=True,
     )
+    _durable_flush()
     return {
         "status": "stored",
         "memory_id": mem_id,
