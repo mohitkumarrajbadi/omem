@@ -1,6 +1,8 @@
 # OMem - Claude Desktop & MCP Setup
 
-This guide covers connecting OMem to Claude Desktop, Cursor IDE, or any MCP-compatible client so your AI gets persistent memory across every session.
+This guide covers connecting OMem to **Claude Code**, **OpenCode**, Claude Desktop, Cursor IDE, or any MCP-compatible client so your AI gets persistent memory across every session.
+
+**Personal multi-tool (Claude Code ↔ OpenCode):** see the short production guide → [`PERSONAL_MCP.md`](./PERSONAL_MCP.md)
 
 ---
 
@@ -10,8 +12,7 @@ This guide covers connecting OMem to Claude Desktop, Cursor IDE, or any MCP-comp
 |---|---|---|
 | Python | 3.10+ | MCP requires Python 3.10+ |
 | pip | latest | `pip install --upgrade pip` |
-| Claude Desktop | latest | [Download](https://claude.ai/download) |
-| — or Cursor IDE | latest | [Download](https://cursor.sh) |
+| Claude Code / OpenCode / Cursor / Claude Desktop | latest | Any MCP client |
 
 ---
 
@@ -27,14 +28,34 @@ Verify it installed correctly:
 omem health
 ```
 
-Expected output:
+Then:
 
+```bash
+python3 -c "from omem.integrations.mcp_server import _HAS_MCP; print('mcp', _HAS_MCP)"
 ```
-OMem health check passed.
-  backend : sqlite
-  db_path : /Users/<you>/.omem/brain.db
-  memories: 0
-  mcp     : available
+
+---
+
+## Personal production (recommended)
+
+Pin a **shared namespace + DB** so every client sees the same memories:
+
+```bash
+omem serve --namespace personal --db-path ~/.omem/brain.db
+```
+
+Ready-made configs:
+
+| Client | File |
+|--------|------|
+| Claude Code | [`deploy/mcp/claude_code.mcp.json`](../../deploy/mcp/claude_code.mcp.json) |
+| OpenCode | [`deploy/mcp/opencode.mcp.json`](../../deploy/mcp/opencode.mcp.json) |
+| Cursor | [`deploy/mcp/cursor.mcp.json`](../../deploy/mcp/cursor.mcp.json) |
+
+Smoke test (no GUI required):
+
+```bash
+python3 scripts/mcp_personal_smoke.py
 ```
 
 ---
@@ -50,20 +71,20 @@ OMem health check passed.
 
 ### 2. Add OMem to the config
 
-Open (or create) the file and add the `omem` block inside `"mcpServers"`:
-
 ```json
 {
   "mcpServers": {
     "omem": {
       "command": "omem",
-      "args": ["serve"]
+      "args": [
+        "serve",
+        "--namespace", "personal",
+        "--db-path", "~/.omem/brain.db"
+      ]
     }
   }
 }
 ```
-
-If you already have other MCP servers listed, just add the `"omem"` key alongside them.
 
 ### 3. Restart Claude Desktop
 
@@ -73,155 +94,63 @@ Quit completely and reopen. You should see **OMem** listed in the MCP tools pane
 
 ## Cursor IDE Setup
 
-Open Cursor settings (`Cmd+,` on macOS) → search **MCP** → open `settings.json` manually.
-
-Add the following inside your JSON config:
-
 ```json
 {
   "mcpServers": {
     "omem": {
       "command": "omem",
-      "args": ["serve"]
+      "args": [
+        "serve",
+        "--namespace", "personal",
+        "--db-path", "~/.omem/brain.db"
+      ]
     }
   }
 }
 ```
-
-Cursor auto-detects the server on next launch.
 
 ---
 
 ## MCP Tools Reference
 
-When OMem is connected, your AI client gains access to these tools:
-
 | Tool | Description |
 |---|---|
+| `mcp_status` | Confirm shared namespace + db path (use first) |
 | `remember` | Store a fact, decision, preference, or observation |
 | `recall` | Semantic search with optional type and time filters |
+| `remember_decision` / `recall_decisions` | Architectural decision records |
+| `remember_pr_context` / `recall_pr_context` | PR history |
+| `remember_bug_fix` / `recall_bugs` | Root cause + fix |
 | `reflect` | Generate high-level insights from recent episodic memories |
 | `maintain` | Run the full sleep cycle: compress, forget, deduplicate |
 | `resolve_conflict` | Detect and resolve contradicting memories |
-| `remember_action` | Store a tool call or agent action as a procedural memory |
-| `recall_action` | Retrieve past actions relevant to the current task |
-| `query_codebase` | Search indexed codebase memories by natural language |
-| `sync_codebase` | Incrementally index changed files since last sync |
-| `ingest_codebase` | Full initial index of a project directory |
-
----
-
-## MCP Resources Reference
-
-OMem exposes these read-only resources your client can subscribe to:
-
-| Resource URI | Description |
-|---|---|
-| `omem://recent` | The 20 most recently added memories |
-| `omem://top_insights` | Top REFLECTION-type memories by importance |
-| `omem://status` | Live stats: memory count, graph edges, namespaces |
-| `omem://graph` | Knowledge graph entity list |
+| `remember_action` / `recall_action` | Procedural tool/action memories |
+| `query_codebase` / `sync_codebase` / `ingest_codebase` | Code index tools |
 
 ---
 
 ## First Session Walkthrough
 
-After connecting, test that OMem is working:
-
-1. Open a new Claude Desktop conversation.
-2. Type: `"Use OMem to remember that my preferred language is Python and I use dark mode."`
-3. Claude should call the `remember` tool and confirm it stored both facts.
-4. Close the conversation. Open a new one.
-5. Type: `"What are my preferences?"`
-6. Claude should call `recall` and return the stored facts.
-
-That cross-session recall — from a completely new conversation — confirms OMem is working.
+1. Open Claude Code. Ask: `Call mcp_status, then remember that my preferred language is Python.`
+2. Open OpenCode (same machine, same MCP args). Ask: `Recall my preferred language.`
+3. You should get the fact written from Claude Code.
 
 ---
 
-## Namespace Auto-Detection
+## Namespace rules
 
-When you run `omem serve` from inside a project directory that contains a `.git` folder, OMem automatically detects the project root and uses the folder name as the memory namespace.
-
-This means:
-- Memories stored during work on `~/projects/my-api` go into namespace `my-api`
-- Switching to `~/projects/blog` gives Claude a clean, isolated memory space
-- You can always override: `omem serve --namespace my-custom-ns`
+1. `OMEM_NAMESPACE` / `--namespace` (best for multi-tool sharing)
+2. Else git root basename under `OMEM_PROJECT_ROOT` or cwd
+3. Else cwd basename
 
 ---
 
 ## Troubleshooting
 
-**`command not found: omem`**
+**`command not found: omem`** — use the absolute path to the `omem` binary in MCP JSON.
 
-The `omem` script was installed into a location not on your PATH. Find it with:
+**`No module named 'mcp'`** — `pip install "omem-os[mcp]"` (Python 3.10+).
 
-```bash
-python -m site --user-base
-# then look in <user-base>/bin/omem
-```
+**Different memories in two tools** — both must use identical `--namespace` and `--db-path`. Compare `mcp_status`.
 
-Add that directory to your PATH, or use the full path in the config:
-
-```json
-{
-  "mcpServers": {
-    "omem": {
-      "command": "/full/path/to/omem",
-      "args": ["serve"]
-    }
-  }
-}
-```
-
----
-
-**`ModuleNotFoundError: No module named 'mcp'`**
-
-Install the MCP extra:
-
-```bash
-pip install "omem-os[mcp]"
-```
-
-Note: the `mcp` package requires Python 3.10+. Check your version:
-
-```bash
-python --version
-```
-
----
-
-**Permission error writing to `~/.omem/brain.db`**
-
-```bash
-mkdir -p ~/.omem
-chmod 700 ~/.omem
-```
-
----
-
-**Claude does not call OMem tools**
-
-- Confirm the server appears in Claude Desktop's settings under MCP.
-- Run `omem health` in your terminal to confirm the binary works.
-- Check Claude Desktop logs: `~/Library/Logs/Claude/` (macOS).
-
----
-
-## Advanced: Custom DB Path
-
-To store memories in a project-local directory instead of `~/.omem/brain.db`:
-
-```json
-{
-  "mcpServers": {
-    "omem": {
-      "command": "omem",
-      "args": ["serve", "--db-path", "/path/to/project/.omem/brain.db"]
-    }
-  }
-}
-```
-
-This is useful for keeping project-specific memory isolated at the filesystem level.
+**Permission error** — `mkdir -p ~/.omem && chmod 700 ~/.omem`

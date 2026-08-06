@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "omem": {
+      "command": "/Users/mbadi/Downloads/Personal /Projects/omem-main/omem-oss/.venv/bin/omem",
+      "args": [
+        "serve",
+        "--namespace", "personal",
+        "--db-path", "/Users/mbadi/.omem/brain.db"
+      ]
+    }
+  }
+}

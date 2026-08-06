@@ -1,0 +1,9 @@
+{
+  "status": "PASS",
+  "timestamp": "2026-07-24T10:42:33Z",
+  "namespace": "personal",
+  "db_path": "/var/folders/77/n0y36h654dlf7sff_r3ht4980000gp/T/omem-mcp-smoke-aurs8jbv/brain.db",
+  "recall_count": 2,
+  "decisions": 1,
+  "marker": "PERSONAL_MCP_SMOKE_73468e7e"
+}
