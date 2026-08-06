@@ -22,7 +22,7 @@ from ..retrieval.fusion import DEFAULT_WEIGHTS
 from ..retrieval.kv import KVCache
 from ..retrieval.vector import VectorIndex
 from ..utils.cache import LRUCache
-from ..utils.concurrency import RWLock, WriteContext
+from ..utils.concurrency import RWLock, ReadContext, WriteContext
 from ..utils.inspector import inspect_query
 from ..utils.structured_logging import get_logger
 from ..utils.write_buffer import WriteBuffer
@@ -141,29 +141,38 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
 
     def consolidate(self, llm_fn: Optional[Callable] = None) -> Dict:
         """Deep maintenance: resolve conflicts and hierarchical reflection."""
-        with WriteContext(self._lock):
-            mems = self.kv.all()
+        # Snapshot current memories under the read lock, then release before
+        # calling self.add() / self.reflect() — both internally acquire the
+        # write lock, so holding it here would deadlock.
+        with ReadContext(self._lock):
+            mems = list(self.kv.all())
 
-            # 1. Resolve conflicts using LLM if available
-            resolutions = reflect_on_conflicts(mems, summarizer=llm_fn)
-            for res in resolutions:
-                self.add(
-                    res.content,
-                    mem_type=res.type,
-                    importance=res.importance,
-                    source="consolidator",
-                )
+        # 1. Resolve conflicts using LLM if available (pure computation, no lock)
+        resolutions = reflect_on_conflicts(mems, summarizer=llm_fn)
 
-            # 2. Hierarchical reflection
-            insights = self.reflect(summarizer=llm_fn, namespace=None)
+        # 2. Persist resolutions — each add() acquires the write lock itself
+        for res in resolutions:
+            self.add(
+                res.content,
+                mem_type=res.type,
+                importance=res.importance,
+                source="consolidator",
+            )
 
-            # 3. Optimize vector index
-            self.vector_index.rebuild()
+        # 3. Hierarchical reflection — reflect() also calls add() internally
+        insights = self.reflect(summarizer=llm_fn, namespace=None)
 
-            return {
-                "conflicts_resolved": len(resolutions),
-                "new_insights": len(insights),
-            }
+        # 4. Rebuild vector index from current active vectors (acquires its own lock)
+        with ReadContext(self._lock):
+            active_vecs = [m.vector for m in self.kv.all() if m.vector is not None]
+        if active_vecs:
+            import numpy as np
+            self.vector_index.rebuild(np.stack(active_vecs).astype(np.float32))
+
+        return {
+            "conflicts_resolved": len(resolutions),
+            "new_insights": len(insights),
+        }
 
     def link(self, src_id: str, dst_id: str, weight: float = 1.0, label: str = ""):
         self.graph.add_link(src_id, dst_id, weight=weight, label=label)
@@ -276,7 +285,7 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
     ) -> Dict:
         """Cluster and merge redundant memories."""
         with WriteContext(self._lock):
-            mems = self.kv.all()
+            mems = self.kv.all() 
             if namespace:
                 mems = [m for m in mems if m.namespace == namespace]
             new_mems, deactivated_ids = run_compression(
