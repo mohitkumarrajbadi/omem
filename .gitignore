@@ -37,13 +37,15 @@ omem_rust*.so
 .ruff_cache/
 
 # IDE / local config
-.claude/settings.local.json
+.claude/
 
 # Documentation
 # (Markdown files should be tracked)
 
 # Local notes (not tracked)
 .notes/
+
+
 
 # --- COMMERCIAL CLOUD (never public) ---
 omem/cloud/
