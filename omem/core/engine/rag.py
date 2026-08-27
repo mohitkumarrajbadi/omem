@@ -97,10 +97,13 @@ class RAGMixin:
             return cached
 
         query_vec = self.embedder.encode(query)
+        if self.kv.size == 0:
+            # Cold engine or post-restart pool entry — reload from durable store.
+            # Must happen *before* taking the read lock: reload_from_backend()
+            # acquires the write lock internally, and this RWLock is not
+            # reentrant, so calling it while holding the read lock deadlocks.
+            self.reload_from_backend()
         with ReadContext(self._lock):
-            if self.kv.size == 0:
-                # Cold engine or post-restart pool entry — reload from durable store.
-                self.reload_from_backend()
             if self.kv.size == 0:
                 self._last_explanations = []
                 return []
