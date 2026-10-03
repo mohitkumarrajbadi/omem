@@ -19,7 +19,28 @@ class TestCLI:
         for help_flag in ["-h", "--help"]:
             result = self.runner.invoke(cli, [help_flag])
             assert result.exit_code == 0
-            assert "Governed, Auditable Memory" in result.output or "governed" in result.output.lower()
+            assert "Audit & rollback" in result.output
+            # Simple first-run surface only
+            assert "Get started:" in result.output
+            assert "Everyday:" in result.output
+            assert "omem commands" in result.output
+            assert "Governance:" not in result.output
+            assert "Connectors:" not in result.output
+            assert "Aliases:" not in result.output
+            assert "More:" not in result.output
+            assert "\n  codebase" not in result.output
+            assert "\n  ingest " not in result.output
+            assert "\n  sync" not in result.output
+            assert "\n  dashboard" not in result.output
+            assert "\n  bench" not in result.output
+            assert "\n  benchmark" not in result.output
+
+    def test_commands_lists_full_catalog(self):
+        result = self.runner.invoke(cli, ["commands"])
+        assert result.exit_code == 0, result.output
+        assert "Governance:" in result.output
+        assert "Connectors:" in result.output
+        assert "Memory:" in result.output
 
     def test_demo(self):
         result = self.runner.invoke(cli, ["demo"])

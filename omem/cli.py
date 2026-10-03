@@ -88,45 +88,132 @@ _BANNER_ART = r"""
 
 CLI_BANNER = (
     _c(_BANNER_ART, fg="cyan", bold=True)
-    + _c(
-        "  Governed, Auditable Memory and State for AI Agents",
-        fg="white",
-        bold=True,
-    )
-    + "\n"
-    + _c(
-        "  Audit · Encryption · Belief revision · Snapshot / rollback\n",
-        fg="bright_black",
-    )
+    + _c("  Audit & rollback for AI agents\n", fg="white", bold=True)
 )
 
-# Commands grouped by what you're trying to do, not by internal architecture.
-# Canonical commands come first; thin legacy aliases are kept but de-emphasized
-# at the bottom so the common path stays obvious.
-# "Codebase" (AST index) is Alpha — shown only when OMEM_ENABLE_EXPERIMENTAL_AST=1.
-COMMAND_GROUPS = OrderedDict(
+# Simple default help — the 60-second path. Everything else stays registered
+# and listed by `omem commands`. AST stays opt-in via OMEM_ENABLE_EXPERIMENTAL_AST=1.
+SIMPLE_HELP_GROUPS = OrderedDict(
     [
-        ("Start here", ["agent", "status", "init", "demo"]),
-        ("Memory", ["remember", "recall", "list", "inspect", "stats", "sleep", "clear"]),
-        ("State & context", ["state", "context", "knowledge"]),
-        ("Enterprise", ["observe", "provenance", "governance", "runtime", "org"]),
-        ("Codebase (experimental)", ["ingest", "sync", "codebase", "namespaces"]),
-        ("Connectors", ["ingest-docs", "ingest-url", "ingest-notion", "ingest-drive"]),
-        ("Server & tools", ["serve", "dashboard", "bench", "health", "export", "import", "completion", "version"]),
-        ("Aliases", ["add", "search", "maintain", "benchmark"]),
+        ("Get started", ["init", "demo", "agent"]),
+        ("Everyday", ["remember", "recall", "status", "serve"]),
     ]
 )
 
+# Full catalog for `omem commands` (and when OMEM_CLI_ALL=1).
+ALL_COMMAND_GROUPS = OrderedDict(
+    [
+        ("Get started", ["init", "demo", "agent"]),
+        ("Everyday", ["remember", "recall", "status", "serve"]),
+        ("Memory", ["list", "inspect", "stats", "sleep", "clear", "namespaces"]),
+        ("State & context", ["state", "context", "knowledge"]),
+        ("Governance", ["governance", "provenance", "observe", "runtime", "org"]),
+        ("Connectors", ["ingest-docs", "ingest-url", "ingest-notion", "ingest-drive"]),
+        ("Server", ["health", "export", "import", "version"]),
+        ("Experimental AST", ["ingest", "sync", "codebase"]),
+    ]
+)
 
-def _command_groups_for_help():
+# Always hidden from help catalogs (still invokable).
+_HELP_HIDDEN = frozenset({
+    "add",
+    "search",
+    "maintain",
+    "benchmark",
+    "bench",
+    "dashboard",
+    "completion",
+    "commands",  # listed in the footer, not as a row
+})
+
+_AST_HELP_CMDS = frozenset({"ingest", "sync", "codebase"})
+
+# Commands shown only via `omem commands` / OMEM_CLI_ALL=1.
+_ADVANCED_HELP_CMDS = frozenset(
+    {
+        "list",
+        "inspect",
+        "stats",
+        "sleep",
+        "clear",
+        "namespaces",
+        "state",
+        "context",
+        "knowledge",
+        "governance",
+        "provenance",
+        "observe",
+        "runtime",
+        "org",
+        "ingest-docs",
+        "ingest-url",
+        "ingest-notion",
+        "ingest-drive",
+        "health",
+        "export",
+        "import",
+        "version",
+    }
+)
+
+
+def _show_all_commands() -> bool:
+    return os.environ.get("OMEM_CLI_ALL", "").strip() in {"1", "true", "yes"}
+
+
+def _command_groups_for_help(*, all_commands: bool = False):
     from .experimental import ast_enabled
 
+    source = ALL_COMMAND_GROUPS if all_commands or _show_all_commands() else SIMPLE_HELP_GROUPS
     groups = OrderedDict()
-    for category, cmd_list in COMMAND_GROUPS.items():
-        if category.startswith("Codebase") and not ast_enabled():
+    for category, cmd_list in source.items():
+        if category.startswith("Experimental") and not ast_enabled():
             continue
         groups[category] = cmd_list
     return groups
+
+
+def _help_hidden_names(*, all_commands: bool = False) -> set:
+    from .experimental import ast_enabled
+
+    hidden = set(_HELP_HIDDEN)
+    if not ast_enabled():
+        hidden |= _AST_HELP_CMDS
+    if not (all_commands or _show_all_commands()):
+        hidden |= _ADVANCED_HELP_CMDS
+    return hidden
+
+
+def _write_command_groups(ctx, formatter, *, all_commands: bool = False) -> None:
+    group = ctx.command
+    commands = set(group.list_commands(ctx))
+    hidden = _help_hidden_names(all_commands=all_commands)
+    mapped = set()
+
+    for category, cmd_list in _command_groups_for_help(all_commands=all_commands).items():
+        available_cmds = [c for c in cmd_list if c in commands and c not in hidden]
+        if not available_cmds:
+            continue
+        with formatter.section(category):
+            rows = []
+            for name in available_cmds:
+                cmd = group.get_command(ctx, name)
+                if cmd is None:
+                    continue
+                rows.append((name, cmd.get_short_help_str()))
+                mapped.add(name)
+            formatter.write_dl(rows)
+
+    # Never leak intentionally-hidden names into an orphan "More" section.
+    mapped |= hidden & commands
+    orphans = sorted(commands - mapped)
+    if orphans:
+        with formatter.section("More"):
+            rows = []
+            for name in orphans:
+                cmd = group.get_command(ctx, name)
+                rows.append((name, cmd.get_short_help_str() if cmd else ""))
+            formatter.write_dl(rows)
 
 
 class OMemGroup(click.Group):
@@ -139,33 +226,16 @@ class OMemGroup(click.Group):
         self.format_options(ctx, formatter)
         # Note: click.MultiCommand.format_options already calls format_commands
         # internally, so we do NOT call it again here to avoid duplication.
+        if not _show_all_commands():
+            formatter.write(
+                "\n"
+                + _c("  Tip: ", fg="bright_black")
+                + "omem commands"
+                + _c("  — full list\n", fg="bright_black")
+            )
 
     def format_commands(self, ctx, formatter):
-        commands = self.list_commands(ctx)
-        mapped_commands = set()
-
-        for category, cmd_list in _command_groups_for_help().items():
-            available_cmds = [c for c in cmd_list if c in commands]
-            if not available_cmds:
-                continue
-            with formatter.section(category):
-                rows = []
-                for name in available_cmds:
-                    cmd = self.get_command(ctx, name)
-                    if cmd is None:
-                        continue
-                    rows.append((name, cmd.get_short_help_str()))
-                    mapped_commands.add(name)
-                formatter.write_dl(rows)
-
-        orphan_cmds = [c for c in commands if c not in mapped_commands]
-        if orphan_cmds:
-            with formatter.section("More"):
-                rows = []
-                for name in orphan_cmds:
-                    cmd = self.get_command(ctx, name)
-                    rows.append((name, cmd.get_short_help_str() if cmd else ""))
-                formatter.write_dl(rows)
+        _write_command_groups(ctx, formatter, all_commands=_show_all_commands())
 
     def resolve_command(self, ctx, args):
         """Resolve a command, with a friendly 'did you mean' on a typo."""
@@ -271,44 +341,32 @@ def _print_memory_results(results, show_scores: bool = False) -> None:
 @click.option(
     "--db-path",
     default=None,
-    help="Database path or connection string. Default: ~/.omem/brain.db",
+    help="Database path (default: ~/.omem/brain.db).",
 )
 @click.option(
     "--backend",
     default="sqlite",
     type=click.Choice(["sqlite", "memory", "postgres"]),
-    help="Where to store data.",
+    help="Storage backend.",
 )
 @click.option(
     "--embedding-provider",
     default="local",
     type=click.Choice(["local", "openai", "sentence-transformers"]),
-    help="How to turn text into embeddings.",
+    help="Embedding provider.",
+    hidden=True,
 )
-@click.option("--quiet", is_flag=True, help="Print less.")
+@click.option("--quiet", is_flag=True, help="Print less.", hidden=True)
 @click.pass_context
 def cli(ctx: click.Context, db_path: Optional[str], backend: str, embedding_provider: str, quiet: bool):
-    """OMem — governed, auditable memory and state for AI agents.
-
-    Audit trails, AES-256-GCM encryption, belief revision, and git-like
-    snapshot / rollback — the compliance layer around multi-agent systems.
+    """Audit & rollback for AI agents.
 
     \b
-    New here? Try:
-        omem init                              # durable DB + MCP line
-        python -c "from omem import AgentState; ..."  # see README quickstart
-        omem status                            # one-glance health dashboard
-
-    \b
-    Tip: set these once and skip the flags everywhere:
-        OMEM_SESSION   default session ID
-        OMEM_DB        database path
-        OMEM_NS        default namespace
-        OMEM_ENCRYPTION_KEY   AES-256-GCM at rest
-        OMEM_USER_ID / OMEM_TEAM_ID / OMEM_ORG_ID   org namespace identity
-
-    \b
-    Set NO_COLOR=1 for plain output, or OMEM_DEBUG=1 to see full tracebacks.
+    Quick start:
+        omem init
+        omem demo
+        omem agent remember "…"
+        omem agent recall "…"
     """
     ctx.ensure_object(dict)
     ctx.obj["db_path"] = db_path
@@ -320,21 +378,29 @@ def cli(ctx: click.Context, db_path: Optional[str], backend: str, embedding_prov
         click.echo(ctx.get_help())
 
 
+@cli.command("commands")
+@click.pass_context
+def list_all_commands(ctx: click.Context):
+    """List every command (simple help shows only the everyday path)."""
+    formatter = ctx.make_formatter()
+    formatter.write(_c("All commands\n\n", fg="white", bold=True))
+    _write_command_groups(ctx.parent or ctx, formatter, all_commands=True)
+    click.echo(formatter.getvalue(), nl=False)
+    hint("Hidden aliases still work: add, search, maintain, bench, …")
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # omem status  — top-level dashboard shortcut
 # ──────────────────────────────────────────────────────────────────────────────
 
-@cli.command("status")
+@cli.command("status", short_help="Session health at a glance")
 @click.option("--session", "-s", default=None, envvar="OMEM_SESSION",
               help="Session ID. Reads OMEM_SESSION if not set.")
 @click.option("--namespace", "-n", default="default", envvar="OMEM_NS", show_default=True)
 @click.option("--db", default=None, envvar="OMEM_DB", help="Database path.")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
 def top_status(session: Optional[str], namespace: str, db: Optional[str], as_json: bool):
-    """Cross-layer health dashboard for a session.
-
-    Shows memory count, state goal, knowledge graph size, active traces,
-    and runtime agents — all in one glance.
+    """Session health at a glance — memory, state, knowledge, traces.
 
     \b
     Example:
@@ -417,7 +483,7 @@ def _print_status_dashboard(s: Dict[str, Any]) -> None:
     click.echo(W("  " + "─" * 50, fg="bright_black"))
 
 
-@cli.command()
+@cli.command(short_help="Set up local memory + MCP line")
 @click.option("--db-path", default=None, help="Custom SQLite database target path.")
 @click.option(
     "--cursor",
@@ -426,10 +492,9 @@ def _print_status_dashboard(s: Dict[str, Any]) -> None:
 )
 @click.pass_context
 def init(ctx: click.Context, db_path: Optional[str], cursor: bool):
-    """Initialize local memory and print the one MCP line for an agent.
+    """Set up local memory and print the one MCP line for your agent.
 
-    On an empty database this seeds the first-run story: the agent chose
-    MongoDB, and lineage shows which memory caused it. Run ``omem demo`` next.
+    On an empty database this seeds a first-run story. Run ``omem demo`` next.
     """
     from .demo_story import mcp_config, merge_cursor_mcp, seed_story
 
@@ -491,7 +556,7 @@ def add(ctx: click.Context, content: str, importance: Optional[float], namespace
     field("namespace", mem.namespace)
 
 
-@cli.command()
+@cli.command(short_help="Store a memory")
 @click.argument("content")
 @click.option("--importance", "-i", type=float, help="Explicit importance weight [0.0-1.0].")
 @click.option("--namespace", "-n", default="default", help="Memory namespace.")
@@ -598,7 +663,7 @@ def search(
     _print_memory_results(results, show_scores=show_scores)
 
 
-@cli.command()
+@cli.command(short_help="Find memories")
 @click.argument("query")
 @click.option("--k", "-k", default=5, help="Limit maximum returned memories.")
 @click.option("--namespace", "-n", help="Filter by namespace.")
@@ -964,7 +1029,7 @@ def namespaces(ctx: click.Context, output_format: str):
         click.echo(f"  {GLYPH_INFO} {ns:22s} {stats.get('total', 0):>6d} memories")
 
 
-@cli.command()
+@cli.command(short_help="See audit & rollback in one run")
 @click.argument(
     "scenario",
     required=False,
@@ -974,12 +1039,10 @@ def namespaces(ctx: click.Context, output_format: str):
 @click.option("--json", "as_json", is_flag=True, help="Print the remediation report as JSON.")
 @click.pass_context
 def demo(ctx: click.Context, scenario: str, as_json: bool):
-    """Memory poisoning → provenance → audit-verified rollback.
+    """See audit & rollback — poison a memory, then recover it.
 
-    Default scenario is ``poison-recovery``. Run:
-
+    \b
         omem demo
-        omem demo poison-recovery
     """
     from .demo_poison import run_poison_recovery
 
@@ -1230,7 +1293,7 @@ def codebase(ctx: click.Context, query: str, namespace: str, depth: int, top_k: 
         click.echo('')
 
 
-@cli.command()
+@cli.command(short_help="Start the MCP server")
 @click.option(
     "--transport",
     default="stdio",
@@ -2065,33 +2128,18 @@ def _get_agent_state(
 AgentState = None  # resolved inside each command
 
 
-@click.group("agent", invoke_without_command=True)
+@click.group("agent", invoke_without_command=True, short_help="Remember, recall, snapshot, rollback")
 @click.pass_context
 def agent_group(ctx: click.Context):
-    """Unified agent interface — memory, state, knowledge, context, governance.
-
-    The primary way to interact with OMem. Combines all layers into one
-    simple command surface. Set OMEM_SESSION once and skip --session everywhere.
+    """One command for memory, state, and rollback.
 
     \b
-    Quickstart:
+    Quick start:
         export OMEM_SESSION=my-agent
         omem agent remember "FastAPI uses Pydantic v2"
         omem agent recall "Pydantic"
-        omem agent explain "Pydantic validation"
-        omem agent learn FastAPI uses Pydantic
-        omem agent context --task "implement auth endpoint"
-        omem agent status
         omem agent snapshot --label before-refactor
-        omem agent checkpoint
-        omem agent clone --new-session my-agent-v2
-        omem agent export > session.json
-
-    \b
-    Environment variables (set once, works for all subcommands):
-        OMEM_SESSION  — default session ID
-        OMEM_DB       — database path
-        OMEM_NS       — default namespace
+        omem agent rollback <snapshot-id>
     """
     ctx.ensure_object(dict)
     if ctx.invoked_subcommand is None:
