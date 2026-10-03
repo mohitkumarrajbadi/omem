@@ -22,7 +22,11 @@ class AuditLogger:
     def __init__(self, db_path: Optional[str] = None) -> None:
         if db_path is None:
             db_path = os.path.expanduser("~/.omem/audit.db")
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        # :memory: (and bare filenames) have no parent dir to create.
+        if db_path != ":memory:":
+            parent = os.path.dirname(db_path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
         self._db_path = db_path
         self._queue: queue.Queue = queue.Queue()
         self._running = True

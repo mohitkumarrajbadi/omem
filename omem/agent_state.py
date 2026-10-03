@@ -316,18 +316,32 @@ class AgentState:
         # Sidecar SQLite paths when memories live in Postgres (cloud Docker / Linode)
         _state_db = _db or ":memory:"
         _audit_db: Optional[str] = os.environ.get("OMEM_AUDIT_DB_PATH") or None
-        _runtime_db: Optional[str] = None
+        _runtime_db: Optional[str] = os.environ.get("OMEM_RUNTIME_DB_PATH") or None
         if _cfg.backend == "postgres":
             _state_db = os.environ.get("OMEM_STATE_DB_PATH", "/data/omem_state.db")
             _audit_db = _audit_db or "/data/omem_audit.db"
-            _runtime_db = os.environ.get("OMEM_RUNTIME_DB_PATH", "/data/omem_runtime.db")
+            _runtime_db = _runtime_db or os.environ.get(
+                "OMEM_RUNTIME_DB_PATH", "/data/omem_runtime.db"
+            )
             for _path in (_state_db, _audit_db, _runtime_db):
                 _dir = os.path.dirname(_path)
                 if _dir and not os.path.exists(_dir):
                     os.makedirs(_dir, exist_ok=True)
         elif isinstance(_cfg.db_path, str) and _cfg.db_path not in (":memory:", None):
             _audit_db = _audit_db or _cfg.db_path.replace(".db", "_audit.db")
-            _runtime_db = _cfg.db_path.replace(".db", "_runtime.db")
+            _runtime_db = _runtime_db or _cfg.db_path.replace(".db", "_runtime.db")
+            for _path in (_audit_db, _runtime_db):
+                if not _path or _path == ":memory:":
+                    continue
+                _dir = os.path.dirname(_path)
+                if _dir and not os.path.exists(_dir):
+                    os.makedirs(_dir, exist_ok=True)
+        else:
+            # In-memory / :memory: backends — never fall back to ~/.omem (breaks CI/tests).
+            if not _audit_db:
+                _audit_db = ":memory:"
+            if not _runtime_db:
+                _runtime_db = ":memory:"
 
         from .governance.audit import AuditLogger
 

@@ -46,6 +46,8 @@ _PATTERNS: Dict[MemoryType, List[Tuple[re.Pattern, float]]] = {
     ],
     MemoryType.DECISION: [
         (re.compile(r"\bdecided?\b"), 0.50),
+        (re.compile(r"\bdecision\b"), 0.55),
+        (re.compile(r"\bmerge\s+decision\b"), 0.70),
         (re.compile(r"\bchose\b"), 0.45),
         (re.compile(r"\bchoos"), 0.35),
         (re.compile(r"\bselect"), 0.30),

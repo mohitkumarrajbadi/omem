@@ -49,6 +49,7 @@ See: docs/roadmap/FULL_IMPLEMENTATION_PLAN.md — Phase 3
 import hashlib
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -288,6 +289,11 @@ def _format_memory_line(rank: int, mem: Memory) -> str:
     )
 
 
+def _renumber_memory_line(text: str, rank: int) -> str:
+    """Replace the leading rank after budget drops / re-order."""
+    return re.sub(r"^\d+\.", f"{rank}.", text, count=1)
+
+
 def _format_knowledge_section(memories: List[Memory], omem_instance) -> str:
     """Extract entity context from recalled memories via the knowledge graph."""
     kg = getattr(getattr(omem_instance, "brain", None), "knowledge_graph", None)
@@ -335,13 +341,24 @@ def _format_bundle_text(
     budget_tokens: int,
     savings: float,
 ) -> str:
-    """Compose the final prompt block from packed sections."""
+    """Compose the final prompt block from packed sections.
+
+    Wrapped in ``<!-- OMEM_CONTEXT_START/END -->`` so hosts can replace the
+    slot without touching earlier conversation turns (KV-cache discipline).
+    """
+    from .inject import OMEM_CONTEXT_END, OMEM_CONTEXT_START
+
     header_parts = ["## OMem Context"]
     if session_id:
         header_parts.append(f"session: `{session_id}`")
     header = " — ".join(header_parts)
 
-    parts = [header, f"*Task: {task}*", ""]
+    parts = [
+        OMEM_CONTEXT_START,
+        header,
+        f"*Task: {task}*",
+        "",
+    ]
 
     ordered_keys = ["state_header", "state_tools", "memory", "knowledge"]
     section_titles = {
@@ -362,6 +379,7 @@ def _format_bundle_text(
         f"---\n*{token_count:,} of {budget_tokens:,} tokens | "
         f"{savings_pct} saved vs full memory dump*"
     )
+    parts.append(OMEM_CONTEXT_END)
     return "\n".join(parts)
 
 
@@ -453,6 +471,7 @@ class ContextEngine:
         memories: List[Memory] = []
         if "memory" in request.include and self._memory:
             memories = self._recall_memories(request, mode)
+            memories = self._pin_priority_memories(memories, request, mode)
             candidates.extend(self._make_memory_sections(memories, request))
 
         # ── Step 2: Compute token counts ────────────────────────────
@@ -483,22 +502,35 @@ class ContextEngine:
         naive_tokens = self._naive_token_count(request)
         savings = max(0.0, 1.0 - used_tokens / naive_tokens) if naive_tokens > 0 else 0.0
 
-        # ── Step 6: Format ───────────────────────────────────────────
+        # ── Step 6: Format (contiguous ranks, stable memory order) ───
         sections: Dict[str, str] = {}
         section_tokens: Dict[str, int] = {}
         memory_ids: List[str] = []
         state_included = False
 
+        mem_secs = sorted(
+            [s for s in packed if s.memory_id],
+            key=lambda s: (-s.priority, s.memory_id or s.name),
+        )
+        for i, sec in enumerate(mem_secs, start=1):
+            # Re-number after drops so hosts see 1..N (not 1,2,3,5).
+            sec.text = _renumber_memory_line(sec.text, i)
+
         for sec in packed:
-            key = sec.name if ":" not in sec.name else "memory"
+            if sec.memory_id:
+                continue  # handled below in stable order
+            key = sec.name
             sections[key] = sections.get(key, "") + (
                 "\n" + sec.text if key in sections else sec.text
             )
             section_tokens[key] = section_tokens.get(key, 0) + sec.token_count
-            if sec.memory_id:
-                memory_ids.append(sec.memory_id)
             if sec.name in ("state_header", "state_tools"):
                 state_included = True
+
+        if mem_secs:
+            sections["memory"] = "\n".join(s.text for s in mem_secs)
+            section_tokens["memory"] = sum(s.token_count for s in mem_secs)
+            memory_ids = [s.memory_id for s in mem_secs if s.memory_id]
 
         text = _format_bundle_text(
             sections=sections,
@@ -620,14 +652,61 @@ class ContextEngine:
             if request.exclude_types and mem.type in request.exclude_types:
                 continue
             score = getattr(mem, "score", mem.importance)
+            # Pin DECISION / very-high-importance rows above ordinary fusion
+            # so merge outcomes survive packing without demo-side injects.
+            if mem.type == MemoryType.DECISION or mem.importance >= 0.95:
+                priority = 0.88
+            else:
+                priority = min(0.85, 0.5 + score * 0.35)  # 0.5–0.85 range
             sections.append(_ContextSection(
                 name=f"memory:{mem.id}",
                 text=_format_memory_line(rank, mem),
-                priority=min(0.85, 0.5 + score * 0.35),  # 0.5–0.85 range
+                priority=priority,
                 memory_id=mem.id,
                 truncatable=False,
             ))
         return sections
+
+    def _pin_priority_memories(
+        self,
+        memories: List[Memory],
+        request: ContextRequest,
+        mode: str,
+    ) -> List[Memory]:
+        """Ensure DECISION / high-importance rows are present for packing.
+
+        In-process fusion can miss a freshly written merge decision even when
+        strong/pgvector recall finds it. Re-query with ``mode=strong`` for the
+        same task and prepend any DECISION (or importance≥0.95) hits that were
+        absent from the primary recall list.
+        """
+        if not memories and mode == "strong":
+            return memories
+        if self._memory is None:
+            return memories
+        try:
+            strong = self._memory.recall(
+                request.task,
+                k=max(5, min(request.top_k_memories, 10)),
+                namespace=request.namespace,
+                mode="strong",
+            )
+        except Exception as exc:
+            logger.debug("context: strong pin recall skipped — %s", exc)
+            return memories
+
+        seen = {m.id for m in memories}
+        pinned: List[Memory] = []
+        for mem in strong:
+            if mem.id in seen:
+                continue
+            if mem.type == MemoryType.DECISION or mem.importance >= 0.95:
+                pinned.append(mem)
+                seen.add(mem.id)
+        if not pinned:
+            return memories
+        # Prepend so they occupy early ranks before ordinary fusion hits.
+        return pinned + memories
 
     # ------------------------------------------------------------------
     # Greedy packer
@@ -646,7 +725,13 @@ class ContextEngine:
         Returns:
             (packed_sections, total_tokens_used)
         """
-        ordered = sorted(candidates, key=lambda s: s.priority, reverse=True)
+        ordered = sorted(
+            candidates,
+            # Deterministic: priority desc, then stable name (memory id).
+            # Avoids pack-order jitter that reshuffles ## OMem Context and
+            # defeats host-side LLM KV-cache when only scores float slightly.
+            key=lambda s: (-s.priority, s.name),
+        )
         packed: List[_ContextSection] = []
         used = 0
 

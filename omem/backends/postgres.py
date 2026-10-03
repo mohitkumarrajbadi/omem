@@ -75,8 +75,20 @@ class PostgresBackend(Backend):
             self._pgvector_enabled = False
             self._embedding_model = os.environ.get("OMEM_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
             self._embedding_version = os.environ.get("OMEM_EMBEDDING_VERSION", "v1")
-            self._create_table()
-            self._migrate_layers()
+            # Dual-DSN: when OMEM_MIGRATION_DB_URL differs from the runtime
+            # connection, cloud migrations already own DDL. Skip schema work so
+            # a DML-only role (omem_app, NOBYPASSRLS) can open backends safely.
+            mig = (os.environ.get("OMEM_MIGRATION_DB_URL") or "").strip()
+            if mig and mig != connection_string:
+                self._pgvector_enabled = self._detect_pgvector()
+                logger.info(
+                    "PostgresBackend skipping DDL (OMEM_MIGRATION_DB_URL set; "
+                    "pgvector=%s).",
+                    self._pgvector_enabled,
+                )
+            else:
+                self._create_table()
+                self._migrate_layers()
             logger.info(
                 "PostgresBackend initialized (pgvector=%s).",
                 self._pgvector_enabled,
@@ -100,38 +112,62 @@ class PostgresBackend(Backend):
     def _apply_namespace_session(self, cur, namespace: str) -> None:
         apply_pg_session(cur, resolve_pg_session(fallback_namespace=namespace))
 
+    def _detect_pgvector(self) -> bool:
+        """Return True when the vector extension is already installed (no DDL)."""
+        conn = self._get_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT 1 FROM pg_extension WHERE extname = 'vector' LIMIT 1"
+                )
+                return cur.fetchone() is not None
+        except Exception as exc:
+            logger.debug("pgvector detect failed: %s", exc)
+            return False
+        finally:
+            self._put_conn(conn)
+
     def _create_table(self) -> None:
         conn = self._get_conn()
         try:
             with conn.cursor() as cur:
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS memories (
-                        id              TEXT PRIMARY KEY,
-                        type            INTEGER NOT NULL,
-                        content         TEXT    NOT NULL,
-                        vector          BYTEA,
-                        timestamp       DOUBLE PRECISION NOT NULL,
-                        importance      DOUBLE PRECISION DEFAULT 0.5,
-                        utility_score   DOUBLE PRECISION DEFAULT 0.0,
-                        access_count    INTEGER DEFAULT 0,
-                        last_accessed   DOUBLE PRECISION DEFAULT 0.0,
-                        namespace       TEXT    DEFAULT 'default',
-                        source          TEXT    DEFAULT '',
-                        active          INTEGER DEFAULT 1,
-                        status          INTEGER DEFAULT 0,
-                        consensus_score DOUBLE PRECISION DEFAULT 0.0,
-                        logical_hash    TEXT    DEFAULT '',
-                        metadata        TEXT    DEFAULT '{}',
-                        score           DOUBLE PRECISION DEFAULT 0.0
+                try:
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS memories (
+                            id              TEXT PRIMARY KEY,
+                            type            INTEGER NOT NULL,
+                            content         TEXT    NOT NULL,
+                            vector          BYTEA,
+                            timestamp       DOUBLE PRECISION NOT NULL,
+                            importance      DOUBLE PRECISION DEFAULT 0.5,
+                            utility_score   DOUBLE PRECISION DEFAULT 0.0,
+                            access_count    INTEGER DEFAULT 0,
+                            last_accessed   DOUBLE PRECISION DEFAULT 0.0,
+                            namespace       TEXT    DEFAULT 'default',
+                            source          TEXT    DEFAULT '',
+                            active          INTEGER DEFAULT 1,
+                            status          INTEGER DEFAULT 0,
+                            consensus_score DOUBLE PRECISION DEFAULT 0.0,
+                            logical_hash    TEXT    DEFAULT '',
+                            metadata        TEXT    DEFAULT '{}',
+                            score           DOUBLE PRECISION DEFAULT 0.0
+                        )
+                    """)
+                    cur.execute("CREATE INDEX IF NOT EXISTS idx_mem_type ON memories(type)")
+                    cur.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_mem_ns ON memories(namespace)"
                     )
-                """)
-                cur.execute("CREATE INDEX IF NOT EXISTS idx_mem_type ON memories(type)")
-                cur.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_mem_ns ON memories(namespace)"
-                )
-                cur.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_mem_hash ON memories(logical_hash)"
-                )
+                    cur.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_mem_hash ON memories(logical_hash)"
+                    )
+                except self._psycopg2.Error as exc:
+                    # DML-only roles hit this when dual-DSN skip was not used.
+                    logger.warning(
+                        "Postgres schema create skipped (insufficient privilege): %s",
+                        exc,
+                    )
+                    conn.rollback()
+                    return
             conn.commit()
         finally:
             self._put_conn(conn)
@@ -139,6 +175,7 @@ class PostgresBackend(Backend):
     def _migrate_layers(self) -> None:
         """Add pgvector, embedding versioning, and projection tables."""
         conn = self._get_conn()
+        skipped_ddl = False
         try:
             with conn.cursor() as cur:
                 try:
@@ -148,67 +185,80 @@ class PostgresBackend(Backend):
                     logger.debug("pgvector extension unavailable: %s", exc)
                     self._pgvector_enabled = False
 
-                for col, col_type in (
-                    ("embedding", "vector(384)"),
-                    ("embedding_model", "TEXT DEFAULT ''"),
-                    ("embedding_version", "TEXT DEFAULT ''"),
-                    ("embedding_dim", "INTEGER DEFAULT 384"),
-                    ("lifecycle_state", "TEXT DEFAULT 'active'"),
-                    # Tenant columns — populated on write so strict RLS
-                    # (org-scoped policies) passes under non-superuser roles.
-                    ("org_id", "TEXT NOT NULL DEFAULT ''"),
-                    ("user_id", "TEXT NOT NULL DEFAULT ''"),
-                ):
+                try:
+                    for col, col_type in (
+                        ("embedding", "vector(384)"),
+                        ("embedding_model", "TEXT DEFAULT ''"),
+                        ("embedding_version", "TEXT DEFAULT ''"),
+                        ("embedding_dim", "INTEGER DEFAULT 384"),
+                        ("lifecycle_state", "TEXT DEFAULT 'active'"),
+                        # Tenant columns — populated on write so strict RLS
+                        # (org-scoped policies) passes under non-superuser roles.
+                        ("org_id", "TEXT NOT NULL DEFAULT ''"),
+                        ("user_id", "TEXT NOT NULL DEFAULT ''"),
+                    ):
+                        cur.execute(
+                            """
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_name = 'memories' AND column_name = %s
+                            """,
+                            (col,),
+                        )
+                        if cur.fetchone() is None:
+                            cur.execute(
+                                f"ALTER TABLE memories ADD COLUMN {col} {col_type}"
+                            )
+
                     cur.execute(
                         """
-                        SELECT 1 FROM information_schema.columns
-                        WHERE table_name = 'memories' AND column_name = %s
-                        """,
-                        (col,),
-                    )
-                    if cur.fetchone() is None:
-                        cur.execute(
-                            f"ALTER TABLE memories ADD COLUMN {col} {col_type}"
+                        CREATE TABLE IF NOT EXISTS memory_edges (
+                            id TEXT PRIMARY KEY,
+                            namespace TEXT NOT NULL DEFAULT 'default',
+                            source_id TEXT NOT NULL,
+                            target_id TEXT NOT NULL,
+                            relation_type TEXT NOT NULL DEFAULT 'related',
+                            confidence DOUBLE PRECISION DEFAULT 1.0,
+                            metadata JSONB DEFAULT '{}',
+                            active INTEGER DEFAULT 1,
+                            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                         )
-
-                cur.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS memory_edges (
-                        id TEXT PRIMARY KEY,
-                        namespace TEXT NOT NULL DEFAULT 'default',
-                        source_id TEXT NOT NULL,
-                        target_id TEXT NOT NULL,
-                        relation_type TEXT NOT NULL DEFAULT 'related',
-                        confidence DOUBLE PRECISION DEFAULT 1.0,
-                        metadata JSONB DEFAULT '{}',
-                        active INTEGER DEFAULT 1,
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                        """
                     )
-                    """
-                )
-                cur.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS memory_events (
-                        id BIGSERIAL PRIMARY KEY,
-                        event_type TEXT NOT NULL,
-                        memory_id TEXT,
-                        namespace TEXT NOT NULL DEFAULT 'default',
-                        payload JSONB DEFAULT '{}',
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                        processed_at TIMESTAMPTZ,
-                        attempts INTEGER DEFAULT 0
+                    cur.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS memory_events (
+                            id BIGSERIAL PRIMARY KEY,
+                            event_type TEXT NOT NULL,
+                            memory_id TEXT,
+                            namespace TEXT NOT NULL DEFAULT 'default',
+                            payload JSONB DEFAULT '{}',
+                            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                            processed_at TIMESTAMPTZ,
+                            attempts INTEGER DEFAULT 0
+                        )
+                        """
                     )
-                    """
-                )
-                cur.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_events_unprocessed
-                    ON memory_events(created_at) WHERE processed_at IS NULL
-                    """
-                )
+                    cur.execute(
+                        """
+                        CREATE INDEX IF NOT EXISTS idx_events_unprocessed
+                        ON memory_events(created_at) WHERE processed_at IS NULL
+                        """
+                    )
+                except self._psycopg2.Error as exc:
+                    logger.warning(
+                        "Postgres layer migrate skipped (insufficient privilege): %s",
+                        exc,
+                    )
+                    conn.rollback()
+                    skipped_ddl = True
+                    return
             conn.commit()
         finally:
             self._put_conn(conn)
+
+        if skipped_ddl:
+            self._pgvector_enabled = self._detect_pgvector()
+            return
 
         if self._pgvector_enabled:
             try:
