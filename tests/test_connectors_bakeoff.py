@@ -1,6 +1,7 @@
 """Connectors (folder/URL/Notion/Drive) and the no-LLM bakeoff."""
 
-from omem import AgentState, MemoryOS
+from omem import AgentState
+from omem.memory import MemoryOS
 from omem.ingest.connectors import ingest_drive, ingest_notion, notion_blocks_to_text
 from omem.ingest.http import StaticTransport
 

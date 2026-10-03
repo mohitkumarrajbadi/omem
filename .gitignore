@@ -38,6 +38,11 @@ omem_rust*.so
 
 # IDE / local config
 .claude/
+.DS_Store
+**/.DS_Store
+
+# Generated local artifacts (MCP smoke, machine-specific configs)
+artifacts/
 
 # Documentation
 # (Markdown files should be tracked)

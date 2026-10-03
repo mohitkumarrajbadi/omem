@@ -1,258 +1,34 @@
-"""OMem CLI — a clean, fast command line for agent memory and state."""
+"""OMem CLI commands — agent memory, state, governance, MCP."""
+
+from __future__ import annotations
 
 import json
 import os
 import sys
 import time
-from collections import OrderedDict
-from difflib import get_close_matches
 from typing import Any, Dict, Optional
 
 import click
 
-from . import __version__
-from .api import OMem
-from .types import MemoryType
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Visual system — one consistent look across every command.
-#
-# Principles: clear language, calm color, helpful next steps. Color is disabled
-# automatically when piped/redirected or when NO_COLOR / OMEM_NO_COLOR is set,
-# so output stays clean in scripts, logs, and CI.
-# ──────────────────────────────────────────────────────────────────────────────
-
-GLYPH_OK = "✓"
-GLYPH_ERR = "✗"
-GLYPH_WARN = "!"
-GLYPH_INFO = "•"
-GLYPH_ARROW = "→"
-
-
-def _color_enabled() -> bool:
-    """Honor NO_COLOR (https://no-color.org) and our own opt-out."""
-    if os.environ.get("NO_COLOR") or os.environ.get("OMEM_NO_COLOR"):
-        return False
-    return True
-
-
-def _c(text: str, **style) -> str:
-    """Style text, but quietly no-op when color is disabled."""
-    if not _color_enabled():
-        return text
-    return click.style(text, **style)
-
-
-def success(message: str) -> None:
-    """A completed action."""
-    click.echo(f"{_c(GLYPH_OK, fg='green', bold=True)} {message}")
-
-
-def failure(message: str) -> None:
-    """A failed action (written to stderr)."""
-    click.echo(f"{_c(GLYPH_ERR, fg='red', bold=True)} {message}", err=True)
-
-
-def warn(message: str) -> None:
-    """A non-fatal warning."""
-    click.echo(f"{_c(GLYPH_WARN, fg='yellow', bold=True)} {message}")
-
-
-def note(message: str) -> None:
-    """A neutral status line."""
-    click.echo(f"{_c(GLYPH_INFO, fg='cyan')} {message}")
-
-
-def hint(message: str) -> None:
-    """A dimmed 'try this next' suggestion."""
-    click.echo(f"  {_c(GLYPH_ARROW + ' ' + message, fg='bright_black')}")
-
-
-def field(label: str, value: Any, width: int = 11) -> None:
-    """A left-aligned key/value detail line, consistent everywhere."""
-    click.echo(f"  {_c(f'{label:<{width}}', fg='bright_black')}  {value}")
-
-
-def rule(width: int = 52) -> None:
-    click.echo(_c("  " + "─" * width, fg="bright_black"))
-
-
-_BANNER_ART = r"""
- ██████╗ ███╗   ███╗███████╗███╗   ███╗
-██╔═══██╗████╗ ████║██╔════╝████╗ ████║
-██║   ██║██╔████╔██║█████╗  ██╔████╔██║
-██║   ██║██║╚██╔╝██║██╔══╝  ██║╚██╔╝██║
-╚██████╔╝██║ ╚═╝ ██║███████╗██║ ╚═╝ ██║
- ╚═════╝ ╚═╝     ╚═╝╚══════╝╚═╝     ╚═╝
-"""
-
-CLI_BANNER = (
-    _c(_BANNER_ART, fg="cyan", bold=True)
-    + _c("  Audit & rollback for AI agents\n", fg="white", bold=True)
+from .. import __version__
+from ..api import OMem
+from ..types import MemoryType
+from .help import CONTEXT_SETTINGS, OMemGroup, _write_command_groups, _show_all_commands
+from .ui import (
+    GLYPH_ARROW,
+    GLYPH_ERR,
+    GLYPH_INFO,
+    GLYPH_OK,
+    GLYPH_WARN,
+    _c,
+    failure,
+    field,
+    hint,
+    note,
+    rule,
+    success,
+    warn,
 )
-
-# Simple default help — the 60-second path. Everything else stays registered
-# and listed by `omem commands`. AST stays opt-in via OMEM_ENABLE_EXPERIMENTAL_AST=1.
-SIMPLE_HELP_GROUPS = OrderedDict(
-    [
-        ("Get started", ["init", "demo", "agent"]),
-        ("Everyday", ["remember", "recall", "status", "serve"]),
-    ]
-)
-
-# Full catalog for `omem commands` (and when OMEM_CLI_ALL=1).
-ALL_COMMAND_GROUPS = OrderedDict(
-    [
-        ("Get started", ["init", "demo", "agent"]),
-        ("Everyday", ["remember", "recall", "status", "serve"]),
-        ("Memory", ["list", "inspect", "stats", "sleep", "clear", "namespaces"]),
-        ("State & context", ["state", "context", "knowledge"]),
-        ("Governance", ["governance", "provenance", "observe", "runtime", "org"]),
-        ("Connectors", ["ingest-docs", "ingest-url", "ingest-notion", "ingest-drive"]),
-        ("Server", ["health", "export", "import", "version"]),
-        ("Experimental AST", ["ingest", "sync", "codebase"]),
-    ]
-)
-
-# Always hidden from help catalogs (still invokable).
-_HELP_HIDDEN = frozenset({
-    "add",
-    "search",
-    "maintain",
-    "benchmark",
-    "bench",
-    "dashboard",
-    "completion",
-    "commands",  # listed in the footer, not as a row
-})
-
-_AST_HELP_CMDS = frozenset({"ingest", "sync", "codebase"})
-
-# Commands shown only via `omem commands` / OMEM_CLI_ALL=1.
-_ADVANCED_HELP_CMDS = frozenset(
-    {
-        "list",
-        "inspect",
-        "stats",
-        "sleep",
-        "clear",
-        "namespaces",
-        "state",
-        "context",
-        "knowledge",
-        "governance",
-        "provenance",
-        "observe",
-        "runtime",
-        "org",
-        "ingest-docs",
-        "ingest-url",
-        "ingest-notion",
-        "ingest-drive",
-        "health",
-        "export",
-        "import",
-        "version",
-    }
-)
-
-
-def _show_all_commands() -> bool:
-    return os.environ.get("OMEM_CLI_ALL", "").strip() in {"1", "true", "yes"}
-
-
-def _command_groups_for_help(*, all_commands: bool = False):
-    from .experimental import ast_enabled
-
-    source = ALL_COMMAND_GROUPS if all_commands or _show_all_commands() else SIMPLE_HELP_GROUPS
-    groups = OrderedDict()
-    for category, cmd_list in source.items():
-        if category.startswith("Experimental") and not ast_enabled():
-            continue
-        groups[category] = cmd_list
-    return groups
-
-
-def _help_hidden_names(*, all_commands: bool = False) -> set:
-    from .experimental import ast_enabled
-
-    hidden = set(_HELP_HIDDEN)
-    if not ast_enabled():
-        hidden |= _AST_HELP_CMDS
-    if not (all_commands or _show_all_commands()):
-        hidden |= _ADVANCED_HELP_CMDS
-    return hidden
-
-
-def _write_command_groups(ctx, formatter, *, all_commands: bool = False) -> None:
-    group = ctx.command
-    commands = set(group.list_commands(ctx))
-    hidden = _help_hidden_names(all_commands=all_commands)
-    mapped = set()
-
-    for category, cmd_list in _command_groups_for_help(all_commands=all_commands).items():
-        available_cmds = [c for c in cmd_list if c in commands and c not in hidden]
-        if not available_cmds:
-            continue
-        with formatter.section(category):
-            rows = []
-            for name in available_cmds:
-                cmd = group.get_command(ctx, name)
-                if cmd is None:
-                    continue
-                rows.append((name, cmd.get_short_help_str()))
-                mapped.add(name)
-            formatter.write_dl(rows)
-
-    # Never leak intentionally-hidden names into an orphan "More" section.
-    mapped |= hidden & commands
-    orphans = sorted(commands - mapped)
-    if orphans:
-        with formatter.section("More"):
-            rows = []
-            for name in orphans:
-                cmd = group.get_command(ctx, name)
-                rows.append((name, cmd.get_short_help_str() if cmd else ""))
-            formatter.write_dl(rows)
-
-
-class OMemGroup(click.Group):
-    """Click group with a categorized help screen and typo suggestions."""
-
-    def format_help(self, ctx, formatter):
-        formatter.write(CLI_BANNER)
-        formatter.write("\n\n")
-        self.format_usage(ctx, formatter)
-        self.format_options(ctx, formatter)
-        # Note: click.MultiCommand.format_options already calls format_commands
-        # internally, so we do NOT call it again here to avoid duplication.
-        if not _show_all_commands():
-            formatter.write(
-                "\n"
-                + _c("  Tip: ", fg="bright_black")
-                + "omem commands"
-                + _c("  — full list\n", fg="bright_black")
-            )
-
-    def format_commands(self, ctx, formatter):
-        _write_command_groups(ctx, formatter, all_commands=_show_all_commands())
-
-    def resolve_command(self, ctx, args):
-        """Resolve a command, with a friendly 'did you mean' on a typo."""
-        try:
-            return super().resolve_command(ctx, args)
-        except click.UsageError:
-            cmd_name = args[0] if args else ""
-            matches = get_close_matches(cmd_name, self.list_commands(ctx), n=3, cutoff=0.6)
-            lines = [f"Unknown command {cmd_name!r}."]
-            if matches:
-                suggestion = matches[0] if len(matches) == 1 else ", ".join(matches)
-                lines.append(f"Did you mean: {suggestion}?")
-            lines.append("Run 'omem --help' to see all commands.")
-            raise click.UsageError("\n".join(lines)) from None
-
-CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"], max_content_width=100)
-
 
 def _get_omem(ctx: click.Context) -> OMem:
     config = ctx.obj or {}
@@ -407,7 +183,7 @@ def top_status(session: Optional[str], namespace: str, db: Optional[str], as_jso
         omem status --session mybot
         export OMEM_SESSION=mybot && omem status
     """
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(session_id=session, namespace=namespace, db_path=db)
     s = agent.status()
     if as_json:
@@ -496,7 +272,7 @@ def init(ctx: click.Context, db_path: Optional[str], cursor: bool):
 
     On an empty database this seeds a first-run story. Run ``omem demo`` next.
     """
-    from .demo_story import mcp_config, merge_cursor_mcp, seed_story
+    from ..demo.story import mcp_config, merge_cursor_mcp, seed_story
 
     db_path = db_path or ctx.obj.get("db_path") or os.path.expanduser("~/.omem/brain.db")
 
@@ -585,7 +361,7 @@ def remember(
     output_format: str,
 ):
     """Store a memory in the graph-backed memory engine."""
-    from .memory import MemoryOS
+    from ..memory import MemoryOS
 
     memory = MemoryOS(_get_omem(ctx))
     type_enum = _resolve_memory_type(mem_type)
@@ -694,7 +470,7 @@ def recall(
     show_scores: bool,
 ):
     """Search memories with smart, multi-signal ranking."""
-    from .memory import MemoryOS
+    from ..memory import MemoryOS
 
     memory = MemoryOS(_get_omem(ctx))
     results = memory.recall(
@@ -970,7 +746,7 @@ def maintain(
 @click.pass_context
 def sleep(ctx: click.Context, speed: str, output_format: str):
     """Consolidate memory while the agent is idle."""
-    from .memory import MemoryOS
+    from ..memory import MemoryOS
 
     memory = MemoryOS(_get_omem(ctx))
     result = memory.consolidate(speed=speed)
@@ -1044,7 +820,7 @@ def demo(ctx: click.Context, scenario: str, as_json: bool):
     \b
         omem demo
     """
-    from .demo_poison import run_poison_recovery
+    from ..demo.poison import run_poison_recovery
 
     del scenario  # only one scenario wired today
     db_path = (ctx.obj or {}).get("db_path")
@@ -1138,7 +914,7 @@ def benchmark(ctx: click.Context, n: int):
 @click.pass_context
 def dashboard(ctx: click.Context, port: int):
     """Open the web dashboard in your browser."""
-    from .observe.dashboard.server import serve as start_dashboard
+    from ..observe.dashboard.server import serve as start_dashboard
 
     m = _get_omem(ctx)
     note(f"Dashboard running at http://localhost:{port}  (Ctrl+C to stop)")
@@ -1167,7 +943,7 @@ def health(ctx: click.Context):
 @click.pass_context
 def ingest(ctx: click.Context, path: str, namespace: str):
     """Index a codebase into memory (experimental AST — OMEM_ENABLE_EXPERIMENTAL_AST=1)."""
-    from .experimental import require_ast
+    from ..experimental import require_ast
 
     try:
         require_ast("omem ingest")
@@ -1185,7 +961,7 @@ def ingest(ctx: click.Context, path: str, namespace: str):
 @click.pass_context
 def ingest_docs(ctx: click.Context, path: str, namespace: str):
     """Ingest markdown/HTML/PDF files from a folder (no LLM extract)."""
-    from .memory import MemoryOS
+    from ..memory import MemoryOS
 
     memory = MemoryOS(_get_omem(ctx))
     result = memory.ingest_folder(path, namespace=namespace)
@@ -1201,7 +977,7 @@ def ingest_docs(ctx: click.Context, path: str, namespace: str):
 @click.pass_context
 def ingest_url_cmd(ctx: click.Context, url: str, namespace: str):
     """Fetch a URL and store stripped text as chunks."""
-    from .memory import MemoryOS
+    from ..memory import MemoryOS
 
     memory = MemoryOS(_get_omem(ctx))
     result = memory.ingest_url(url, namespace=namespace)
@@ -1216,7 +992,7 @@ def ingest_url_cmd(ctx: click.Context, url: str, namespace: str):
 @click.pass_context
 def ingest_notion_cmd(ctx: click.Context, token: Optional[str], query: str, namespace: str, max_pages: int):
     """Pull Notion pages via REST and ingest block text (no LLM)."""
-    from .memory import MemoryOS
+    from ..memory import MemoryOS
 
     memory = MemoryOS(_get_omem(ctx))
     result = memory.ingest_notion(token=token, query=query, namespace=namespace, max_pages=max_pages)
@@ -1239,7 +1015,7 @@ def ingest_drive_cmd(
     max_files: int,
 ):
     """Pull Google Drive files via REST and ingest exported text (no LLM)."""
-    from .memory import MemoryOS
+    from ..memory import MemoryOS
 
     memory = MemoryOS(_get_omem(ctx))
     result = memory.ingest_drive(
@@ -1256,7 +1032,7 @@ def ingest_drive_cmd(
 @click.pass_context
 def sync(ctx: click.Context, path: str, namespace: str):
     """Sync code changes since the last index (experimental AST)."""
-    from .experimental import require_ast
+    from ..experimental import require_ast
 
     try:
         require_ast("omem sync")
@@ -1276,7 +1052,7 @@ def sync(ctx: click.Context, path: str, namespace: str):
 @click.pass_context
 def codebase(ctx: click.Context, query: str, namespace: str, depth: int, top_k: int):
     """Search an indexed codebase (experimental AST)."""
-    from .experimental import require_ast
+    from ..experimental import require_ast
 
     try:
         require_ast("omem codebase")
@@ -1361,7 +1137,7 @@ def serve(
         os.environ.setdefault("OMEM_BACKEND", "sqlite")
 
     try:
-        from .integrations.mcp_server import (
+        from ..integrations.mcp_server import (
             configure_mcp_server,
             get_project_namespace,
             mcp,
@@ -1437,8 +1213,8 @@ def state_group():
 
 def _get_state_os(db_path: Optional[str] = None):
     """Resolve a production-ready StateOS from an optional db_path."""
-    from .state.backend import SQLiteStateBackend
-    from .state.layer import StateOS
+    from ..state.backend import SQLiteStateBackend
+    from ..state.layer import StateOS
     resolved = db_path or os.path.expanduser("~/.omem/brain.db")
     return StateOS(backend=SQLiteStateBackend(resolved))
 
@@ -1469,7 +1245,7 @@ def state_save(session_id: str, goal: Optional[str], plan: Optional[str], namesp
 @click.option("--db", default=None, envvar="OMEM_DB", help="Path to brain.db.")
 def state_load(session_id: str, db: Optional[str]):
     """Print the current state for a session."""
-    from .state.exceptions import SessionNotFoundError
+    from ..state.exceptions import SessionNotFoundError
     state = _get_state_os(db)
     try:
         payload = state.load(session_id)
@@ -1486,7 +1262,7 @@ def state_load(session_id: str, db: Optional[str]):
 @click.option("--db", default=None, envvar="OMEM_DB", help="Path to brain.db.")
 def state_snapshot(session_id: str, label: Optional[str], db: Optional[str]):
     """Create an immutable named snapshot of a session."""
-    from .state.exceptions import SessionNotFoundError
+    from ..state.exceptions import SessionNotFoundError
     state = _get_state_os(db)
     try:
         snap = state.snapshot(session_id, label=label)
@@ -1520,7 +1296,7 @@ def state_snapshots(session_id: str, db: Optional[str]):
 @click.option("--db", default=None, envvar="OMEM_DB", help="Path to brain.db.")
 def state_rollback(snapshot_id: str, db: Optional[str]):
     """Restore a session to a prior snapshot (non-destructive)."""
-    from .state.exceptions import SnapshotNotFoundError
+    from ..state.exceptions import SnapshotNotFoundError
     state = _get_state_os(db)
     try:
         payload = state.rollback(snapshot_id)
@@ -1537,7 +1313,7 @@ def state_rollback(snapshot_id: str, db: Optional[str]):
 @click.option("--db", default=None, envvar="OMEM_DB", help="Path to brain.db.")
 def state_fork(snapshot_id: str, session: Optional[str], db: Optional[str]):
     """Branch a new session from a snapshot."""
-    from .state.exceptions import ForkError, SnapshotNotFoundError
+    from ..state.exceptions import ForkError, SnapshotNotFoundError
     state = _get_state_os(db)
     try:
         child_id = state.fork(snapshot_id, new_session_id=session)
@@ -1554,7 +1330,7 @@ def state_fork(snapshot_id: str, session: Optional[str], db: Optional[str]):
 @click.option("--db", default=None, envvar="OMEM_DB", help="Path to brain.db.")
 def state_checkpoint(session_id: str, db: Optional[str]):
     """Write a crash-recovery checkpoint for a session."""
-    from .state.exceptions import SessionNotFoundError
+    from ..state.exceptions import SessionNotFoundError
     state = _get_state_os(db)
     try:
         chk_id = state.checkpoint(session_id)
@@ -1570,7 +1346,7 @@ def state_checkpoint(session_id: str, db: Optional[str]):
 @click.option("--db", default=None, envvar="OMEM_DB", help="Path to brain.db.")
 def state_resume(checkpoint_id: str, db: Optional[str]):
     """Restore a session from a checkpoint ID."""
-    from .state.exceptions import CheckpointNotFoundError
+    from ..state.exceptions import CheckpointNotFoundError
     state = _get_state_os(db)
     try:
         payload = state.resume(checkpoint_id)
@@ -1587,7 +1363,7 @@ def state_resume(checkpoint_id: str, db: Optional[str]):
 @click.option("--db", default=None, envvar="OMEM_DB", help="Path to brain.db.")
 def state_merge(winner: str, loser: str, db: Optional[str]):
     """Merge a winning branch back to base and retire the loser."""
-    from .state.exceptions import MergeError, SessionNotFoundError
+    from ..state.exceptions import MergeError, SessionNotFoundError
     state = _get_state_os(db)
     try:
         payload = state.merge(winner, loser)
@@ -1603,7 +1379,7 @@ def state_merge(winner: str, loser: str, db: Optional[str]):
 @click.option("--db", default=None, envvar="OMEM_DB", help="Path to brain.db.")
 def state_status(session_id: str, db: Optional[str]):
     """Show a human-friendly summary of a session."""
-    from .state.exceptions import SessionNotFoundError
+    from ..state.exceptions import SessionNotFoundError
     state = _get_state_os(db)
     try:
         info = state.summary(session_id)
@@ -1658,9 +1434,9 @@ def context_group():
 
 def _get_context_engine(db: Optional[str] = None, session_id: Optional[str] = None):
     """Resolve a fully-wired ContextEngine from on-disk OMem state."""
-    from .memory.layer import MemoryOS
-    from .state.backend import SQLiteStateBackend
-    from .state.layer import StateOS
+    from ..memory.layer import MemoryOS
+    from ..state.backend import SQLiteStateBackend
+    from ..state.layer import StateOS
 
     resolved_db = db or os.path.expanduser("~/.omem/brain.db")
 
@@ -1668,14 +1444,14 @@ def _get_context_engine(db: Optional[str] = None, session_id: Optional[str] = No
     memory = None
     if os.path.exists(resolved_db):
         try:
-            from .api import OMem
+            from ..api import OMem
             memory = MemoryOS(OMem(backend="sqlite", db_path=resolved_db))
         except Exception:
             pass
 
     state = StateOS(backend=SQLiteStateBackend(resolved_db))
 
-    from .context.engine import ContextEngine
+    from ..context.engine import ContextEngine
     return ContextEngine(memory=memory, state=state)
 
 
@@ -1699,7 +1475,7 @@ def context_build(
     db: Optional[str],
 ):
     """Assemble an optimal context bundle and print it."""
-    from .context.engine import ContextRequest
+    from ..context.engine import ContextRequest
     engine = _get_context_engine(db, session)
     request = ContextRequest(
         task=task,
@@ -1745,7 +1521,7 @@ def context_estimate(
     db: Optional[str],
 ):
     """Preview token savings without assembling the full bundle."""
-    from .context.engine import ContextRequest
+    from ..context.engine import ContextRequest
     engine = _get_context_engine(db, session)
     request = ContextRequest(
         task=task,
@@ -1780,8 +1556,8 @@ cli.add_command(context_group)
 
 def _get_knowledge_os(db: Optional[str]):
     """Instantiate a KnowledgeOS backed by the same OMem instance as the CLI."""
-    from .api import OMem
-    from .knowledge.layer import KnowledgeOS
+    from ..api import OMem
+    from ..knowledge.layer import KnowledgeOS
 
     db_path = db or os.path.expanduser("~/.omem/brain.db")
     omem_instance = OMem(backend="sqlite" if os.path.exists(db_path) else "memory",
@@ -2115,7 +1891,7 @@ def _get_agent_state(
     backend: str = "sqlite",
 ) -> "AgentState":
     """Build a CLI-scoped AgentState."""
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     return AgentState(
         session_id=session,
         namespace=namespace,
@@ -2147,7 +1923,7 @@ def agent_group(ctx: click.Context):
         session = os.environ.get("OMEM_SESSION")
         namespace = os.environ.get("OMEM_NS", "default")
         db = os.environ.get("OMEM_DB")
-        from .agent_state import AgentState
+        from ..agent_state import AgentState
         agent = AgentState(session_id=session, namespace=namespace, db_path=db)
         s = agent.status()
         _print_status_dashboard(s)
@@ -2174,7 +1950,7 @@ def agent_status(session: Optional[str], namespace: str, db: Optional[str], as_j
         export OMEM_SESSION=mybot && omem agent status
         omem agent status --session mybot --json | jq .memory
     """
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(session_id=session, namespace=namespace, db_path=db)
     status = agent.status()
     if as_json:
@@ -2202,7 +1978,7 @@ def agent_remember(
     Example:
         omem agent remember "FastAPI is faster than Django for APIs" --importance 0.8
     """
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(session_id=session, namespace=namespace, db_path=db)
     mem_id = agent.remember(content, importance=importance, namespace=namespace)
     click.echo(click.style("✓ Remembered", fg="green", bold=True))
@@ -2231,7 +2007,7 @@ def agent_recall(
     Example:
         omem agent recall "database setup" --k 5
     """
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(session_id=session, db_path=db)
     memories = agent.recall(query, k=k, namespace=namespace, mode=mode)
     if not memories:
@@ -2267,7 +2043,7 @@ def agent_learn(
     Example:
         omem agent learn FastAPI uses Pydantic
     """
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(session_id=session, db_path=db)
     edge_id = agent.learn(subject, predicate, object_entity, confidence=confidence)
     click.echo(click.style("✓ Learned", fg="green", bold=True))
@@ -2299,7 +2075,7 @@ def agent_context(
     Example:
         omem agent context --task "implement OAuth2" --session my-agent
     """
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(session_id=session, db_path=db)
     bundle = agent.build_context(task, budget_tokens=budget, mode=mode)
 
@@ -2328,7 +2104,7 @@ def agent_context(
 @click.option("--db", default=None, envvar="OMEM_DB")
 def agent_snapshot(session: str, label: Optional[str], db: Optional[str]):
     """Create a named state snapshot for a session."""
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(session_id=session, db_path=db)
     snap = agent.snapshot(label=label)
     click.echo(click.style("✓ Snapshot created", fg="green", bold=True))
@@ -2342,7 +2118,7 @@ def agent_snapshot(session: str, label: Optional[str], db: Optional[str]):
 @click.option("--db", default=None, envvar="OMEM_DB")
 def agent_checkpoint(session: str, db: Optional[str]):
     """Write a crash-recovery checkpoint for a session."""
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(session_id=session, db_path=db)
     chk_id = agent.checkpoint()
     click.echo(click.style("✓ Checkpoint written", fg="green", bold=True))
@@ -2354,7 +2130,7 @@ def agent_checkpoint(session: str, db: Optional[str]):
 @click.option("--db", default=None, envvar="OMEM_DB")
 def agent_resume(session: str, db: Optional[str]):
     """Resume from the latest checkpoint for a session."""
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(session_id=session, db_path=db)
     payload = agent.resume()
     click.echo(click.style("✓ Session resumed", fg="green", bold=True))
@@ -2371,7 +2147,7 @@ def agent_resume(session: str, db: Optional[str]):
 @click.option("--db", default=None, envvar="OMEM_DB")
 def agent_clone(session: str, new_session: Optional[str], label: str, db: Optional[str]):
     """Clone a session — fork state into a new independent session."""
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(session_id=session, db_path=db)
     clone = agent.clone(new_session_id=new_session, label=label)
     click.echo(click.style("✓ Session cloned", fg="green", bold=True))
@@ -2385,7 +2161,7 @@ def agent_clone(session: str, new_session: Optional[str], label: str, db: Option
 @click.option("--db", default=None, envvar="OMEM_DB")
 def agent_export(session: str, output: str, db: Optional[str]):
     """Export full session state to JSON for handoff."""
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(session_id=session, db_path=db)
     data = agent.export_state()
     out_str = json.dumps(data, indent=2, default=str)
@@ -2404,7 +2180,7 @@ def agent_export(session: str, output: str, db: Optional[str]):
 @click.option("--db", default=None, envvar="OMEM_DB")
 def agent_import(session: str, input_file: str, db: Optional[str]):
     """Restore session state from a prior export."""
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     with open(input_file) as f:
         data = json.load(f)
     agent = AgentState(session_id=session, db_path=db)
@@ -2426,7 +2202,7 @@ def agent_ping(session: Optional[str], db: Optional[str]):
         omem agent ping
         omem agent ping --session mybot
     """
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(session_id=session, db_path=db)
     ok = agent.ping()
     if ok:
@@ -2461,7 +2237,7 @@ def agent_explain(
         omem agent explain "API design" -k 3 --mode planning --json
         export OMEM_SESSION=mybot && omem agent explain "auth strategy"
     """
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     ns = namespace or "default"
     agent = AgentState(session_id=session, namespace=ns, db_path=db)
     report = agent.explain(query, k=k, namespace=namespace, mode=mode)
@@ -2484,7 +2260,7 @@ def agent_goal(goal_text: str, session: str, namespace: str, db: Optional[str]):
         omem agent goal "Build a REST API with FastAPI" --session mybot
         export OMEM_SESSION=mybot && omem agent goal "Implement auth middleware"
     """
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(session_id=session, namespace=namespace, db_path=db)
     agent.set_goal(goal_text)
     click.echo(click.style("✓ Goal set", fg="green", bold=True))
@@ -2505,7 +2281,7 @@ def agent_plan(steps, session: str, namespace: str, db: Optional[str]):
         omem agent plan "Design schema" "Write models" "Add tests" --session mybot
         export OMEM_SESSION=mybot && omem agent plan "step 1" "step 2"
     """
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(session_id=session, namespace=namespace, db_path=db)
     agent.set_plan(list(steps))
     click.echo(click.style(f"✓ Plan set ({len(steps)} steps)", fg="green", bold=True))
@@ -2524,7 +2300,7 @@ def agent_rollback(snapshot_id: str, session: Optional[str], db: Optional[str]):
     Example:
         omem agent rollback snap_abc123 --session mybot
     """
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(session_id=session, db_path=db)
     payload = agent.rollback(snapshot_id)
     click.echo(click.style("✓ Rolled back", fg="green", bold=True))
@@ -2544,7 +2320,7 @@ def agent_forget(session: Optional[str], namespace: str, db: Optional[str]):
     Example:
         omem agent forget --session mybot
     """
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(session_id=session, namespace=namespace, db_path=db)
     agent.forget()
     click.echo(click.style("✓ Forgetting sweep completed", fg="green"))
@@ -2563,7 +2339,7 @@ def agent_consolidate(session: Optional[str], namespace: str, db: Optional[str],
         omem agent consolidate --session mybot
         omem agent consolidate --speed fast
     """
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(session_id=session, namespace=namespace, db_path=db)
     result = agent.consolidate(speed=speed)
     click.echo(click.style("✓ Consolidation complete", fg="green", bold=True))
@@ -2585,7 +2361,7 @@ def agent_share(memory_id: str, target_namespace: str, session: Optional[str], d
         omem agent share mem-abc123 team/eng --session mybot
         omem agent share mem-abc123 org/acme --session mybot
     """
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(session_id=session, db_path=db)
     result = agent.share(memory_id, target_namespace=target_namespace)
     click.echo(click.style("✓ Shared", fg="green", bold=True))
@@ -2622,7 +2398,7 @@ def observe_metrics(session: Optional[str], namespace: Optional[str], db: Option
     """Print aggregated metrics for a session or namespace."""
     import json as _json
 
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(session_id=session, namespace=namespace or "default", db_path=db)
     m = agent.observe.metrics(session_id=session, namespace=namespace)
     click.echo(_json.dumps(m, indent=2, default=str))
@@ -2634,7 +2410,7 @@ def observe_metrics(session: Optional[str], namespace: Optional[str], db: Option
 @click.option("--limit", default=50, show_default=True, help="Max events to show.")
 def observe_traces(session: str, db: Optional[str], limit: int):
     """List trace events for a session."""
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(session_id=session, db_path=db)
     events = agent.observe.traces(session)
     click.echo(f"Session: {session}  ({len(events)} events)")
@@ -2649,7 +2425,7 @@ def observe_traces(session: str, db: Optional[str], limit: int):
 @click.option("--db", default=None, envvar="OMEM_DB")
 def observe_replay(session: str, db: Optional[str]):
     """Step-by-step replay of all events in a session."""
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(session_id=session, db_path=db)
     idx = 0
     for ev in agent.observe.replay(session):
@@ -2667,7 +2443,7 @@ def observe_export_otel(session: Optional[str], db: Optional[str], out: Optional
     """Export traces as OpenTelemetry-compatible OTLP JSON."""
     import json as _json
 
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(session_id=session, db_path=db)
     data = agent.observe.export_otel(session_id=session)
     payload = _json.dumps(data, indent=2, default=str)
@@ -2701,7 +2477,7 @@ def observe_push_otel(
     Python process (or events you record before calling push). For live
     pipelines, call ``agent.observe.push_otel()`` after instrumented work.
     """
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
 
     agent = AgentState(session_id=session, db_path=db, otel_endpoint=endpoint)
     if agent.observe.event_count(session) == 0:
@@ -2756,7 +2532,7 @@ def provenance_group():
 def provenance_trace(entity: str, session: Optional[str], db: Optional[str]):
     """Print the full lineage chain for an entity."""
 
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(session_id=session, db_path=db)
     chain = agent.provenance.trace(entity)
     click.echo(f"Entity: {chain.root_id}  ({len(chain.events)} events)")
@@ -2772,7 +2548,7 @@ def provenance_trace(entity: str, session: Optional[str], db: Optional[str]):
 @click.option("--db", default=None, envvar="OMEM_DB")
 def provenance_history(namespace: str, limit: int, since: Optional[str], session: Optional[str], db: Optional[str]):
     """Print recent provenance events for a namespace."""
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     since_ts = float(since) if since else None
     agent = AgentState(session_id=session, db_path=db)
     events = agent.provenance.history(namespace, limit=limit, since=since_ts)
@@ -2789,7 +2565,7 @@ def provenance_summary(namespace: Optional[str], session: Optional[str], db: Opt
     """Print aggregate provenance statistics."""
     import json as _json
 
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(session_id=session, db_path=db)
     s = agent.provenance.summary(namespace=namespace)
     click.echo(_json.dumps(s, indent=2, default=str))
@@ -2823,8 +2599,8 @@ def governance_group():
 @click.option("--db", default=None, envvar="OMEM_DB")
 def governance_policy_add(pattern: str, max_age_days: Optional[int], max_count: Optional[int], tier: Optional[str], db: Optional[str]):
     """Register a retention policy."""
-    from .agent_state import AgentState
-    from .governance import RetentionPolicy
+    from ..agent_state import AgentState
+    from ..governance import RetentionPolicy
     agent = AgentState(db_path=db)
     policy = RetentionPolicy(
         namespace_pattern=pattern,
@@ -2841,7 +2617,7 @@ def governance_policy_add(pattern: str, max_age_days: Optional[int], max_count: 
 def governance_enforce(db: Optional[str]):
     """Apply all active retention policies immediately."""
 
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(db_path=db)
     report = agent.governance.enforce_retention()
     click.echo(click.style(
@@ -2876,7 +2652,7 @@ def governance_audit(
     db: Optional[str],
 ):
     """Query or export the audit log (JSON/JSONL for design partners)."""
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
 
     agent = AgentState(db_path=db)
     if fmt.lower() in ("json", "jsonl"):
@@ -2911,7 +2687,7 @@ def governance_audit(
 @click.option("--db", default=None, envvar="OMEM_DB")
 def governance_delete(scope: str, id_: str, no_cascade: bool, db: Optional[str]):
     """Delete data at a given scope."""
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(db_path=db)
     report = agent.governance.delete_scope(scope, id_, cascade=not no_cascade)
     click.echo(click.style(
@@ -2952,7 +2728,7 @@ def runtime_group():
 @click.option("--db", default=None, envvar="OMEM_DB")
 def runtime_register(agent_id: str, session: str, namespace: str, capabilities, db: Optional[str]):
     """Register an agent in the namespace runtime registry."""
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(session_id=session, namespace=namespace, db_path=db)
     reg = agent.register_agent(agent_id, capabilities=list(capabilities))
     click.echo(click.style(f"✓ Registered {agent_id!r}", fg="green"))
@@ -2967,7 +2743,7 @@ def runtime_register(agent_id: str, session: str, namespace: str, capabilities, 
 @click.option("--db", default=None, envvar="OMEM_DB")
 def runtime_list(namespace: str, status: Optional[str], db: Optional[str]):
     """List agents registered in a namespace."""
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(namespace=namespace, db_path=db)
     agents = agent.runtime.list_agents(namespace, status=status)
     if not agents:
@@ -2987,7 +2763,7 @@ def runtime_recover(agent_id: str, db: Optional[str]):
     """Recover state for a crashed agent."""
     import json as _json
 
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(db_path=db)
     payload = agent.runtime.recover(agent_id)
     if payload is None:
@@ -3002,7 +2778,7 @@ def runtime_recover(agent_id: str, db: Optional[str]):
 @click.option("--db", default=None, envvar="OMEM_DB")
 def runtime_deregister(agent_id: str, db: Optional[str]):
     """Remove an agent from the registry (mark as done)."""
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(db_path=db)
     ok = agent.runtime.deregister(agent_id)
     if ok:
@@ -3018,7 +2794,7 @@ def runtime_summary(namespace: str, db: Optional[str]):
     """Print a health summary for all agents in a namespace."""
     import json as _json
 
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(namespace=namespace, db_path=db)
     s = agent.runtime.namespace_summary(namespace)
     click.echo(_json.dumps(s, indent=2, default=str))
@@ -3056,7 +2832,7 @@ def org_group():
 @click.option("--db", default=None, envvar="OMEM_DB")
 def org_remember(content: str, scope: str, user_id: Optional[str], team_id: Optional[str], org_id: Optional[str], db: Optional[str]):
     """Store a memory in the resolved org namespace."""
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(db_path=db)
     agent.org._user_id = user_id or ""
     agent.org._team_id = team_id or ""
@@ -3076,7 +2852,7 @@ def org_remember(content: str, scope: str, user_id: Optional[str], team_id: Opti
 @click.option("--db", default=None, envvar="OMEM_DB")
 def org_recall(query: str, scope: str, k: int, user_id: Optional[str], team_id: Optional[str], org_id: Optional[str], db: Optional[str]):
     """Recall memories scoped to the org namespace hierarchy."""
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(db_path=db)
     agent.org._user_id = user_id or ""
     agent.org._team_id = team_id or ""
@@ -3097,7 +2873,7 @@ def org_recall(query: str, scope: str, k: int, user_id: Optional[str], team_id: 
 @click.option("--db", default=None, envvar="OMEM_DB")
 def org_share(memory_id: str, target: str, db: Optional[str]):
     """Promote a memory to a shared namespace tier."""
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(db_path=db)
     result = agent.share(memory_id, target_namespace=target)
     click.echo(click.style("✓ Memory shared", fg="green"))
@@ -3114,7 +2890,7 @@ def org_share(memory_id: str, target: str, db: Optional[str]):
 @click.option("--db", default=None, envvar="OMEM_DB")
 def org_namespaces(user_id: Optional[str], team_id: Optional[str], org_id: Optional[str], db: Optional[str]):
     """List all namespaces available to the current identity."""
-    from .agent_state import AgentState
+    from ..agent_state import AgentState
     agent = AgentState(db_path=db)
     agent.org._user_id = user_id or ""
     agent.org._team_id = team_id or ""

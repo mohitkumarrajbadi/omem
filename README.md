@@ -4,6 +4,10 @@
 
 Not another vector store. Prove what the agent knew, roll it back, export the trail.
 
+## Design partners
+
+Eval pack: [docs/design-partner/](./docs/design-partner/README.md)
+
 ```bash
 pip install omem-os
 OMEM_EMBEDDER=hash omem demo poison-recovery
@@ -30,8 +34,8 @@ omem init --cursor
 |--|--|
 | Encryption | AES-256-GCM via `OMEM_ENCRYPTION_KEY` |
 | State | `snapshot` · `rollback` · `fork` |
-| Audit | `governance.export_audit` / `omem governance audit` |
-| Cloud | Multi-tenant API + Postgres RLS — [omem-cloud](../omem-cloud/) (tech preview) |
+| Audit | `agent.governance.export_audit` / `omem governance audit` |
+| Cloud | Multi-tenant API + Postgres RLS — sibling `omem-cloud` (tech preview) |
 | Mem0 wrap | `pip install "omem-os[mem0]"` → `GovernedMem0` |
 
 ## Install
@@ -52,8 +56,8 @@ cd omem && pip install -e ".[dev]" && pytest tests/ -q
 ## Docs
 
 - [Design partners](./docs/design-partner/README.md)
+- [Docs index](./docs/README.md)
 - [Limits](./docs/LIMITATIONS.md)
-- [Tenant hardening](./docs/guarantees/TENANT_HARDENING.md)
 
 ## License
 
