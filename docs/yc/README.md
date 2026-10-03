@@ -2,21 +2,20 @@
 
 **Motto: less. clean. clear.**
 
-One folder for Winter 2027. Ignore the rest of the docs tree until a partner asks.
-
 | File | Use |
 |------|-----|
-| [NARRATIVE.md](./NARRATIVE.md) | Frozen wedge — never contradict this |
-| [DEMO.md](./DEMO.md) | 5-minute proof (founder video + partner) |
-| [APPLICATION.md](./APPLICATION.md) | Paste-ready YC answers |
-| [SECURITY.md](./SECURITY.md) | One-page buyer proof |
-| [CHECKLIST.md](./CHECKLIST.md) | What you personally must still tick |
-| [CUT_LIST.md](./CUT_LIST.md) | SOC2 / AST / benchmarks / extra features — **do not** |
-
-**Status:** product = design-partner tech preview · **not GA** · no fake logos.
+| [PHASE5.md](./PHASE5.md) | **Current phase** — GTM signal |
+| [NARRATIVE.md](./NARRATIVE.md) | Frozen wedge |
+| [DEMO.md](./DEMO.md) | 5-minute proof |
+| [VIDEO.md](./VIDEO.md) | 60s founder video shot list |
+| [OUTREACH.md](./OUTREACH.md) | Partner emails (you send) |
+| [PARTNER_ONE_PAGER.md](./PARTNER_ONE_PAGER.md) | Attach / link for partners |
+| [APPLICATION.md](./APPLICATION.md) | Paste into YC (finish TODOs) |
+| [SECURITY.md](./SECURITY.md) | Buyer proof |
+| [CHECKLIST.md](./CHECKLIST.md) | Your ticks |
+| [CUT_LIST.md](./CUT_LIST.md) | Do **not** |
 
 ```bash
-# The only command you need to prove the wedge:
 pip install -e ".[dev]"
 OMEM_EMBEDDER=hash omem demo poison-recovery
 ```

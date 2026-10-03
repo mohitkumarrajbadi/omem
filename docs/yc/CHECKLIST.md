@@ -1,32 +1,30 @@
 # Checklist — tick in order
 
-You (founder) own external ticks. Repo owns product ticks.
+## Phase 5 this week
 
-## This week (Tier 1)
+- [ ] Send 5 notes from [OUTREACH.md](./OUTREACH.md) (track in the table)  
+- [ ] Record video from [VIDEO.md](./VIDEO.md)  
+- [ ] Replace every **TODO** in [APPLICATION.md](./APPLICATION.md)  
+- [ ] Paste answers into YC form — no red errors  
+- [ ] Upload founder video  
 
-- [ ] Run `omem demo poison-recovery` until muscle memory  
-- [ ] Record founder video from [DEMO.md](./DEMO.md)  
-- [ ] Fill every `[BRACKET]` in [APPLICATION.md](./APPLICATION.md) with truth  
-- [ ] Put live URL or GitHub in company URL fields  
-- [ ] Land **one** design-partner conversation (email/LinkedIn) — ask for audit/tenant eval  
-- [ ] Decide revenue Yes/No honestly  
+## Signal
 
-## Before submit (Tier 2)
+- [ ] At least one reply from a real evaluator  
+- [ ] Or written “happy to eval” note (unpaid OK)  
 
-- [ ] Written note or LOI from one evaluator (even unpaid pilot)  
-- [ ] Demo link works for a stranger in 5 minutes  
-- [ ] Cofounder answer finalized (APPLICATION.md)  
-- [ ] Entity / investment / fundraising answers set  
-- [ ] README + this pack tell the **same** story ([NARRATIVE.md](./NARRATIVE.md))  
+## Already done (repo)
 
-## Ignore until after partner or YC interview
+- [x] Narrative frozen  
+- [x] Demo path (`omem demo poison-recovery`)  
+- [x] Security one-pager  
+- [x] Cut list (no SOC2 / AST / benchmarks / extra features)  
+- [x] Phase 5 outreach + video + application pack  
 
-- SOC2 project plan deep-dive  
-- AST / Alpha UI  
-- New recall benchmarks  
-- Extra landing-page marketing pages  
-- More features “for the application”
+## Ignore
+
+See [CUT_LIST.md](./CUT_LIST.md).
 
 ## Done when
 
-Tier 1 complete + application form shows no red errors + video uploaded.
+YC form submit-ready **and** (partner reply **or** 5 outreach sends logged).
