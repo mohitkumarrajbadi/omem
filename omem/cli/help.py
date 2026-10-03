@@ -29,7 +29,7 @@ CLI_BANNER = (
 SIMPLE_HELP_GROUPS = OrderedDict(
     [
         ("Get started", ["init", "demo", "agent"]),
-        ("Everyday", ["remember", "recall", "status", "serve"]),
+        ("Everyday", ["remember", "recall", "status", "serve", "dashboard"]),
     ]
 )
 
@@ -37,7 +37,7 @@ SIMPLE_HELP_GROUPS = OrderedDict(
 ALL_COMMAND_GROUPS = OrderedDict(
     [
         ("Get started", ["init", "demo", "agent"]),
-        ("Everyday", ["remember", "recall", "status", "serve"]),
+        ("Everyday", ["remember", "recall", "status", "serve", "dashboard"]),
         ("Memory", ["list", "inspect", "stats", "sleep", "clear", "namespaces"]),
         ("State & context", ["state", "context", "knowledge"]),
         ("Governance", ["governance", "provenance", "observe", "runtime", "org"]),
@@ -54,7 +54,6 @@ _HELP_HIDDEN = frozenset({
     "maintain",
     "benchmark",
     "bench",
-    "dashboard",
     "completion",
     "commands",  # listed in the footer, not as a row
 })

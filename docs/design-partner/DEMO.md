@@ -21,6 +21,14 @@ Optional:
 omem governance audit --format json --limit 20
 ```
 
+Visual (local preview):
+
+```bash
+omem dashboard
+```
+
+Open the **Prove** tab → **Run poison-recovery demo** for the same story as a timeline, plus audit + provenance. **Recall** ranks memories with score breakdown; **Tools** mirrors CLI (health/sleep/clear/export); **MCP** previews and can write Cursor config; **Settings** sets session/namespace and enables local writes.
+
 ## Out of scope for this eval
 
-Experimental AST index · console Alpha tabs · recall leaderboards
+Experimental AST index · cloud console Alpha tabs · recall leaderboards

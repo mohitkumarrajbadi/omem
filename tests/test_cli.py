@@ -31,7 +31,7 @@ class TestCLI:
             assert "\n  codebase" not in result.output
             assert "\n  ingest " not in result.output
             assert "\n  sync" not in result.output
-            assert "\n  dashboard" not in result.output
+            assert "dashboard" in result.output
             assert "\n  bench" not in result.output
             assert "\n  benchmark" not in result.output
 

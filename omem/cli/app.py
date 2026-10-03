@@ -909,16 +909,26 @@ def benchmark(ctx: click.Context, n: int):
     )
 
 
-@cli.command()
-@click.option("--port", default=7900, help="Port to serve the dashboard on.")
+@cli.command(short_help="Local GUI — CLI, MCP, audit, recall")
+@click.option("--port", default=7900, help="Port to serve the local GUI on.")
+@click.option(
+    "--session",
+    "-s",
+    default=None,
+    envvar="OMEM_SESSION",
+    help="Session for snapshots / audit (default: OMEM_SESSION or 'dashboard').",
+)
 @click.pass_context
-def dashboard(ctx: click.Context, port: int):
-    """Open the web dashboard in your browser."""
+def dashboard(ctx: click.Context, port: int, session: Optional[str]):
+    """Open the local GUI (Prove · Recall · Memory · Tools · MCP · Settings · Graph)."""
     from ..observe.dashboard.server import serve as start_dashboard
 
     m = _get_omem(ctx)
-    note(f"Dashboard running at http://localhost:{port}  (Ctrl+C to stop)")
-    start_dashboard(omem=m, port=port)
+    note(
+        f"Local GUI http://localhost:{port}  — "
+        "Prove · Recall · Memory · Tools · MCP · Settings · Graph  (Ctrl+C to stop)"
+    )
+    start_dashboard(omem=m, port=port, session_id=session or "dashboard")
 
 
 @cli.command()
