@@ -1,0 +1,261 @@
+{
+  "bakeoff": "quality-vs-tokens",
+  "omem_no_llm": true,
+  "metric": "Hit rate (answer-string containment) and mean prompt tokens. Not an LLM-judge QA score.",
+  "n_cases": 4,
+  "embedder": "hash",
+  "systems": [
+    {
+      "system": "omem",
+      "no_llm": true,
+      "hit_at_k_pct": 100.0,
+      "n": 4,
+      "k": 5,
+      "add_ms_p50": 0.61,
+      "recall_p50_ms": 1.04,
+      "elapsed_ms": 20.09,
+      "mean_prompt_tokens": 18.5,
+      "cases": [
+        {
+          "id": "location_revision",
+          "hit": true,
+          "expect_ok": true,
+          "texts": [
+            "User moved to SF"
+          ]
+        },
+        {
+          "id": "exact_sku",
+          "hit": true,
+          "expect_ok": true,
+          "texts": [
+            "Checkout SKU is SKU-998877 for the winter jacket.",
+            "The shopping cart service uses Redis for session state."
+          ]
+        },
+        {
+          "id": "decision",
+          "hit": true,
+          "expect_ok": true,
+          "texts": [
+            "We decided to use PostgreSQL for production, not MongoDB.",
+            "The office snack budget is $40 per week."
+          ]
+        },
+        {
+          "id": "preference",
+          "hit": true,
+          "expect_ok": true,
+          "texts": [
+            "User prefers dark mode in the dashboard.",
+            "Sprint 12 shipped the billing export CSV."
+          ]
+        }
+      ],
+      "note": "No generative LLM. TMS revises beliefs; RRF ranks exact tokens."
+    },
+    {
+      "system": "omem_pack",
+      "no_llm": true,
+      "hit_at_k_pct": 100.0,
+      "answer_in_budget_pct": 100.0,
+      "mean_packed_tokens": 87,
+      "mean_prompt_tokens": 87,
+      "budget_tokens": 180,
+      "n": 4,
+      "cases": [
+        {
+          "id": "location_revision",
+          "hit": true,
+          "token_count": 65,
+          "budget": 180,
+          "savings_vs_naive": 0.0
+        },
+        {
+          "id": "exact_sku",
+          "hit": true,
+          "token_count": 89,
+          "budget": 180,
+          "savings_vs_naive": 0.0
+        },
+        {
+          "id": "decision",
+          "hit": true,
+          "token_count": 107,
+          "budget": 180,
+          "savings_vs_naive": 0.0
+        },
+        {
+          "id": "preference",
+          "hit": true,
+          "token_count": 87,
+          "budget": 180,
+          "savings_vs_naive": 0.0
+        }
+      ],
+      "note": "Packed prompt must contain the gold substring under a hard token ceiling."
+    },
+    {
+      "system": "naive_full_history",
+      "no_llm": true,
+      "skipped": false,
+      "hit_at_k_pct": 100.0,
+      "n": 4,
+      "mean_prompt_tokens": 19.5,
+      "cases": [
+        {
+          "id": "location_revision",
+          "hit": true,
+          "expect_ok": true,
+          "texts": [
+            "User lives in NYC\nUser moved to SF"
+          ]
+        },
+        {
+          "id": "exact_sku",
+          "hit": true,
+          "expect_ok": true,
+          "texts": [
+            "Checkout SKU is SKU-998877 for the winter jacket.\nThe shopping cart service uses Redis for session state."
+          ]
+        },
+        {
+          "id": "decision",
+          "hit": true,
+          "expect_ok": true,
+          "texts": [
+            "We decided to use PostgreSQL for production, not MongoDB.\nThe office snack budget is $40 per week."
+          ]
+        },
+        {
+          "id": "preference",
+          "hit": true,
+          "expect_ok": true,
+          "texts": [
+            "User prefers dark mode in the dashboard.\nSprint 12 shipped the billing export CSV."
+          ]
+        }
+      ],
+      "note": "The whole history is the prompt. Not a serious production baseline."
+    },
+    {
+      "system": "summarize_rag",
+      "no_llm": true,
+      "skipped": false,
+      "hit_at_k_pct": 75.0,
+      "n": 4,
+      "k": 1,
+      "mean_prompt_tokens": 9.8,
+      "cases": [
+        {
+          "id": "location_revision",
+          "hit": false,
+          "expect_ok": false,
+          "texts": [
+            "User lives in NYC"
+          ]
+        },
+        {
+          "id": "exact_sku",
+          "hit": true,
+          "expect_ok": true,
+          "texts": [
+            "Checkout SKU is SKU-998877 for the winter jacket"
+          ]
+        },
+        {
+          "id": "decision",
+          "hit": true,
+          "expect_ok": true,
+          "texts": [
+            "We decided to use PostgreSQL for production, not MongoDB"
+          ]
+        },
+        {
+          "id": "preference",
+          "hit": true,
+          "expect_ok": true,
+          "texts": [
+            "User prefers dark mode in the dashboard"
+          ]
+        }
+      ],
+      "note": "First 12 words of each write, then token-overlap top-1. No LLM."
+    },
+    {
+      "system": "vector_baseline",
+      "no_llm": true,
+      "hit_at_k_pct": 100.0,
+      "n": 4,
+      "k": 5,
+      "add_ms_p50": 0.02,
+      "recall_p50_ms": 0.06,
+      "cases": [
+        {
+          "id": "location_revision",
+          "hit": true,
+          "expect_ok": true,
+          "texts": [
+            "User lives in NYC",
+            "User moved to SF"
+          ]
+        },
+        {
+          "id": "exact_sku",
+          "hit": true,
+          "expect_ok": true,
+          "texts": [
+            "The shopping cart service uses Redis for session state.",
+            "Checkout SKU is SKU-998877 for the winter jacket."
+          ]
+        },
+        {
+          "id": "decision",
+          "hit": true,
+          "expect_ok": true,
+          "texts": [
+            "We decided to use PostgreSQL for production, not MongoDB.",
+            "The office snack budget is $40 per week."
+          ]
+        },
+        {
+          "id": "preference",
+          "hit": true,
+          "expect_ok": true,
+          "texts": [
+            "User prefers dark mode in the dashboard.",
+            "Sprint 12 shipped the billing export CSV."
+          ]
+        }
+      ],
+      "note": "Embed + cosine only. No belief revision, no keyword fusion.",
+      "mean_prompt_tokens": 19.5
+    },
+    {
+      "system": "mem0",
+      "skipped": true,
+      "reason": "pass --live-mem0 (install mem0ai + OPENAI_API_KEY)"
+    },
+    {
+      "system": "graphiti",
+      "skipped": true,
+      "reason": "pass --live-graphiti (graphiti-core + Neo4j + LLM key)"
+    },
+    {
+      "system": "zep",
+      "skipped": true,
+      "reason": "pass --live-zep (ZEP_API_KEY)"
+    },
+    {
+      "system": "letta",
+      "skipped": true,
+      "reason": "pass --live-letta (LETTA_API_KEY)"
+    }
+  ],
+  "not_measured": [
+    "mem0",
+    "zep",
+    "letta",
+    "graphiti"
+  ]
+}

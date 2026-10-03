@@ -16,14 +16,23 @@ from ..utils.concurrency import ReadContext, RWLock, WriteContext
 logger = logging.getLogger(__name__)
 
 try:
+    import omem_rust as _omem_rust
+
+    _HAS_RUST_ANN = hasattr(_omem_rust, "ann_topk")
+except ImportError:
+    _omem_rust = None  # type: ignore[assignment]
+    _HAS_RUST_ANN = False
+
+try:
     import faiss as _faiss
     _HAS_FAISS = True
 except ImportError:
     _faiss = None  # type: ignore[assignment]
     _HAS_FAISS = False
     logger.debug(
-        "faiss-cpu not installed — using NumPy brute-force vector index. "
-        "Install omem-os[fast] for faster ANN search."
+        "faiss-cpu not installed — using %s brute-force vector index. "
+        "Install omem-os[fast] for faster ANN search.",
+        "Rust" if _HAS_RUST_ANN else "NumPy",
     )
 
 
@@ -59,6 +68,12 @@ class _NumpyVectorIndex:
             k = min(k, n)
             mat = np.stack(self._vectors)          # (N, dim)
         q = np.ascontiguousarray(query, dtype=np.float32).reshape(-1)
+        if _HAS_RUST_ANN:
+            scores, idx = _omem_rust.ann_topk(q, mat, int(k))
+            return (
+                np.asarray(scores, dtype=np.float32),
+                np.asarray(idx, dtype=np.int64),
+            )
         scores = mat @ q                            # cosine sim (L2-norm assumed)
         top_idx = np.argpartition(scores, -k)[-k:]
         top_idx = top_idx[np.argsort(scores[top_idx])[::-1]]
@@ -70,7 +85,7 @@ class _NumpyVectorIndex:
 
 
 class VectorIndex:
-    """Thread-safe vector index — FAISS when available, NumPy otherwise.
+    """Thread-safe vector index — FAISS, else Rust ANN, else NumPy.
 
     Vectors **must** be L2-normalised before insertion so that inner-product
     equals cosine similarity.
@@ -87,7 +102,7 @@ class VectorIndex:
             self._backend = "faiss"
         else:
             self._index = _NumpyVectorIndex(dim)
-            self._backend = "numpy"
+            self._backend = "rust" if _HAS_RUST_ANN else "numpy"
 
     @property
     def size(self) -> int:

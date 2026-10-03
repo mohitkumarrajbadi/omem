@@ -76,6 +76,7 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
         try:
             stored_memories = self.backend.all()
             if not stored_memories:
+                self._restore_graph_edges()
                 return 0
 
             import numpy as np
@@ -89,6 +90,7 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
             if vectors:
                 vectors_array = np.array(vectors, dtype=np.float32)
                 self.vector_index.rebuild(vectors_array)
+            self._restore_graph_edges()
             return len(stored_memories)
         except Exception as exc:
             logger.error(
@@ -96,6 +98,32 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
                 exc,
                 exc_info=True,
             )
+            return 0
+
+    def _restore_graph_edges(self) -> int:
+        """Reload knowledge-graph edges from the durable backend."""
+        backend = self.backend
+        if backend is None or not hasattr(backend, "load_edges"):
+            return 0
+        try:
+            rows = backend.load_edges()
+            n = self.knowledge_graph.restore_edges(rows)
+            if n:
+                logger.info("Restored %d knowledge-graph edges from backend", n)
+            return n
+        except Exception as exc:
+            logger.warning("Failed to restore knowledge-graph edges: %s", exc)
+            return 0
+
+    def persist_graph(self, namespace: str = "default") -> int:
+        """Flush the in-memory knowledge graph to the durable backend."""
+        backend = self.backend
+        if backend is None:
+            return 0
+        try:
+            return self.knowledge_graph.persist_edges(backend, namespace=namespace)
+        except Exception as exc:
+            logger.warning("Failed to persist knowledge-graph edges: %s", exc)
             return 0
 
     def reload_from_backend(self) -> int:
@@ -110,6 +138,7 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
         try:
             stored_memories = self.backend.all()
             if not stored_memories:
+                self._restore_graph_edges()
                 return 0
 
             import numpy as np
@@ -129,6 +158,7 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
                     self.vector_index.rebuild(
                         __import__("numpy").empty((0, self.embedder.dim), dtype="float32")
                     )
+            self._restore_graph_edges()
             return len(stored_memories)
         except Exception as exc:
             logger.error("Failed to reload memories from backend: %s", exc, exc_info=True)
@@ -211,9 +241,11 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
         from ..graph.knowledge import EdgeType
 
         edge_type = EdgeType(relation) if relation in EdgeType._value2member_map_ else EdgeType.RELATED_TO
-        return self.knowledge_graph.link_entities(
+        edge_id = self.knowledge_graph.link_entities(
             source, target, edge_type, memory_id=memory_id, confidence=confidence
         )
+        self.persist_graph()
+        return edge_id
 
     def assert_fact(
         self,
@@ -228,9 +260,11 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
         if not memory_id:
             memory_id = self.add(f"{subject} {relation} {obj}", source="assertion")
         edge_type = EdgeType(relation) if relation in EdgeType._value2member_map_ else EdgeType.ASSERTED
-        return self.knowledge_graph.assert_fact(
+        result = self.knowledge_graph.assert_fact(
             subject, edge_type, obj, memory_id, confidence=confidence
         )
+        self.persist_graph()
+        return result
 
     def prefetch(self) -> Dict:
         return self.prefetcher.get_predicted_queries()
@@ -355,6 +389,9 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
                     mem.utility_score = max(
                         min(mem.utility_score + adjustment, 1.0), 0.0
                     )
+                    from ..brain.importance import record_cited
+
+                    record_cited(mem)
                     self.kv.put(mid, mem)
                     self.write_buffer.enqueue(mem)
 

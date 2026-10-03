@@ -1,33 +1,40 @@
 # Benchmark methodology notes
 
-## Appendix: modeled comparison vs. other systems
-**(not an apples-to-apples benchmark — see caveat)**
+## Local quality versus tokens
 
-Tested on Apple M-series · 5,000 memories · 500 queries · `all-MiniLM-L6-v2` ·
-reproduce with `python distribution/benchmark_vs_mem0.py`
+The comparison that runs without API keys is
+[`benchmarks/bakeoff.py`](../benchmarks/bakeoff.py). It scores answer-string
+containment and mean prompt tokens on one small fixture.
 
-**Methodology:** OMem uses a fully local heuristic classification and
-embedding/scoring path. The default script compares that measured local path
-with a modeled Mem0 baseline representing an LLM-based extraction/scoring
-configuration; use `--live-mem0` for a live Mem0 run. These are different
-operation pipelines, so the latency ratios describe the tested configurations,
-not equivalent underlying operations.
+Always-on arms:
 
-| System | Cold Start | Add | RAG p50 | RAG p99 | Est. third-party API fees / 1M recalls |
-|---|---:|---:|---:|---:|---:|
-| **OMem** | **4 ms** | **65 ops/s** | **1.8 ms** | **3.9 ms** | **$0** |
-| Mem0 | 15,000 ms | <1 ops/s | 420 ms | 638 ms | ~$20 |
-| ChromaDB | 507 ms | 277 ops/s | — | 4 ms | $0 |
-| LanceDB | 8 ms | 82,000 ops/s | — | 7 ms | $0 |
+- OMem recall
+- OMem pack (answer inside a token budget)
+- naive full history (every write is the prompt)
+- summarize-plus-RAG (first 12 words of each write, then lexical overlap)
 
-**In this configuration, OMem measured 3.9 ms p99 local recall versus the
-modeled Mem0 baseline of 638 ms (a 163× latency ratio), with $0 third-party API
-fees. Local infrastructure costs are not included.**
+Mem0, Zep, Letta, and Graphiti are optional. If the flag or the key is missing,
+the row is `skipped` and has no hit rate and no latency. This file does not
+publish a modeled Mem0 latency, a 163× ratio, or a third-party fee estimate.
+Those older figures were a model of a different pipeline, not a measurement,
+and they are withdrawn.
 
-OMem's `add()` does more than raw storage: embed, classify, deduplicate, sync
-the knowledge graph, and persist asynchronously. The benchmark reflects each
-system's configured workflow, not a raw vector-insert comparison.
+Chart: [`quality_cost.svg`](./quality_cost.svg).
+Numbers: [`bakeoff_results.json`](./bakeoff_results.json).
 
-For measured public-suite numbers (STATE-Bench, LongMemEval, LoCoMo,
-BEAM-style), see the README Benchmarks section and
-[`public_benchmark_results.json`](./public_benchmark_results.json).
+The fixture is four short cases. Full history is only a few dozen tokens, so this chart will not show a 95% reduction. That reduction, against a large naive dump, is the separate KV probe, and it is not a competitor bakeoff. On this fixture summarize-plus-RAG uses fewer tokens and misses a case. Read both axes.
+
+```bash
+python -m benchmarks.bakeoff --json --out distribution/bakeoff_results.json --chart distribution/quality_cost.svg
+```
+
+## Public retrieval suites
+
+STATE-Bench, LongMemEval, LoCoMo, and the synthetic BEAM-style check are in
+[`public_benchmark_results.json`](./public_benchmark_results.json). The README
+quotes that file. Retrieval hit is not an LLM-judge QA score. The BEAM-style
+suite is not the official BEAM leaderboard.
+
+KV-cache economics, including the history-rewrite loss, are in
+[`kv_cache_results.json`](./kv_cache_results.json). `prompt_eval_count` is null.
+That file is a prefix-stability proxy, not a provider cache bill.

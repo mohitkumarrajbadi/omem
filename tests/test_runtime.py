@@ -129,6 +129,15 @@ class TestRuntimeOSRegistration:
         agents = r2.list_agents("prod")
         assert any(a.agent_id == "persist-agent" for a in agents)
 
+    def test_in_memory_db_has_registry_table(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            r = RuntimeOS(state=None, db_path=":memory:")
+            r.register("mem-agent", "sess-m")
+        assert "failed to load registry" not in caplog.text
+        assert any(a.agent_id == "mem-agent" for a in r.list_agents("default"))
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Heartbeat and stale eviction

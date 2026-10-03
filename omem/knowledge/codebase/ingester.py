@@ -8,7 +8,7 @@ import os
 from typing import List
 
 from .types import CodeSymbol, SymbolType
-from .utils import default_ignore_dirs, file_to_module, hash_text, is_python_file
+from .utils import default_ignore_dirs, file_to_module, hash_text, is_code_file, is_python_file
 
 
 class _ASTVisitor(ast.NodeVisitor):
@@ -127,7 +127,7 @@ class _ASTVisitor(ast.NodeVisitor):
         return ""
 
 class ProjectIngester:
-    """Crawl a Python repo and return a list of :class:`CodeSymbol` objects.
+    """Crawl a Python / TypeScript / JavaScript repo and return code symbols.
 
     Parameters
     ----------
@@ -143,40 +143,45 @@ class ProjectIngester:
         return file_to_module(self.root_dir, file_path)
 
     def parse_file(self, file_path: str) -> List[CodeSymbol]:
-        """Parse a single Python file and return its symbols.
-        Non‑Python files are ignored.
+        """Parse a single source file and return its symbols.
+        Non-code files are ignored.
         """
-        if not is_python_file(file_path):
+        if not is_code_file(file_path):
             return []
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 source = f.read()
-            tree = ast.parse(source)
         except Exception:
-            # Corrupt file – skip silently
             return []
         module_name = self._module_name(file_path)
-        # Create a module‑level symbol
-        module_hash = hash_text(source)
-        module_symbol = CodeSymbol(
-            symbol_id=module_name,
-            symbol_type=SymbolType.MODULE,
-            file_path=file_path,
-            name=module_name,
-            start_line=1,
-            end_line=len(source.splitlines()),
-            parent_id=None,
-            docstring=ast.get_docstring(tree),
-            signature=None,
-            content_hash=module_hash,
-            dependencies=[],
-        )
-        visitor = _ASTVisitor(module_name, file_path, source)
-        visitor.visit(tree)
-        return [module_symbol] + visitor.symbols
+        if is_python_file(file_path):
+            try:
+                tree = ast.parse(source)
+            except Exception:
+                return []
+            module_hash = hash_text(source)
+            module_symbol = CodeSymbol(
+                symbol_id=module_name,
+                symbol_type=SymbolType.MODULE,
+                file_path=file_path,
+                name=module_name,
+                start_line=1,
+                end_line=len(source.splitlines()) or 1,
+                parent_id=None,
+                docstring=ast.get_docstring(tree),
+                signature=None,
+                content_hash=module_hash,
+                dependencies=[],
+            )
+            visitor = _ASTVisitor(module_name, file_path, source)
+            visitor.visit(tree)
+            return [module_symbol] + visitor.symbols
+        from .ts_parser import parse_typescript
+
+        return parse_typescript(source, file_path, module_name)
 
     def crawl(self) -> List[CodeSymbol]:
-        """Recursively walk ``root_dir`` and parse every Python file.
+        """Recursively walk ``root_dir`` and parse every Python/TS/JS file.
         Returns a flat list of symbols.
         """
         all_symbols: List[CodeSymbol] = []
@@ -184,7 +189,7 @@ class ProjectIngester:
             # prune ignored directories
             dirs[:] = [d for d in dirs if d not in self.ignore_dirs and not d.startswith('.')]
             for file in files:
-                if file.lower().endswith('.py'):
-                    path = os.path.join(root, file)
+                path = os.path.join(root, file)
+                if is_code_file(path):
                     all_symbols.extend(self.parse_file(path))
         return all_symbols

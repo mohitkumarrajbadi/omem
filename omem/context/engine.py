@@ -145,7 +145,7 @@ class _ContextSection:
     priority: float
     token_count: int = 0
     memory_id: Optional[str] = None
-    truncatable: bool = False  # only state sections are truncated; memory is dropped
+    truncatable: bool = False  # True → shrink to remaining budget instead of drop
 
 
 # ---------------------------------------------------------------------------
@@ -560,6 +560,7 @@ class ContextEngine:
             self._cache.put(request, bundle)
 
         elapsed_ms = (time.time() - t0) * 1000
+        self._record_packed(memory_ids)
         logger.debug(
             "context.build done session=%r tokens=%d/%d memories=%d savings=%.0f%% %.1fms",
             request.session_id,
@@ -570,6 +571,25 @@ class ContextEngine:
             elapsed_ms,
         )
         return bundle
+
+    def _record_packed(self, memory_ids: List[str]) -> None:
+        """Credit memories that made the token pack (usage-based importance)."""
+        if not memory_ids or self._memory is None:
+            return
+        from ..core.brain.importance import record_packed
+
+        omem = getattr(self._memory, "omem", None)
+        brain = getattr(omem, "brain", None)
+        if brain is None:
+            return
+        for mid in memory_ids:
+            mem = brain.kv.get(mid) if hasattr(brain, "kv") else None
+            if mem is None:
+                continue
+            record_packed(mem)
+            brain.kv.set(mid, mem)
+            if hasattr(brain, "write_buffer"):
+                brain.write_buffer.enqueue(mem)
 
     def estimate_savings(self, request: ContextRequest) -> Dict[str, Any]:
         """Compute token statistics without modifying any state.
@@ -646,11 +666,16 @@ class ContextEngine:
         memories: List[Memory],
         request: ContextRequest,
     ) -> List[_ContextSection]:
-        """Convert recalled memories into packed sections."""
+        """Convert recalled memories into packed sections (deduped)."""
         sections = []
+        seen: set[str] = set()
         for rank, mem in enumerate(memories, start=1):
             if request.exclude_types and mem.type in request.exclude_types:
                 continue
+            key = re.sub(r"\s+", " ", (mem.content or "").strip().lower())[:400]
+            if key in seen:
+                continue
+            seen.add(key)
             score = getattr(mem, "score", mem.importance)
             # Pin DECISION / very-high-importance rows above ordinary fusion
             # so merge outcomes survive packing without demo-side injects.
@@ -663,7 +688,7 @@ class ContextEngine:
                 text=_format_memory_line(rank, mem),
                 priority=priority,
                 memory_id=mem.id,
-                truncatable=False,
+                truncatable=True,
             ))
         return sections
 
@@ -719,8 +744,8 @@ class ContextEngine:
     ) -> Tuple[List[_ContextSection], int]:
         """Greedy packing: sort by priority, fill budget highest-first.
 
-        State sections (``truncatable=True``) are shrunk to fit if the full
-        text exceeds remaining budget. Memory sections are dropped entirely.
+        State and memory sections are truncated to fit remaining budget.
+        Duplicate memory text is skipped before this step.
 
         Returns:
             (packed_sections, total_tokens_used)
@@ -743,7 +768,7 @@ class ContextEngine:
             if sec.token_count <= remaining:
                 packed.append(sec)
                 used += sec.token_count
-            elif sec.truncatable and remaining > _MIN_SECTION_BUDGET:
+            elif remaining > _MIN_SECTION_BUDGET:
                 truncated_text = self._counter.truncate(sec.text, remaining - 5)
                 truncated_tokens = self._counter.count(truncated_text)
                 if truncated_tokens > 0:
@@ -751,7 +776,6 @@ class ContextEngine:
                     sec.token_count = truncated_tokens
                     packed.append(sec)
                     used += truncated_tokens
-            # Memory sections that don't fit are silently dropped
 
         return packed, used
 

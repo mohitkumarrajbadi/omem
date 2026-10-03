@@ -295,8 +295,8 @@ def auto_classify_multi(content: str) -> List[Tuple[MemoryType, float]]:
     results = [(t, c) for t, c in scores if c >= _MULTI_LABEL_THRESHOLD]
     results.sort(key=lambda x: -x[1])
 
-    # Always include at least SEMANTIC as fallback
+    # Always include at least SEMANTIC as a *low-confidence hint*
     if not results:
-        results = [(MemoryType.SEMANTIC, 0.5)]
+        results = [(MemoryType.SEMANTIC, 0.35)]
 
     return results

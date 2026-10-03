@@ -7,7 +7,7 @@ Also handles automatic deactivation for low-value memories.
 import math
 import re
 import time
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 try:
     import omem_rust
@@ -147,7 +147,16 @@ _LOW_SIGNALS = [
 
 
 def estimate_importance(content: str) -> float:
-    """Auto-estimate importance of content from 0.0 to 1.0."""
+    """Heuristic prior only — not production importance.
+
+    Call ``update_importance_from_utility`` after retrieval/pack/cite so
+    unused keyword matches decay and useful memories rise.
+    """
+    return initial_importance(content)
+
+
+def initial_importance(content: str) -> float:
+    """Auto-estimate an importance *prior* from 0.0 to 1.0."""
     text = content.lower().strip()
 
     # Check high-importance signals (return on first match)
@@ -172,6 +181,84 @@ def estimate_importance(content: str) -> float:
         return 0.6
     else:
         return 0.7
+
+
+def update_importance_from_utility(memory: Memory) -> float:
+    """Promote importance from observed utility. Never demote on a positive signal.
+
+    Unused memories keep their heuristic prior; ``apply_sleep_importance``
+    (called from sleep) handles demotion of idle rows.
+    """
+    prior = getattr(memory, "initial_importance", None)
+    if prior is None:
+        prior = memory.importance
+    prior = float(prior)
+    retrieved = int(getattr(memory, "retrieved_count", 0) or 0)
+    packed = int(getattr(memory, "packed_count", 0) or 0)
+    cited = int(getattr(memory, "cited_count", 0) or 0)
+    usage_raw = retrieved + 2 * packed + 3 * cited
+    if usage_raw <= 0:
+        return memory.importance
+    # Packed/cited are strong evidence of future utility.
+    weight = min(1.0, 0.12 * retrieved + 0.18 * packed + 0.28 * cited)
+    promoted = prior + (1.0 - prior) * weight
+    memory.importance = max(float(memory.importance), min(1.0, promoted))
+    return memory.importance
+
+
+def record_packed(memory: Memory) -> float:
+    memory.packed_count = int(getattr(memory, "packed_count", 0) or 0) + 1
+    return update_importance_from_utility(memory)
+
+
+def record_cited(memory: Memory) -> float:
+    memory.cited_count = int(getattr(memory, "cited_count", 0) or 0) + 1
+    return update_importance_from_utility(memory)
+
+
+# Sleep may demote unused memories after this idle window (7 days).
+_SLEEP_UNUSED_GRACE = 7 * 24 * 3600
+_SLEEP_DEMOTE = 0.08
+_SLEEP_FLOOR = 0.15
+
+
+def apply_sleep_importance(
+    memories: List[Memory],
+    now: Optional[float] = None,
+) -> Dict[str, int]:
+    """Usage-trained importance during sleep. No LLM.
+
+    Memories that were retrieved, packed, or cited are promoted.
+    Idle memories past the grace window are demoted toward a floor —
+    never below ``max(0.15, 0.5 * initial_importance)``, never CORE.
+    """
+    now = now if now is not None else time.time()
+    promoted = 0
+    demoted = 0
+    for mem in memories:
+        if not getattr(mem, "active", True):
+            continue
+        before = float(mem.importance)
+        retrieved = int(getattr(mem, "retrieved_count", 0) or 0)
+        packed = int(getattr(mem, "packed_count", 0) or 0)
+        cited = int(getattr(mem, "cited_count", 0) or 0)
+        if retrieved + packed + cited > 0:
+            update_importance_from_utility(mem)
+            if mem.importance > before + 1e-9:
+                promoted += 1
+            continue
+        if getattr(mem, "priority", None) == MemoryPriority.CORE:
+            continue
+        ref = mem.last_accessed if getattr(mem, "last_accessed", 0) else mem.timestamp
+        if now - ref < _SLEEP_UNUSED_GRACE:
+            continue
+        prior = float(getattr(mem, "initial_importance", None) or mem.importance)
+        floor = max(_SLEEP_FLOOR, 0.5 * prior)
+        lowered = max(floor, before - _SLEEP_DEMOTE)
+        if lowered < before - 1e-9:
+            mem.importance = lowered
+            demoted += 1
+    return {"promoted": promoted, "demoted": demoted}
 
 
 def estimate_priority(content: str) -> MemoryPriority:
@@ -364,6 +451,8 @@ def reinforce_on_access(memory: Memory, now: Optional[float] = None) -> None:
     memory.access_count += 1
     memory.last_accessed = now
     memory.freshness = now
+    memory.retrieved_count = int(getattr(memory, "retrieved_count", 0) or 0) + 1
+    update_importance_from_utility(memory)
 
     # Diminishing boost — frequently accessed memories stabilize
     boost = 0.02 / (1.0 + memory.access_count * 0.1)

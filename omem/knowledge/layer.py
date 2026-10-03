@@ -140,6 +140,7 @@ class KnowledgeOS:
         _dg=None,
     ) -> None:
         if omem is not None:
+            self._omem = omem
             self._kg = omem.brain.knowledge_graph
             self._cg = omem.brain.graph
             self._dg = omem.brain.dependency_graph
@@ -147,6 +148,7 @@ class KnowledgeOS:
             from ..core.graph.causal import CausalGraph
             from ..core.graph.dependency import DependencyGraph
             from ..core.graph.knowledge import KnowledgeGraph
+            self._omem = None
             self._kg = _kg if _kg is not None else KnowledgeGraph()
             self._cg = _cg if _cg is not None else CausalGraph()
             self._dg = _dg if _dg is not None else DependencyGraph()
@@ -203,7 +205,17 @@ class KnowledgeOS:
             "knowledge.link %r -[%s]-> %r (conf=%.2f)",
             subject, edge_type.value, obj, confidence,
         )
+        self._persist_graph(namespace)
         return edge.id
+
+    def _persist_graph(self, namespace: str = "default") -> None:
+        """Flush edges when backed by a durable OMem engine."""
+        omem = getattr(self, "_omem", None)
+        if omem is None:
+            return
+        brain = getattr(omem, "brain", None)
+        if brain is not None and hasattr(brain, "persist_graph"):
+            brain.persist_graph(namespace)
 
     def assert_fact(
         self,
@@ -229,6 +241,7 @@ class KnowledgeOS:
             source=source,
         )
         logger.debug("knowledge.assert_fact %r -[%s]-> %r", subject, relation, obj)
+        self._persist_graph()
         return result.get("edge_id", "")
 
     def ingest(
@@ -249,13 +262,15 @@ class KnowledgeOS:
             Dict with keys: ``node_ids``, ``edge_ids``, ``entities``,
             ``relation_types``, ``evidence_count``.
         """
-        return self._kg.ingest_experience(
+        result = self._kg.ingest_experience(
             memory_id=memory_id,
             content=content,
             source=source,
             confidence=confidence,
             namespace=namespace,
         )
+        self._persist_graph(namespace)
+        return result
 
     # ------------------------------------------------------------------
     # Entity-relation graph — read operations

@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 _TOKENIZER = re.compile(r"\w+")
 
-from ..brain.importance import run_decay_sweep  # noqa: E402
+from ..brain.importance import apply_sleep_importance, run_decay_sweep  # noqa: E402
 from ..brain.updater import create_updated_memory  # noqa: E402
 
 
@@ -198,14 +198,22 @@ class LifecycleMixin:
         llm_fn: Optional[callable] = None,
         include_dream: bool = True,
     ) -> dict:
-        """Full maintenance cycle: Decay -> Forget -> (Dream) -> Vacuum -> Compact.
+        """Full maintenance cycle: Importance → Decay → Forget → (Dream) → Vacuum → Compact.
 
         Args:
             speed: 'fast', 'normal', or 'thorough'.
-            llm_fn: Optional LLM for consolidation.
-            include_dream: Whether to run consolidation (requires CPU/LLM).
+            llm_fn: Optional generative LLM for consolidation. Default sleep
+                    never requires a key — dream uses templates unless this is set.
+            include_dream: Whether to run consolidation. Default True uses the
+                    template path (no API key). Pass False for decay/forget only.
         """
         t0 = time.time()
+
+        # 0. Usage-trained importance (promote retrieved/packed/cited; demote idle)
+        usage_stats = apply_sleep_importance(self.kv.all())
+        if hasattr(self, "write_buffer"):
+            for mem in self.kv.all():
+                self.write_buffer.enqueue(mem)
 
         # 1. Aging and TTL
         deactivated = self.run_decay()
@@ -255,6 +263,7 @@ class LifecycleMixin:
             "deleted": len(f_result.deleted),
             "purged": purged,
             "dream": d_result,
+            "importance": usage_stats,
             "hierarchy": {
                 "promoted": len(hierarchy.get("promoted", [])),
                 "archived": len(hierarchy.get("archived", [])),

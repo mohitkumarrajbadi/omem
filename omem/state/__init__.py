@@ -35,20 +35,18 @@ from .exceptions import (
     StateError,
 )
 from .layer import StateOS
+from .merge import three_way_merge
 
 __all__ = [
-    # Core API
     "StateOS",
-    # Data types
+    "three_way_merge",
     "StatePayload",
     "StateSnapshot",
     "StateCheckpoint",
     "ToolResult",
-    # Backends
     "StateBackend",
     "InMemoryStateBackend",
     "SQLiteStateBackend",
-    # Exceptions
     "StateError",
     "SessionNotFoundError",
     "SessionNamespaceConflictError",

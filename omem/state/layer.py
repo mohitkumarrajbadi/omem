@@ -444,22 +444,17 @@ class StateOS:
         winning_session_id: str,
         losing_session_id: str,
     ) -> StatePayload:
-        """Apply the winning branch's state to the base session.
+        """3-way merge ``winning_session_id`` into ``losing_session_id``.
 
-        The base session is identified as the common ancestor of both
-        sessions (determined via fork lineage). If no lineage is found,
-        ``winning_session_id`` is treated as the target directly.
-
-        The losing branch is marked as merged in the lineage table. It
-        is NOT deleted so it can be inspected later.
+        The target session (second argument, typically the parent) is updated
+        field-by-field against the fork snapshot ancestor. The source branch
+        is marked merged and is not deleted.
 
         Returns:
-            The updated payload (winning session's state, version bumped).
+            The updated target payload.
 
         Raises:
             SessionNotFoundError: if either session does not exist.
-            MergeError: if both sessions originate from the same parent
-                        and the target cannot be resolved.
         """
         winning = self._backend.load_session(winning_session_id, namespace=self._ns())
         if winning is None:
@@ -468,18 +463,32 @@ class StateOS:
         if losing is None:
             raise SessionNotFoundError(losing_session_id)
 
+        from .merge import three_way_merge
+
+        ancestor = None
+        snap_id = self._backend.get_fork_parent(winning_session_id) or self._backend.get_fork_parent(
+            losing_session_id
+        )
+        if snap_id:
+            snap = self._backend.get_snapshot(snap_id, namespace=self._ns())
+            if snap is not None:
+                ancestor = snap.payload
+
         with self._lock:
-            current = self._backend.load_session(winning_session_id, namespace=self._ns())
-            merged = dataclasses.replace(
+            merged = three_way_merge(
+                ancestor,
+                losing,
                 winning,
-                version=(current.version if current else winning.version) + 1,
-                updated_at=time.time(),
+                target_session_id=losing_session_id,
             )
             self._backend.save_session(merged)
-            self._backend.mark_merged(losing_session_id, time.time())
+            self._backend.mark_merged(winning_session_id, time.time())
 
         logger.info(
-            "state.merge winner=%r loser=%r", winning_session_id, losing_session_id
+            "state.merge source=%r target=%r conflicts=%s",
+            winning_session_id,
+            losing_session_id,
+            bool((merged.workflow_state or {}).get("_omem_merge")),
         )
         return merged
 

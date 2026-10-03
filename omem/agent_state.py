@@ -80,12 +80,12 @@ def _require_cloud_package() -> Any:
         from omem.cloud.remote import RemoteAgentState  # type: ignore[import]
 
         return RemoteAgentState
-    except ImportError:
+    except (ImportError, RuntimeError) as exc:
         raise ImportError(
             "Cloud routing requires the omem-cloud package.\n"
             "omem-cloud is a commercial product — visit https://omem.dev/cloud to get access.\n"
             "Once you have a license: pip install omem-cloud"
-        ) from None
+        ) from exc
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -388,8 +388,8 @@ class AgentState:
         )
         self._observe = ObserveOS(otel_endpoint=_otel)
 
-        # ── Provenance (Phase 7) ──────────────────────────────────────
-        self._provenance = ProvenanceOS()
+        # ── Provenance (Phase 7) — durable on the same backend as memories ──
+        self._provenance = ProvenanceOS(backend=getattr(_omem, "_backend", None))
 
         # ── Governance (Phase 8) — wired with omem + state ───────────
         self._governance = GovernanceOS(
@@ -486,7 +486,11 @@ class AgentState:
         exc_val: Optional[BaseException],
         exc_tb: Optional[Any],
     ) -> bool:
-        """On clean exit, write a crash-recovery checkpoint if auto_checkpoint."""
+        """On clean exit, flush writes and optionally checkpoint."""
+        try:
+            self.flush()
+        except Exception as exc:
+            logger.warning("AgentState.__exit__: flush failed — %s", exc)
         if exc_type is None and self.session_id and self._config.auto_checkpoint:
             try:
                 chk_id = self._state.checkpoint(self.session_id)
@@ -714,6 +718,80 @@ class AgentState:
         self._emit("recall", dur, query=query[:80], result_count=len(results))
         return results
 
+    def profile(
+        self,
+        user_id: str = "",
+        *,
+        max_facts: int = 20,
+        max_recent: int = 8,
+    ):
+        """Compiled briefing: current facts, recent episodes, and the session goal.
+
+        No generative LLM — facts come from stored triplets and TMS-current rows.
+        """
+        from .memory.profile import profile_from_layers
+
+        return profile_from_layers(
+            self._memory,
+            self._state,
+            namespace=self.namespace,
+            user_id=user_id,
+            session_id=self.session_id,
+            max_facts=max_facts,
+            max_recent=max_recent,
+        )
+
+    def remember_document(
+        self,
+        source: Any,
+        *,
+        namespace: Optional[str] = None,
+        filename: Optional[str] = None,
+        max_chars: int = 1200,
+        overlap: int = 150,
+        importance: float = 0.55,
+        extra_metadata: Optional[Dict[str, Any]] = None,
+    ):
+        """Ingest a document as chunks (+ frontmatter facts). No LLM extract."""
+        t0 = time.time()
+        result = self._memory.remember_document(
+            source,
+            namespace=namespace or self.namespace,
+            filename=filename,
+            max_chars=max_chars,
+            overlap=overlap,
+            importance=importance,
+            extra_metadata=extra_metadata,
+        )
+        dur = (time.time() - t0) * 1000
+        self._emit(
+            "remember_document",
+            dur,
+            source=getattr(result, "source", ""),
+            chunk_count=getattr(result, "chunk_count", 0),
+        )
+        return result
+
+    def ingest_folder(self, path: str, **kwargs: Any):
+        """Ingest a folder of documents. Shorthand for ``agent.memory.ingest_folder``."""
+        kwargs.setdefault("namespace", self.namespace)
+        return self._memory.ingest_folder(path, **kwargs)
+
+    def ingest_url(self, url: str, **kwargs: Any):
+        """Fetch and ingest a URL. Shorthand for ``agent.memory.ingest_url``."""
+        kwargs.setdefault("namespace", self.namespace)
+        return self._memory.ingest_url(url, **kwargs)
+
+    def ingest_notion(self, **kwargs: Any):
+        """Ingest Notion pages (token from arg or OMEM_NOTION_TOKEN)."""
+        kwargs.setdefault("namespace", self.namespace)
+        return self._memory.ingest_notion(**kwargs)
+
+    def ingest_drive(self, **kwargs: Any):
+        """Ingest Google Drive files (token from arg or OMEM_DRIVE_TOKEN)."""
+        kwargs.setdefault("namespace", self.namespace)
+        return self._memory.ingest_drive(**kwargs)
+
     def forget(self, memory_id: Optional[str] = None) -> Any:
         """Trigger memory forgetting (low-importance memories are pruned).
 
@@ -893,8 +971,10 @@ class AgentState:
     def merge_fork(self, fork_session_id: str) -> StatePayload:
         """Merge a forked session back into this session.
 
-        The fork's state is treated as the winning branch. The current
-        session is the base.
+        3-way merge: this session is the target, the fork is the source,
+        the fork snapshot is the ancestor. Field-level union, not overwrite.
+        Conflicts keep this session's value and are recorded on
+        ``workflow_state['_omem_merge']``.
 
         Args:
             fork_session_id: Session ID of the fork to merge.
@@ -1512,3 +1592,40 @@ class AgentState:
         except Exception:
             pass
         return "\n".join(lines)
+
+    def flush(self) -> None:
+        """Flush memory write buffer and knowledge graph to durable storage."""
+        brain = getattr(self._omem, "brain", None)
+        if brain is None:
+            return
+        if hasattr(brain, "write_buffer"):
+            try:
+                brain.write_buffer.flush()
+            except Exception:
+                pass
+            if hasattr(brain.write_buffer, "stop"):
+                try:
+                    brain.write_buffer.stop()
+                except Exception:
+                    pass
+        if hasattr(brain, "persist_graph"):
+            brain.persist_graph(self.namespace)
+
+    def close(self) -> None:
+        """Flush and release engine resources. Safe to call more than once."""
+        try:
+            self.flush()
+        except Exception as exc:
+            logger.warning("AgentState.flush during close failed: %s", exc)
+        brain = getattr(self._omem, "brain", None)
+        if brain is not None and hasattr(brain, "stop_maintenance"):
+            try:
+                brain.stop_maintenance()
+            except Exception:
+                pass
+        backend = getattr(self._omem, "_backend", None)
+        if backend is not None and hasattr(backend, "close"):
+            try:
+                backend.close()
+            except Exception:
+                pass

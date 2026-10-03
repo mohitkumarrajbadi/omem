@@ -10,7 +10,7 @@ from typing import Set
 from ...api import OMem
 from .graph import ProjectGraph
 from .ingester import ProjectIngester
-from .utils import default_ignore_dirs
+from .utils import default_ignore_dirs, is_code_file
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ class ProjectSync:
                 for line in result.stdout.splitlines():
                     # format: "M\tpath/to/file.py" or "D\tpath"
                     status, rel_path = line.split('\t', 1)
-                    if rel_path.lower().endswith('.py'):
+                    if is_code_file(rel_path):
                         changed.add(rel_path)
             # Untracked (new) files
             result = subprocess.run(
@@ -67,7 +67,7 @@ class ProjectSync:
             )
             if result.returncode == 0:
                 for rel_path in result.stdout.splitlines():
-                    if rel_path.lower().endswith('.py'):
+                    if is_code_file(rel_path):
                         changed.add(rel_path)
         except Exception as e:
             logger.warning("Git diff failed (%s); falling back to full crawl", e)
@@ -86,7 +86,7 @@ class ProjectSync:
         """
         changed_files = self._git_diff_files()
         if not changed_files:
-            logger.info("No Python changes detected by git diff.")
+            logger.info("No code changes detected by git diff.")
             return 0
 
         ingester = ProjectIngester(self.root_dir)

@@ -1,0 +1,127 @@
+{
+  "generated_at": "2026-10-01T16:40:19Z",
+  "prompt_eval_count": null,
+  "meter": "prefix-stability proxy (~4 chars/token). Not a measured provider KV-cache bill. prompt_eval_count stays null unless a live host meter is attached.",
+  "stable_host": {
+    "mode": "stable",
+    "prompt_eval_count": null,
+    "meter": "prefix-stability proxy, not a provider KV bill",
+    "avg_gross_saved_tokens": 13927.2,
+    "avg_net_estimate_tokens": 13927.2,
+    "avg_naive_tokens": 14143.2,
+    "gross_savings_pct_vs_naive": 98.5,
+    "net_savings_pct_vs_naive": 98.5,
+    "prefix_stable": true,
+    "turns": [
+      {
+        "turn": 1,
+        "pack_tokens": 216,
+        "naive_tokens": 14128,
+        "gross_saved": 13912,
+        "recompute_tokens": 216,
+        "net_estimate": 13912,
+        "prefix_unchanged": true
+      },
+      {
+        "turn": 2,
+        "pack_tokens": 216,
+        "naive_tokens": 14136,
+        "gross_saved": 13920,
+        "recompute_tokens": 216,
+        "net_estimate": 13920,
+        "prefix_unchanged": true
+      },
+      {
+        "turn": 3,
+        "pack_tokens": 216,
+        "naive_tokens": 14143,
+        "gross_saved": 13927,
+        "recompute_tokens": 216,
+        "net_estimate": 13927,
+        "prefix_unchanged": true
+      },
+      {
+        "turn": 4,
+        "pack_tokens": 216,
+        "naive_tokens": 14151,
+        "gross_saved": 13935,
+        "recompute_tokens": 216,
+        "net_estimate": 13935,
+        "prefix_unchanged": true
+      },
+      {
+        "turn": 5,
+        "pack_tokens": 216,
+        "naive_tokens": 14158,
+        "gross_saved": 13942,
+        "recompute_tokens": 216,
+        "net_estimate": 13942,
+        "prefix_unchanged": true
+      }
+    ]
+  },
+  "churn_host": {
+    "mode": "churn",
+    "prompt_eval_count": null,
+    "meter": "prefix-stability proxy, not a provider KV bill",
+    "avg_gross_saved_tokens": 13927.2,
+    "avg_net_estimate_tokens": 13657.4,
+    "avg_naive_tokens": 14143.2,
+    "gross_savings_pct_vs_naive": 98.5,
+    "net_savings_pct_vs_naive": 96.6,
+    "prefix_stable": false,
+    "turns": [
+      {
+        "turn": 1,
+        "pack_tokens": 216,
+        "naive_tokens": 14128,
+        "gross_saved": 13912,
+        "recompute_tokens": 255,
+        "net_estimate": 13657,
+        "prefix_unchanged": true
+      },
+      {
+        "turn": 2,
+        "pack_tokens": 216,
+        "naive_tokens": 14136,
+        "gross_saved": 13920,
+        "recompute_tokens": 262,
+        "net_estimate": 13658,
+        "prefix_unchanged": false
+      },
+      {
+        "turn": 3,
+        "pack_tokens": 216,
+        "naive_tokens": 14143,
+        "gross_saved": 13927,
+        "recompute_tokens": 270,
+        "net_estimate": 13657,
+        "prefix_unchanged": false
+      },
+      {
+        "turn": 4,
+        "pack_tokens": 216,
+        "naive_tokens": 14151,
+        "gross_saved": 13935,
+        "recompute_tokens": 277,
+        "net_estimate": 13658,
+        "prefix_unchanged": false
+      },
+      {
+        "turn": 5,
+        "pack_tokens": 216,
+        "naive_tokens": 14158,
+        "gross_saved": 13942,
+        "recompute_tokens": 285,
+        "net_estimate": 13657,
+        "prefix_unchanged": false
+      }
+    ]
+  },
+  "loss": {
+    "where": "history-rewrite host",
+    "stable_net_savings_pct_vs_naive": 98.5,
+    "churn_net_savings_pct_vs_naive": 96.6,
+    "note": "This run does not make net savings negative versus a naive full dump (96.6% under churn, 98.5% when the prefix stays stable). The loss is the broken prefix: churn_host.prefix_stable is false, and average net tokens fall by about 270 per turn because the host recomputes history. prompt_eval_count is null, so this is not a provider cache invoice. A win versus full history is not a win versus a cached conversation."
+  }
+}
