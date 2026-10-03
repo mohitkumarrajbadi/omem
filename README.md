@@ -61,9 +61,10 @@ Optional: `pip install "omem-os[mem0]"` → `GovernedMem0` wraps Mem0 with OMem 
 | Audit | `governance.export_audit` / CLI JSON |
 | Tenant RLS | **OMem Cloud** (Postgres, fail-closed) |
 | Key rotation | **OMem Cloud** admin API + console |
-| AST code index | Alpha — off (`OMEM_ENABLE_EXPERIMENTAL_AST=1`) |
 
 Cloud = design-partner **tech preview**, not GA → [omem-cloud](../omem-cloud/) · [GA runbook](../omem-cloud/docs/deployment/GA_HARDENING.md)
+
+Alpha (AST index, experimental console tabs) stays **off** — not part of this pitch.
 
 ---
 
