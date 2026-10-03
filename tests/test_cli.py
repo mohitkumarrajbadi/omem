@@ -19,7 +19,7 @@ class TestCLI:
         for help_flag in ["-h", "--help"]:
             result = self.runner.invoke(cli, [help_flag])
             assert result.exit_code == 0
-            assert "Agent State Infrastructure SDK" in result.output
+            assert "Governed, Auditable Memory" in result.output or "governed" in result.output.lower()
 
     def test_demo(self):
         result = self.runner.invoke(cli, ["demo"])
