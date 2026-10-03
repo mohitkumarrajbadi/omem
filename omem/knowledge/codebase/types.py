@@ -12,6 +12,8 @@ class SymbolType(Enum):
     CLASS = auto()
     FUNCTION = auto()
     METHOD = auto()
+    INTERFACE = auto()
+    TYPE = auto()
 
     def __str__(self) -> str:
         return self.name.lower()

@@ -88,10 +88,14 @@ _BANNER_ART = r"""
 
 CLI_BANNER = (
     _c(_BANNER_ART, fg="cyan", bold=True)
-    + _c("  Agent State Infrastructure SDK", fg="white", bold=True)
+    + _c(
+        "  Governed, Auditable Memory and State for AI Agents",
+        fg="white",
+        bold=True,
+    )
     + "\n"
     + _c(
-        "  Memory · State · Context · Knowledge · Governance\n",
+        "  Audit · Encryption · Belief revision · Snapshot / rollback\n",
         fg="bright_black",
     )
 )
@@ -99,17 +103,30 @@ CLI_BANNER = (
 # Commands grouped by what you're trying to do, not by internal architecture.
 # Canonical commands come first; thin legacy aliases are kept but de-emphasized
 # at the bottom so the common path stays obvious.
+# "Codebase" (AST index) is Alpha — shown only when OMEM_ENABLE_EXPERIMENTAL_AST=1.
 COMMAND_GROUPS = OrderedDict(
     [
         ("Start here", ["agent", "status", "init", "demo"]),
         ("Memory", ["remember", "recall", "list", "inspect", "stats", "sleep", "clear"]),
         ("State & context", ["state", "context", "knowledge"]),
         ("Enterprise", ["observe", "provenance", "governance", "runtime", "org"]),
-        ("Codebase", ["ingest", "sync", "codebase", "namespaces"]),
+        ("Codebase (experimental)", ["ingest", "sync", "codebase", "namespaces"]),
+        ("Connectors", ["ingest-docs", "ingest-url", "ingest-notion", "ingest-drive"]),
         ("Server & tools", ["serve", "dashboard", "bench", "health", "export", "import", "completion", "version"]),
         ("Aliases", ["add", "search", "maintain", "benchmark"]),
     ]
 )
+
+
+def _command_groups_for_help():
+    from .experimental import ast_enabled
+
+    groups = OrderedDict()
+    for category, cmd_list in COMMAND_GROUPS.items():
+        if category.startswith("Codebase") and not ast_enabled():
+            continue
+        groups[category] = cmd_list
+    return groups
 
 
 class OMemGroup(click.Group):
@@ -127,7 +144,7 @@ class OMemGroup(click.Group):
         commands = self.list_commands(ctx)
         mapped_commands = set()
 
-        for category, cmd_list in COMMAND_GROUPS.items():
+        for category, cmd_list in _command_groups_for_help().items():
             available_cmds = [c for c in cmd_list if c in commands]
             if not available_cmds:
                 continue
@@ -271,16 +288,15 @@ def _print_memory_results(results, show_scores: bool = False) -> None:
 @click.option("--quiet", is_flag=True, help="Print less.")
 @click.pass_context
 def cli(ctx: click.Context, db_path: Optional[str], backend: str, embedding_provider: str, quiet: bool):
-    """OMem — Agent State Infrastructure SDK.
+    """OMem — governed, auditable memory and state for AI agents.
 
-    Persistent memory, session state, context assembly, knowledge graphs,
-    observability, governance, and multi-agent coordination — all from one CLI.
+    Audit trails, AES-256-GCM encryption, belief revision, and git-like
+    snapshot / rollback — the compliance layer around multi-agent systems.
 
     \b
     New here? Try:
-        omem demo                              # see it work in 30 seconds
-        omem remember "FastAPI uses Pydantic"  # store a memory
-        omem recall "Pydantic"                 # search for it
+        omem init                              # durable DB + MCP line
+        python -c "from omem import AgentState; ..."  # see README quickstart
         omem status                            # one-glance health dashboard
 
     \b
@@ -288,6 +304,7 @@ def cli(ctx: click.Context, db_path: Optional[str], backend: str, embedding_prov
         OMEM_SESSION   default session ID
         OMEM_DB        database path
         OMEM_NS        default namespace
+        OMEM_ENCRYPTION_KEY   AES-256-GCM at rest
         OMEM_USER_ID / OMEM_TEAM_ID / OMEM_ORG_ID   org namespace identity
 
     \b
@@ -402,12 +419,23 @@ def _print_status_dashboard(s: Dict[str, Any]) -> None:
 
 @cli.command()
 @click.option("--db-path", default=None, help="Custom SQLite database target path.")
+@click.option(
+    "--cursor",
+    is_flag=True,
+    help="Merge the OMem server into ~/.cursor/mcp.json without removing other servers.",
+)
 @click.pass_context
-def init(ctx: click.Context, db_path: Optional[str]):
-    """Initialize a new local memory space."""
+def init(ctx: click.Context, db_path: Optional[str], cursor: bool):
+    """Initialize local memory and print the one MCP line for an agent.
+
+    On an empty database this seeds the first-run story: the agent chose
+    MongoDB, and lineage shows which memory caused it. Run ``omem demo`` next.
+    """
+    from .demo_story import mcp_config, merge_cursor_mcp, seed_story
+
     db_path = db_path or ctx.obj.get("db_path") or os.path.expanduser("~/.omem/brain.db")
 
-    db_dir = os.path.dirname(db_path)
+    db_dir = os.path.dirname(os.path.expanduser(db_path))
     if db_dir and not os.path.exists(db_dir):
         os.makedirs(db_dir, exist_ok=True)
 
@@ -417,12 +445,24 @@ def init(ctx: click.Context, db_path: Optional[str]):
         embedding_provider=ctx.obj.get("embedding_provider", "local"),
     )
 
+    total = int(m.stats().get("total", 0) or 0)
+    seeded = False
+    if total == 0:
+        seeded = seed_story(m)
+
     success("OMem initialized.")
     field("database", db_path)
     field("memories", m.stats().get("total", 0))
+    if seeded:
+        field("story", "demo namespace — agent chose MongoDB")
     click.echo("")
-    hint('omem remember "FastAPI uses Pydantic v2"')
-    hint('omem recall "Pydantic"')
+    note("Paste this one line into your agent MCP config:")
+    click.echo(json.dumps(mcp_config(db_path), separators=(",", ":")))
+    if cursor:
+        written = merge_cursor_mcp(mcp_config(db_path))
+        success(f"Merged OMem into {written}")
+    click.echo("")
+    hint("omem demo")
 
 
 @cli.command()
@@ -925,50 +965,36 @@ def namespaces(ctx: click.Context, output_format: str):
 
 
 @cli.command()
+@click.argument(
+    "scenario",
+    required=False,
+    default="poison-recovery",
+    type=click.Choice(["poison-recovery"]),
+)
+@click.option("--json", "as_json", is_flag=True, help="Print the remediation report as JSON.")
 @click.pass_context
-def demo(ctx: click.Context):
-    """Run a quick end-to-end demo of OMem."""
-    m = _get_omem(ctx)
-    click.echo("\n" + "═" * 50)
-    click.echo(_c("  OMem — 30-second demo", fg="cyan", bold=True))
-    click.echo("" + "═" * 50 + "\n")
+def demo(ctx: click.Context, scenario: str, as_json: bool):
+    """Memory poisoning → provenance → audit-verified rollback.
 
-    samples = [
-        "My name is Mohit and I'm building OMem",
-        "Decided to use FAISS for vector search",
-        "Step 1: install omem, Step 2: import OMem",
-        "Yesterday deployed v0.2.0 to production",
-        "Rain caused server outage in Mumbai region",
-        "Currently optimizing the hybrid RAG pipeline",
-        "Urgent: security vulnerability in auth module",
-        "Python is the most popular programming language",
-    ]
+    Default scenario is ``poison-recovery``. Run:
 
-    note("Adding a few sample memories...")
-    for content in samples:
-        mid = m.add(content)
-        mem = m.get(mid)
-        click.echo(f"  [{mem.type.name:11s}] w={mem.importance:.2f} | {content[:50]}")
+        omem demo
+        omem demo poison-recovery
+    """
+    from .demo_poison import run_poison_recovery
 
-    s = m.stats()
-    click.echo(f"\n{s['total']} memories stored across {len(s['types'])} types.\n")
+    del scenario  # only one scenario wired today
+    db_path = (ctx.obj or {}).get("db_path")
+    report = run_poison_recovery(db_path=db_path)
+    if as_json:
+        click.echo(json.dumps(report, indent=2, sort_keys=True, default=str))
+        return
 
-    note("Now let's recall a few things:")
-    for q in ["Who am I?", "deployment production", "security urgent"]:
-        results = m.recall(q, k=2)
-        click.echo(f'  "{q}"')
-        for r in results:
-            click.echo(f"    {GLYPH_ARROW} [{r.score:.3f}] {r.content[:55]}")
-
-    note("Consolidating duplicates...")
-    result = m.compress()
-    click.echo(f"  compressed {result['compressed']}, deactivated {result['deactivated']}")
-
-    note("Reflecting to derive insights...")
-    refs = m.reflect()
-    click.echo(f"  added {len(refs)} insights.")
-    click.echo("\n" + "═" * 50)
-    success("Demo complete. Try: omem remember \"...\"  then  omem recall \"...\"")
+    for line in report.get("lines") or []:
+        click.echo(line)
+    if not report.get("ok"):
+        failure(report.get("error") or "poison-recovery demo failed")
+        sys.exit(1)
 
 
 @cli.command("bench")
@@ -1077,10 +1103,88 @@ def health(ctx: click.Context):
 @click.option('--namespace', '-n', default='project', help='Namespace to index into.')
 @click.pass_context
 def ingest(ctx: click.Context, path: str, namespace: str):
-    """Index a codebase into memory."""
+    """Index a codebase into memory (experimental AST — OMEM_ENABLE_EXPERIMENTAL_AST=1)."""
+    from .experimental import require_ast
+
+    try:
+        require_ast("omem ingest")
+    except RuntimeError as exc:
+        failure(str(exc))
+        sys.exit(2)
     m = _get_omem(ctx)
     count = m.ingest_project(path, namespace)
     success(f"Indexed {count} code symbols into '{namespace}'.")
+
+
+@cli.command("ingest-docs")
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--namespace", "-n", default="default", help="Memory namespace.")
+@click.pass_context
+def ingest_docs(ctx: click.Context, path: str, namespace: str):
+    """Ingest markdown/HTML/PDF files from a folder (no LLM extract)."""
+    from .memory import MemoryOS
+
+    memory = MemoryOS(_get_omem(ctx))
+    result = memory.ingest_folder(path, namespace=namespace)
+    success(f"Ingested {result.pages} files ({result.chunk_count} chunks).")
+    if result.errors:
+        for err in result.errors:
+            failure(err)
+
+
+@cli.command("ingest-url")
+@click.argument("url")
+@click.option("--namespace", "-n", default="default", help="Memory namespace.")
+@click.pass_context
+def ingest_url_cmd(ctx: click.Context, url: str, namespace: str):
+    """Fetch a URL and store stripped text as chunks."""
+    from .memory import MemoryOS
+
+    memory = MemoryOS(_get_omem(ctx))
+    result = memory.ingest_url(url, namespace=namespace)
+    success(f"Ingested {result.pages} page(s), {result.chunk_count} chunks.")
+
+
+@cli.command("ingest-notion")
+@click.option("--token", envvar="OMEM_NOTION_TOKEN", help="Notion integration token.")
+@click.option("--query", "-q", default="", help="Optional search query.")
+@click.option("--namespace", "-n", default="default", help="Memory namespace.")
+@click.option("--max-pages", default=50, type=int)
+@click.pass_context
+def ingest_notion_cmd(ctx: click.Context, token: Optional[str], query: str, namespace: str, max_pages: int):
+    """Pull Notion pages via REST and ingest block text (no LLM)."""
+    from .memory import MemoryOS
+
+    memory = MemoryOS(_get_omem(ctx))
+    result = memory.ingest_notion(token=token, query=query, namespace=namespace, max_pages=max_pages)
+    success(f"Ingested {result.pages} Notion pages ({result.chunk_count} chunks).")
+    for err in result.errors:
+        failure(err)
+
+
+@cli.command("ingest-drive")
+@click.option("--token", envvar="OMEM_DRIVE_TOKEN", help="Google OAuth access token.")
+@click.option("--folder-id", default=None, help="Limit to a Drive folder id.")
+@click.option("--namespace", "-n", default="default", help="Memory namespace.")
+@click.option("--max-files", default=50, type=int)
+@click.pass_context
+def ingest_drive_cmd(
+    ctx: click.Context,
+    token: Optional[str],
+    folder_id: Optional[str],
+    namespace: str,
+    max_files: int,
+):
+    """Pull Google Drive files via REST and ingest exported text (no LLM)."""
+    from .memory import MemoryOS
+
+    memory = MemoryOS(_get_omem(ctx))
+    result = memory.ingest_drive(
+        token=token, folder_id=folder_id, namespace=namespace, max_files=max_files
+    )
+    success(f"Ingested {result.pages} Drive files ({result.chunk_count} chunks).")
+    for err in result.errors:
+        failure(err)
 
 
 @cli.command()
@@ -1088,7 +1192,14 @@ def ingest(ctx: click.Context, path: str, namespace: str):
 @click.option('--namespace', '-n', default='project', help='Namespace to sync.')
 @click.pass_context
 def sync(ctx: click.Context, path: str, namespace: str):
-    """Sync code changes since the last index."""
+    """Sync code changes since the last index (experimental AST)."""
+    from .experimental import require_ast
+
+    try:
+        require_ast("omem sync")
+    except RuntimeError as exc:
+        failure(str(exc))
+        sys.exit(2)
     m = _get_omem(ctx)
     processed = m.sync_project(path, namespace)
     success(f"Synced {processed} changed symbols into '{namespace}'.")
@@ -1101,7 +1212,14 @@ def sync(ctx: click.Context, path: str, namespace: str):
 @click.option('--top-k', default=5, help='Maximum results to return.')
 @click.pass_context
 def codebase(ctx: click.Context, query: str, namespace: str, depth: int, top_k: int):
-    """Search an indexed codebase."""
+    """Search an indexed codebase (experimental AST)."""
+    from .experimental import require_ast
+
+    try:
+        require_ast("omem codebase")
+    except RuntimeError as exc:
+        failure(str(exc))
+        sys.exit(2)
     m = _get_omem(ctx)
     results = m.query_code(query, namespace=namespace, context_depth=depth, top_k=top_k)
     for i, r in enumerate(results, 1):

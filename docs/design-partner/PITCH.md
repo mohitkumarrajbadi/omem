@@ -33,12 +33,17 @@ evidence collection is **not yet started**, tracked in
 
 | Proof | Number | Caveat |
 |-------|--------|--------|
-| STATE-Bench | 80.6/100 | Native agent-state suites |
-| LongMemEval oracle retrieval | 72.5% Hit@5 (n=40) | Not LLM-judge E2E |
-| LoCoMo retrieval | 66.2% Hit@5 (n=80) | Answer or evidence |
+| STATE-Bench | 88.9/100 | MiniLM; context suite still 66.7 (packer is the gap) |
+| LongMemEval (first-50 temporal) | 72% Hit@5 | Biased slice — do not cite as the mix |
+| LongMemEval stratified n=40 | 80% Hit@5 | production_break; temporal 57% still the hole |
+| LoCoMo retrieval | 65.0% Hit@5 (n=80) | Answer or evidence; not LLM-judge E2E |
 | BEAM-style abilities | 10/10 pass | Synthetic, not official BEAM |
+| Restart + needle @ 50k | 50k/50k, Hit@5 100% | MiniLM, ~9 min; haystack p95 ~63ms |
+| Concurrent SQLite 16 threads | writes durable | add p99 ~535ms — not a 10ms SLO |
 
 Pack: `docs/design-partner/` · Guarantees: `docs/guarantees/TENANT_HARDENING.md`
+
+Pilot = personal MCP + one design partner (tech preview). YC after a named partner run — not after Wizard. No modeled 163×.
 
 ## Ask
 

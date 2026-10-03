@@ -6,5 +6,17 @@ memory-native verbs while preserving the existing engine, storage, and tests.
 
 from .layer import MemoryOS, MemoryQuery
 from .org import NamespaceInfo, NamespaceResolver, OrgMemoryOS, ShareResult
+from .profile import Profile, ProfileFact, build_profile, profile_from_layers
 
-__all__ = ["MemoryOS", "MemoryQuery", "OrgMemoryOS", "NamespaceResolver", "NamespaceInfo", "ShareResult"]
+__all__ = [
+    "MemoryOS",
+    "MemoryQuery",
+    "OrgMemoryOS",
+    "NamespaceResolver",
+    "NamespaceInfo",
+    "ShareResult",
+    "Profile",
+    "ProfileFact",
+    "build_profile",
+    "profile_from_layers",
+]

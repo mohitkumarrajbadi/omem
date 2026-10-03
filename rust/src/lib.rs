@@ -429,6 +429,58 @@ fn rag_score_batch(
     Ok(result)
 }
 
+/// Exact cosine top-k (L2-normalized inner product) over a dense matrix.
+/// Parallel via rayon. Used when FAISS is not installed.
+#[pyfunction]
+#[pyo3(signature = (query, vectors, top_k))]
+fn ann_topk(
+    query: PyReadonlyArray1<f32>,
+    vectors: PyReadonlyArray2<f32>,
+    top_k: usize,
+) -> PyResult<(Vec<f32>, Vec<i64>)> {
+    let query = query.as_slice()?;
+    let flat = vectors.as_slice()?;
+    let dim = query.len();
+    if dim == 0 || top_k == 0 {
+        return Ok((Vec::new(), Vec::new()));
+    }
+    if flat.len() % dim != 0 {
+        return Err(PyRuntimeError::new_err(
+            "ann_topk: vectors length is not a multiple of query dim",
+        ));
+    }
+    let n = flat.len() / dim;
+    if n == 0 {
+        return Ok((Vec::new(), Vec::new()));
+    }
+    let k = top_k.min(n);
+
+    let scores: Vec<f32> = (0..n)
+        .into_par_iter()
+        .map(|i| {
+            let row = &flat[i * dim..(i + 1) * dim];
+            let mut dot = 0.0f32;
+            for j in 0..dim {
+                dot += query[j] * row[j];
+            }
+            dot
+        })
+        .collect();
+
+    let mut heap: BinaryHeap<ScoredIndex> = BinaryHeap::with_capacity(k + 1);
+    for (index, &score) in scores.iter().enumerate() {
+        heap.push(ScoredIndex { index, score });
+        if heap.len() > k {
+            heap.pop();
+        }
+    }
+    let mut ranked = heap.into_sorted_vec();
+    ranked.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
+    let out_scores: Vec<f32> = ranked.iter().map(|s| s.score).collect();
+    let out_idx: Vec<i64> = ranked.iter().map(|s| s.index as i64).collect();
+    Ok((out_scores, out_idx))
+}
+
 /// Rank candidates with full hybrid fusion signals (Python prepels; Rust ranks).
 ///
 /// Signal arrays are parallel (len = n). ``weights`` is length 9 matching
@@ -730,6 +782,7 @@ fn omem_rust(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(sleep_cycle, m)?)?;
     m.add_function(wrap_pyfunction!(embed_local_model, m)?)?;
     m.add_function(wrap_pyfunction!(rag_score_batch, m)?)?;
+    m.add_function(wrap_pyfunction!(ann_topk, m)?)?;
     m.add_function(wrap_pyfunction!(rag_fuse_batch, m)?)?;
     m.add_function(wrap_pyfunction!(cognition_forget_sweep, m)?)?;
     m.add_function(wrap_pyfunction!(cognition_cluster_batch, m)?)?;

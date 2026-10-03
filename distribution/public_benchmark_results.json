@@ -1,11 +1,13 @@
 {
-  "generated_at": "2026-07-19T12:27:49Z",
-  "methodology": "Retrieval answer-containment (LME) / answer-or-evidence (LoCoMo); STATE-Bench native; BEAM-style synthetic. No LLM judge. sentence-transformers MiniLM.",
+  "generated_at": "2026-08-31T09:36:40Z",
+  "embedder": "st",
+  "semantic": true,
+  "methodology": "Retrieval answer-containment for LongMemEval/LoCoMo; STATE-Bench native metrics; BEAM-style synthetic abilities. No LLM judge. Hash or local embeddings depending on install.",
   "results": {
     "state_bench": {
       "benchmark": "STATE-Bench",
       "variant": "v1.0",
-      "overall_score": 80.6,
+      "overall_score": 88.9,
       "suites": {
         "memory": {
           "score": 100,
@@ -33,24 +35,30 @@
           "total": 3
         },
         "concurrency": {
-          "score": 50,
-          "passed": 1,
+          "score": 100,
+          "passed": 2,
           "total": 2
         }
       },
-      "timestamp": "2026-07-19T12:27:49Z"
+      "timestamp": "2026-08-31T09:36:02Z"
     },
     "longmemeval": {
       "benchmark": "LongMemEval",
       "variant": "oracle_retrieval_answer_containment",
+      "sampling": "stratified_by_question_type",
       "dataset": "xiaowu0162/longmemeval-cleaned (longmemeval_oracle.json)",
-      "n_questions": 40,
+      "n_questions": 50,
       "k": 5,
-      "hit_at_k_pct": 72.5,
-      "latency_p50_ms": 26.25,
-      "latency_p99_ms": 38.45,
+      "hit_at_k_pct": 84.0,
+      "latency_p50_ms": 20.87,
+      "latency_p99_ms": 47.06,
       "by_question_type": {
-        "temporal-reasoning": 72.5
+        "temporal-reasoning": 66.7,
+        "multi-session": 88.9,
+        "knowledge-update": 62.5,
+        "single-session-preference": 87.5,
+        "single-session-assistant": 100.0,
+        "single-session-user": 100.0
       },
       "note": "Retrieval-only metric: gold answer string appears in top-k memories. Not an LLM-judge End-to-End QA score."
     },
@@ -60,15 +68,15 @@
       "dataset": "snap-research/locomo (locomo10.json)",
       "n_questions": 80,
       "k": 5,
-      "hit_at_k_pct": 66.2,
-      "answer_hit_at_k_pct": 25.0,
-      "evidence_hit_at_k_pct": 63.8,
-      "latency_p50_ms": 17.44,
+      "hit_at_k_pct": 65.0,
+      "answer_hit_at_k_pct": 26.2,
+      "evidence_hit_at_k_pct": 61.2,
+      "latency_p50_ms": 17.65,
       "by_category": {
-        "2": 63.6,
-        "3": 41.7,
-        "1": 75.8,
-        "4": 100.0
+        "2": 78.8,
+        "3": 33.3,
+        "1": 63.6,
+        "4": 50.0
       },
       "note": "Hit if gold answer string OR annotated evidence dialog appears in top-k. Not generative QA with an LLM judge."
     },

@@ -20,6 +20,8 @@ class MemoryQuery:
     tiers: Optional[List[MemoryTier]] = None
     include_archive: bool = False
     weight_overrides: Optional[Dict[str, float]] = None
+    as_of: Optional[float] = None
+    rerank: Optional[bool] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -87,6 +89,8 @@ class MemoryOS:
         project_only: bool = False,
         lookup: Optional[str] = None,
         memory_type: Optional[MemoryType] = None,
+        as_of: Optional[float] = None,
+        rerank: Optional[bool] = None,
     ) -> List[Memory]:
         """Retrieve memories using the multi-objective retrieval engine."""
         from ..core.retrieval.lookup import recall_routed
@@ -136,6 +140,8 @@ class MemoryOS:
                     else weight_overrides
                 ),
                 project_only=q.metadata.get("project_only", False) if q.metadata else False,
+                as_of=q.as_of if as_of is None else as_of,
+                rerank=q.rerank if rerank is None else rerank,
             )
 
         return self._omem.recall(
@@ -149,6 +155,8 @@ class MemoryOS:
             include_archive=False if include_archive is None else include_archive,
             weight_overrides=weight_overrides,
             project_only=project_only,
+            as_of=as_of,
+            rerank=rerank,
         )
 
     def explain(
@@ -213,6 +221,78 @@ class MemoryOS:
     ) -> List[Memory]:
         """List memories in the current store."""
         return self._omem.all(namespace=namespace, include_inactive=include_inactive)
+
+    def profile(
+        self,
+        *,
+        namespace: str = "default",
+        user_id: str = "",
+        session_id: Optional[str] = None,
+        state: Optional[Any] = None,
+        max_facts: int = 20,
+        max_recent: int = 8,
+    ):
+        """Compile a no-LLM briefing from current facts, recent episodes, and goal."""
+        from .profile import profile_from_layers
+
+        return profile_from_layers(
+            self,
+            state,
+            namespace=namespace,
+            user_id=user_id,
+            session_id=session_id,
+            max_facts=max_facts,
+            max_recent=max_recent,
+        )
+
+    def remember_document(
+        self,
+        source: Any,
+        *,
+        namespace: str = "default",
+        filename: Optional[str] = None,
+        max_chars: int = 1200,
+        overlap: int = 150,
+        importance: float = 0.55,
+        extra_metadata: Optional[Dict[str, Any]] = None,
+    ):
+        """Chunk a markdown/PDF/HTML document into memories. No LLM extract."""
+        from ..ingest.documents import remember_document as _remember_document
+
+        return _remember_document(
+            self,
+            source,
+            namespace=namespace,
+            filename=filename,
+            max_chars=max_chars,
+            overlap=overlap,
+            importance=importance,
+            extra_metadata=extra_metadata,
+        )
+
+    def ingest_folder(self, path: str, **kwargs: Any):
+        """Ingest markdown/HTML/PDF files from a folder. No LLM."""
+        from ..ingest.connectors import ingest_folder as _ingest_folder
+
+        return _ingest_folder(self, path, **kwargs)
+
+    def ingest_url(self, url: str, **kwargs: Any):
+        """Fetch a URL and ingest stripped text. No LLM."""
+        from ..ingest.connectors import ingest_url as _ingest_url
+
+        return _ingest_url(self, url, **kwargs)
+
+    def ingest_notion(self, **kwargs: Any):
+        """Pull Notion pages via REST and ingest block text. No LLM."""
+        from ..ingest.connectors import ingest_notion as _ingest_notion
+
+        return _ingest_notion(self, **kwargs)
+
+    def ingest_drive(self, **kwargs: Any):
+        """Pull Google Drive files via REST and ingest exported text. No LLM."""
+        from ..ingest.connectors import ingest_drive as _ingest_drive
+
+        return _ingest_drive(self, **kwargs)
 
     def stats(self) -> Dict[str, Any]:
         """Return memory layer statistics."""

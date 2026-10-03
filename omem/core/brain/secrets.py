@@ -38,9 +38,20 @@ _SECRET_PATTERNS = [
     (re.compile(r"AIza[0-9A-Za-z\-_]{35}"), "google_api_key"),
     # PII: Emails (basic)
     (re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"), "pii_email"),
-    # PII: Phone Numbers (basic)
+    # PII: Phone Numbers — require separators/parentheses/+ so pure digit
+    # IDs (e.g. time_ns uniqueness tokens) are not misclassified.
     (
-        re.compile(r"[\+]?[(]?[0-9]{3}[)]?[-\s\.]?[0-9]{3}[-\s\.]?[0-9]{4,6}"),
+        re.compile(
+            r"(?<!\d)"
+            r"(?:"
+            r"\+?\d{1,3}[\s\-.]?\(?\d{2,4}\)?[\s\-.]?\d{3}[\s\-.]?\d{4}"
+            r"|"
+            r"\(\d{3}\)\s*\d{3}[\s\-]?\d{4}"
+            r"|"
+            r"\d{3}[\s\-\.]\d{3}[\s\-\.]\d{4}"
+            r")"
+            r"(?!\d)"
+        ),
         "pii_phone",
     ),
 ]

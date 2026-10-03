@@ -7,6 +7,7 @@ CrewAI, MCP, and LlamaIndex.
 from .crewai import OMemSharedMemory
 from .crewai_adapter import OMemCrewAIAdapter
 from .langchain import OMemChatMemory, OMemRetriever
+from .langgraph import OMemCheckpointSaver, OMemStore
 from .llama_index import OMemLlamaIndexAdapter, OMemLlamaIndexRetriever
 from .mcp_server import ToolSnippet, mcp
 from .mcp_server import omem as mcp_omem
@@ -18,6 +19,8 @@ __all__ = [
     "OMemLlamaIndexRetriever",
     "OMemLlamaIndexAdapter",
     "OMemCrewAIAdapter",
+    "OMemCheckpointSaver",
+    "OMemStore",
     "mcp",
     "mcp_omem",
     "ToolSnippet",

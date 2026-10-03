@@ -20,6 +20,8 @@ from .memory import (
     NamespaceInfo,
     NamespaceResolver,
     OrgMemoryOS,
+    Profile,
+    ProfileFact,
     ShareResult,
 )
 from .observe import ObserveOS, TraceEvent
@@ -70,6 +72,8 @@ __all__ = [
     "ContextBundle",
     "MemoryOS",
     "MemoryQuery",
+    "Profile",
+    "ProfileFact",
     "StateOS",
     "StatePayload",
     "StateSnapshot",

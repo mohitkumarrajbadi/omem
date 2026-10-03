@@ -283,6 +283,75 @@ class Memory:
     # Cold L4 object-storage pointer (S3-compatible key); content may be stubbed
     cold_storage_key: Optional[str] = None
 
+    # Usage-based utility (issue 0001). Heuristic importance is only the prior.
+    initial_importance: float = 0.5
+    retrieved_count: int = 0
+    packed_count: int = 0
+    cited_count: int = 0
+
+    # Bi-temporal belief window. None valid_to = still current.
+    valid_from: Optional[float] = None
+    valid_to: Optional[float] = None
+
+    _RUNTIME_META_KEY = "_omem_runtime"
+
+    def metadata_for_persist(self) -> Dict[str, Any]:
+        """Metadata blob written to backends, including runtime fields."""
+        meta = dict(self.metadata or {})
+        meta[self._RUNTIME_META_KEY] = {
+            "type_confidence": self.type_confidence,
+            "initial_importance": self.initial_importance,
+            "packed_count": self.packed_count,
+            "cited_count": self.cited_count,
+            "retrieved_count": self.retrieved_count,
+            "valid_from": self.valid_from,
+            "valid_to": self.valid_to,
+            "lifecycle_stage": self.lifecycle_stage,
+            "level": self.level,
+            "superseded_by": self.superseded_by,
+            "tier": self.tier.name if hasattr(self.tier, "name") else str(self.tier),
+            "priority": self.priority.name if hasattr(self.priority, "name") else str(self.priority),
+        }
+        return meta
+
+    def hydrate_runtime_fields(self) -> "Memory":
+        """Restore runtime fields packed into ``metadata`` by backends."""
+        rt = (self.metadata or {}).get(self._RUNTIME_META_KEY) or {}
+        if rt:
+            self.type_confidence = float(rt.get("type_confidence", self.type_confidence))
+            self.initial_importance = float(rt.get("initial_importance", self.importance))
+            self.packed_count = int(rt.get("packed_count", 0))
+            self.cited_count = int(rt.get("cited_count", 0))
+            self.retrieved_count = int(rt.get("retrieved_count", self.access_count))
+            vf = rt.get("valid_from")
+            vt = rt.get("valid_to")
+            self.valid_from = float(vf) if vf is not None else self.timestamp
+            self.valid_to = float(vt) if vt is not None else None
+            if rt.get("lifecycle_stage"):
+                self.lifecycle_stage = rt["lifecycle_stage"]
+            if rt.get("level"):
+                self.level = rt["level"]
+            if rt.get("superseded_by") is not None:
+                self.superseded_by = rt["superseded_by"]
+            # Keep public metadata equal to what the caller stored.
+            self.metadata = dict(self.metadata)
+            self.metadata.pop(self._RUNTIME_META_KEY, None)
+        else:
+            if self.valid_from is None:
+                self.valid_from = self.timestamp
+            if not self.initial_importance:
+                self.initial_importance = self.importance
+        return self
+
+    def is_current(self, now: Optional[float] = None) -> bool:
+        """True when this belief is still valid at ``now``."""
+        t = now if now is not None else time.time()
+        if self.valid_to is not None and self.valid_to <= t:
+            return False
+        if self.valid_from is not None and self.valid_from > t:
+            return False
+        return True
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
@@ -315,6 +384,13 @@ class Memory:
             "freshness": self.freshness,
             "dependencies": self.dependencies,
             "logical_hash": self.logical_hash,
+            "initial_importance": self.initial_importance,
+            "retrieved_count": self.retrieved_count,
+            "packed_count": self.packed_count,
+            "cited_count": self.cited_count,
+            "valid_from": self.valid_from,
+            "valid_to": self.valid_to,
+            "superseded_by": self.superseded_by,
             "metadata": self.metadata,
         }
 

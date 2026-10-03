@@ -80,6 +80,22 @@ class ProvenanceEvent:
             "metadata": self.metadata,
         }
 
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "ProvenanceEvent":
+        return cls(
+            id=d.get("id") or "",
+            entity_id=d.get("entity_id") or "",
+            entity_type=d.get("entity_type") or "memory",
+            operation=d.get("operation") or "create",
+            source=d.get("source") or "agent",
+            timestamp=float(d.get("timestamp") or 0.0),
+            session_id=d.get("session_id") or "",
+            namespace=d.get("namespace") or "default",
+            confidence=float(d.get("confidence") or 1.0),
+            related_ids=list(d.get("related_ids") or []),
+            metadata=dict(d.get("metadata") or {}),
+        )
+
 
 @dataclass
 class ProvenanceChain:
@@ -199,9 +215,16 @@ class ProvenanceOS:
     Thread safety: All methods are thread-safe.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, backend=None) -> None:
         self._store = _ProvenanceStore()
-        logger.debug("ProvenanceOS initialized")
+        self._backend = backend
+        if backend is not None and hasattr(backend, "load_provenance_events"):
+            try:
+                for rec in backend.load_provenance_events() or []:
+                    self._store.add(ProvenanceEvent.from_dict(rec))
+            except Exception as exc:
+                logger.warning("provenance load from backend failed: %s", exc)
+        logger.debug("ProvenanceOS initialized (durable=%s)", backend is not None)
 
     # ------------------------------------------------------------------
     # Recording (called by AgentState instrumentation)
@@ -241,6 +264,9 @@ class ProvenanceOS:
         )
         try:
             self._store.add(event)
+            backend = self._backend
+            if backend is not None and hasattr(backend, "save_provenance_event"):
+                backend.save_provenance_event(event.to_dict())
         except Exception as exc:
             logger.warning("provenance.record failed: %s", exc)
         return event

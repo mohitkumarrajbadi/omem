@@ -1,4 +1,9 @@
-"""Embedding abstraction with sentence-transformers and random fallback."""
+"""Embedding abstraction with sentence-transformers and hash fallback.
+
+Default is semantic: load ``all-MiniLM-L6-v2`` when installed.
+Hash embeddings are used only when ``OMEM_EMBEDDER=hash`` is set, or when
+the model cannot be loaded (logged at ERROR — recall will be weak).
+"""
 
 import logging
 import os
@@ -10,11 +15,13 @@ os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 # Suppress tokenizer fork warnings and noisy model-load output.
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
+_HASH_FALLBACK_LOGGED = False
 _DIMENSION = 384  # all-MiniLM-L6-v2 output dimension
 
 
@@ -42,14 +49,30 @@ def _cached_hash_embed(text: str, dim: int) -> bytes:
     return vec.tobytes()
 
 
+def _embedder_mode(provider: str) -> str:
+    """Resolve ``OMEM_EMBEDDER``: auto | hash | st | openai."""
+    raw = os.environ.get("OMEM_EMBEDDER", "").strip().lower()
+    if raw in ("hash", "st", "auto", "openai"):
+        return raw
+    if provider == "openai":
+        return "openai"
+    return "auto"
+
+
+@lru_cache(maxsize=4)
+def _sentence_transformer(model_name: str):
+    """One MiniLM process-wide — avoid reloading weights per Embedder."""
+    from sentence_transformers import SentenceTransformer  # type: ignore
+
+    return SentenceTransformer(model_name)
+
+
 class Embedder:
     """Embeds text into dense vectors.
 
-    Uses ``sentence-transformers`` (``all-MiniLM-L6-v2``) when available,
-    otherwise falls back to deterministic hash-based vectors so that the
-    library works out-of-the-box without downloading a 90 MB model.
-
-    Includes an LRU cache for repeated encode() calls.
+    Production path: ``sentence-transformers`` (``all-MiniLM-L6-v2``).
+    Hash fallback is explicit (``OMEM_EMBEDDER=hash``) or last-resort when
+    the model is missing. Includes an LRU cache for repeated ``encode()``.
     """
 
     def __init__(self, model_name: str = "all-MiniLM-L6-v2", provider: str = "local"):
@@ -59,8 +82,11 @@ class Embedder:
         self._encode_cache: dict[str, np.ndarray] = {}
         self._cache_max = 10000
         self._model_loaded = False  # lazy flag
+        self._kind = "hash"
+        self._mode = _embedder_mode(provider)
 
-        if provider == "openai":
+        if self._mode == "openai" or provider == "openai":
+            self.provider = "openai"
             self.dim = 1536
             self._model_name = (
                 model_name
@@ -68,12 +94,16 @@ class Embedder:
                 else "text-embedding-3-small"
             )
             self._use_st = False
+            self._kind = "openai"
             self._try_load_openai()  # OpenAI client is cheap to init
         else:
             self.dim = _DIMENSION
             self._model_name = model_name
             self._use_st = False
-            # *** LAZY: do NOT load model here — wait until first encode() call ***
+            if self._mode == "hash":
+                self._model_loaded = True
+                self._kind = "hash"
+            # else lazy-load ST on first encode()
 
     @property
     def model_version(self) -> str:
@@ -86,8 +116,20 @@ class Embedder:
             return f"openai:{self._model_name}:v1:{self.dim}"
         if not self._model_loaded:
             self._try_load_model()
-        kind = "st" if self._use_st else "hash"
+        kind = self._kind if self._kind else ("st" if self._use_st else "hash")
         return f"{kind}:{self._model_name}:v1:{self.dim}"
+
+    @property
+    def kind(self) -> str:
+        """``st``, ``hash``, or ``openai``."""
+        if not self._model_loaded and self.provider != "openai":
+            self._try_load_model()
+        return self._kind
+
+    @property
+    def is_semantic(self) -> bool:
+        """True when vectors come from a real embedding model, not hashes."""
+        return self.kind in ("st", "openai")
 
     # ------------------------------------------------------------------
     # Model loading
@@ -113,19 +155,33 @@ class Embedder:
         if self._model_loaded:
             return
         self._model_loaded = True  # set early to prevent re-entry on failure
+        if self._mode == "hash":
+            self._kind = "hash"
+            self._use_st = False
+            return
         try:
-            from sentence_transformers import SentenceTransformer  # type: ignore
-
-            self._model = SentenceTransformer(self._model_name)
+            self._model = _sentence_transformer(self._model_name)
             self._use_st = True
-            logger.debug("Loaded sentence-transformers model: %s", self._model_name)
+            self._kind = "st"
+            logger.info("Loaded sentence-transformers model: %s", self._model_name)
         except Exception as e:
-            logger.warning(
-                "sentence-transformers not available (%s). "
-                "Using hash-based embedder — semantic recall will be weak. "
-                "Install with: pip install 'omem-os[embeddings]'",
-                str(e),
-            )
+            if self._mode == "st":
+                raise RuntimeError(
+                    "OMEM_EMBEDDER=st but sentence-transformers failed to load. "
+                    "Install with: pip install 'omem-os[embeddings]'"
+                ) from e
+            self._kind = "hash"
+            self._use_st = False
+            global _HASH_FALLBACK_LOGGED
+            if not _HASH_FALLBACK_LOGGED:
+                _HASH_FALLBACK_LOGGED = True
+                logger.error(
+                    "Semantic embeddings unavailable (%s). Using hash vectors — "
+                    "recall quality will be weak. Production install: "
+                    "pip install 'omem-os[embeddings]'. To silence this, set "
+                    "OMEM_EMBEDDER=hash.",
+                    str(e),
+                )
 
     # ------------------------------------------------------------------
     # Public API

@@ -98,13 +98,34 @@ def _ingest(omem, content: str) -> None:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+def _stratified_lme(data: List[dict], n: int) -> List[dict]:
+    """Round-robin across question_type so n=50 is not all temporal-reasoning."""
+    from collections import defaultdict
+
+    buckets: Dict[str, List[dict]] = defaultdict(list)
+    for item in data:
+        buckets[str(item.get("question_type") or "unknown")].append(item)
+    out: List[dict] = []
+    keys = list(buckets.keys())
+    i = 0
+    while len(out) < n and keys:
+        key = keys[i % len(keys)]
+        if buckets[key]:
+            out.append(buckets[key].pop(0))
+            i += 1
+        else:
+            keys.remove(key)
+    return out
+
+
 def run_longmemeval(
     path: Path,
     n: int = 50,
     k: int = 5,
+    stratified: bool = True,
 ) -> Dict[str, Any]:
     data = json.loads(path.read_text())
-    subset = data[:n]
+    subset = _stratified_lme(data, n) if stratified else data[:n]
     import tempfile
 
     hits = 0
@@ -141,6 +162,7 @@ def run_longmemeval(
     return {
         "benchmark": "LongMemEval",
         "variant": "oracle_retrieval_answer_containment",
+        "sampling": "stratified_by_question_type" if stratified else "first_n",
         "dataset": "xiaowu0162/longmemeval-cleaned (longmemeval_oracle.json)",
         "n_questions": total,
         "k": k,
@@ -428,6 +450,7 @@ def run_suite(
     subset: int = 50,
     k: int = 5,
     skip_download: bool = False,
+    stratified: bool = True,
 ) -> Dict[str, Any]:
     if not skip_download:
         lme = _download(LONGMEMEVAL_URL, DATA / "longmemeval_oracle.json")
@@ -436,12 +459,25 @@ def run_suite(
         lme = DATA / "longmemeval_oracle.json"
         locomo = DATA / "locomo10.json"
 
+    from omem.core.retrieval.embeddings import Embedder
+
+    probe = Embedder()
+    print(
+        f"embedder={probe.kind} semantic={probe.is_semantic} "
+        f"(OMEM_EMBEDDER={os.environ.get('OMEM_EMBEDDER') or 'auto'})"
+    )
+    if not probe.is_semantic:
+        print(
+            "NOTE: hash embeddings — LongMemEval/STATE-Bench will undershoot the "
+            "0.1.0 bar. Install: pip install 'omem-os[embeddings]'"
+        )
+
     print("=== STATE-Bench ===")
     state = run_state_bench()
     print(f"  overall={state['overall_score']}")
 
-    print(f"=== LongMemEval oracle retrieval (n={subset}) ===")
-    lme_r = run_longmemeval(lme, n=subset, k=k)
+    print(f"=== LongMemEval oracle retrieval (n={subset}, stratified={stratified}) ===")
+    lme_r = run_longmemeval(lme, n=subset, k=k, stratified=stratified)
     print(f"  hit@{k}={lme_r['hit_at_k_pct']}%")
 
     print(f"=== LoCoMo retrieval ===")
@@ -454,6 +490,8 @@ def run_suite(
 
     return {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "embedder": probe.kind,
+        "semantic": probe.is_semantic,
         "methodology": (
             "Retrieval answer-containment for LongMemEval/LoCoMo; "
             "STATE-Bench native metrics; BEAM-style synthetic abilities. "
@@ -471,6 +509,11 @@ def run_suite(
 def main() -> None:
     parser = argparse.ArgumentParser(description="OMem public memory benchmark suite")
     parser.add_argument("--subset", type=int, default=50, help="LongMemEval question count")
+    parser.add_argument(
+        "--first-n",
+        action="store_true",
+        help="Use the first N LongMemEval items (all temporal) instead of a stratified mix",
+    )
     parser.add_argument("--k", type=int, default=5, help="Recall top-k")
     parser.add_argument(
         "--out",
@@ -480,7 +523,12 @@ def main() -> None:
     parser.add_argument("--skip-download", action="store_true")
     args = parser.parse_args()
 
-    report = run_suite(subset=args.subset, k=args.k, skip_download=args.skip_download)
+    report = run_suite(
+        subset=args.subset,
+        k=args.k,
+        skip_download=args.skip_download,
+        stratified=not args.first_n,
+    )
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2) + "\n")

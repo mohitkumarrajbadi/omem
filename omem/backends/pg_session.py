@@ -73,7 +73,12 @@ def resolve_pg_session_for_write(memory) -> PgSessionContext:
 
 
 def apply_pg_session(cur, session: PgSessionContext) -> None:
-    """SET LOCAL — transaction-scoped; safe with connection pooling."""
+    """SET LOCAL — transaction-scoped; safe with connection pooling.
+
+    ``omem.tenant_id`` is set as an alias equal to ``omem.org_id`` for GA docs
+    and new policies; existing policies continue to use ``omem.org_id``.
+    """
     cur.execute("SET LOCAL app.current_namespace = %s", (session.namespace,))
     cur.execute("SET LOCAL omem.org_id = %s", (session.org_id,))
+    cur.execute("SET LOCAL omem.tenant_id = %s", (session.org_id,))
     cur.execute("SET LOCAL omem.user_id = %s", (session.user_id,))

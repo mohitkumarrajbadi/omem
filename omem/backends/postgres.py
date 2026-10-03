@@ -75,8 +75,20 @@ class PostgresBackend(Backend):
             self._pgvector_enabled = False
             self._embedding_model = os.environ.get("OMEM_EMBEDDING_MODEL", "all-MiniLM-L6-v2")
             self._embedding_version = os.environ.get("OMEM_EMBEDDING_VERSION", "v1")
-            self._create_table()
-            self._migrate_layers()
+            # Dual-DSN: when OMEM_MIGRATION_DB_URL differs from the runtime
+            # connection, cloud migrations already own DDL. Skip schema work so
+            # a DML-only role (omem_app, NOBYPASSRLS) can open backends safely.
+            mig = (os.environ.get("OMEM_MIGRATION_DB_URL") or "").strip()
+            if mig and mig != connection_string:
+                self._pgvector_enabled = self._detect_pgvector()
+                logger.info(
+                    "PostgresBackend skipping DDL (OMEM_MIGRATION_DB_URL set; "
+                    "pgvector=%s).",
+                    self._pgvector_enabled,
+                )
+            else:
+                self._create_table()
+                self._migrate_layers()
             logger.info(
                 "PostgresBackend initialized (pgvector=%s).",
                 self._pgvector_enabled,
@@ -100,38 +112,62 @@ class PostgresBackend(Backend):
     def _apply_namespace_session(self, cur, namespace: str) -> None:
         apply_pg_session(cur, resolve_pg_session(fallback_namespace=namespace))
 
+    def _detect_pgvector(self) -> bool:
+        """Return True when the vector extension is already installed (no DDL)."""
+        conn = self._get_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT 1 FROM pg_extension WHERE extname = 'vector' LIMIT 1"
+                )
+                return cur.fetchone() is not None
+        except Exception as exc:
+            logger.debug("pgvector detect failed: %s", exc)
+            return False
+        finally:
+            self._put_conn(conn)
+
     def _create_table(self) -> None:
         conn = self._get_conn()
         try:
             with conn.cursor() as cur:
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS memories (
-                        id              TEXT PRIMARY KEY,
-                        type            INTEGER NOT NULL,
-                        content         TEXT    NOT NULL,
-                        vector          BYTEA,
-                        timestamp       DOUBLE PRECISION NOT NULL,
-                        importance      DOUBLE PRECISION DEFAULT 0.5,
-                        utility_score   DOUBLE PRECISION DEFAULT 0.0,
-                        access_count    INTEGER DEFAULT 0,
-                        last_accessed   DOUBLE PRECISION DEFAULT 0.0,
-                        namespace       TEXT    DEFAULT 'default',
-                        source          TEXT    DEFAULT '',
-                        active          INTEGER DEFAULT 1,
-                        status          INTEGER DEFAULT 0,
-                        consensus_score DOUBLE PRECISION DEFAULT 0.0,
-                        logical_hash    TEXT    DEFAULT '',
-                        metadata        TEXT    DEFAULT '{}',
-                        score           DOUBLE PRECISION DEFAULT 0.0
+                try:
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS memories (
+                            id              TEXT PRIMARY KEY,
+                            type            INTEGER NOT NULL,
+                            content         TEXT    NOT NULL,
+                            vector          BYTEA,
+                            timestamp       DOUBLE PRECISION NOT NULL,
+                            importance      DOUBLE PRECISION DEFAULT 0.5,
+                            utility_score   DOUBLE PRECISION DEFAULT 0.0,
+                            access_count    INTEGER DEFAULT 0,
+                            last_accessed   DOUBLE PRECISION DEFAULT 0.0,
+                            namespace       TEXT    DEFAULT 'default',
+                            source          TEXT    DEFAULT '',
+                            active          INTEGER DEFAULT 1,
+                            status          INTEGER DEFAULT 0,
+                            consensus_score DOUBLE PRECISION DEFAULT 0.0,
+                            logical_hash    TEXT    DEFAULT '',
+                            metadata        TEXT    DEFAULT '{}',
+                            score           DOUBLE PRECISION DEFAULT 0.0
+                        )
+                    """)
+                    cur.execute("CREATE INDEX IF NOT EXISTS idx_mem_type ON memories(type)")
+                    cur.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_mem_ns ON memories(namespace)"
                     )
-                """)
-                cur.execute("CREATE INDEX IF NOT EXISTS idx_mem_type ON memories(type)")
-                cur.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_mem_ns ON memories(namespace)"
-                )
-                cur.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_mem_hash ON memories(logical_hash)"
-                )
+                    cur.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_mem_hash ON memories(logical_hash)"
+                    )
+                except self._psycopg2.Error as exc:
+                    # DML-only roles hit this when dual-DSN skip was not used.
+                    logger.warning(
+                        "Postgres schema create skipped (insufficient privilege): %s",
+                        exc,
+                    )
+                    conn.rollback()
+                    return
             conn.commit()
         finally:
             self._put_conn(conn)
@@ -139,6 +175,7 @@ class PostgresBackend(Backend):
     def _migrate_layers(self) -> None:
         """Add pgvector, embedding versioning, and projection tables."""
         conn = self._get_conn()
+        skipped_ddl = False
         try:
             with conn.cursor() as cur:
                 try:
@@ -148,67 +185,80 @@ class PostgresBackend(Backend):
                     logger.debug("pgvector extension unavailable: %s", exc)
                     self._pgvector_enabled = False
 
-                for col, col_type in (
-                    ("embedding", "vector(384)"),
-                    ("embedding_model", "TEXT DEFAULT ''"),
-                    ("embedding_version", "TEXT DEFAULT ''"),
-                    ("embedding_dim", "INTEGER DEFAULT 384"),
-                    ("lifecycle_state", "TEXT DEFAULT 'active'"),
-                    # Tenant columns — populated on write so strict RLS
-                    # (org-scoped policies) passes under non-superuser roles.
-                    ("org_id", "TEXT NOT NULL DEFAULT ''"),
-                    ("user_id", "TEXT NOT NULL DEFAULT ''"),
-                ):
+                try:
+                    for col, col_type in (
+                        ("embedding", "vector(384)"),
+                        ("embedding_model", "TEXT DEFAULT ''"),
+                        ("embedding_version", "TEXT DEFAULT ''"),
+                        ("embedding_dim", "INTEGER DEFAULT 384"),
+                        ("lifecycle_state", "TEXT DEFAULT 'active'"),
+                        # Tenant columns — populated on write so strict RLS
+                        # (org-scoped policies) passes under non-superuser roles.
+                        ("org_id", "TEXT NOT NULL DEFAULT ''"),
+                        ("user_id", "TEXT NOT NULL DEFAULT ''"),
+                    ):
+                        cur.execute(
+                            """
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_name = 'memories' AND column_name = %s
+                            """,
+                            (col,),
+                        )
+                        if cur.fetchone() is None:
+                            cur.execute(
+                                f"ALTER TABLE memories ADD COLUMN {col} {col_type}"
+                            )
+
                     cur.execute(
                         """
-                        SELECT 1 FROM information_schema.columns
-                        WHERE table_name = 'memories' AND column_name = %s
-                        """,
-                        (col,),
-                    )
-                    if cur.fetchone() is None:
-                        cur.execute(
-                            f"ALTER TABLE memories ADD COLUMN {col} {col_type}"
+                        CREATE TABLE IF NOT EXISTS memory_edges (
+                            id TEXT PRIMARY KEY,
+                            namespace TEXT NOT NULL DEFAULT 'default',
+                            source_id TEXT NOT NULL,
+                            target_id TEXT NOT NULL,
+                            relation_type TEXT NOT NULL DEFAULT 'related',
+                            confidence DOUBLE PRECISION DEFAULT 1.0,
+                            metadata JSONB DEFAULT '{}',
+                            active INTEGER DEFAULT 1,
+                            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                         )
-
-                cur.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS memory_edges (
-                        id TEXT PRIMARY KEY,
-                        namespace TEXT NOT NULL DEFAULT 'default',
-                        source_id TEXT NOT NULL,
-                        target_id TEXT NOT NULL,
-                        relation_type TEXT NOT NULL DEFAULT 'related',
-                        confidence DOUBLE PRECISION DEFAULT 1.0,
-                        metadata JSONB DEFAULT '{}',
-                        active INTEGER DEFAULT 1,
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                        """
                     )
-                    """
-                )
-                cur.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS memory_events (
-                        id BIGSERIAL PRIMARY KEY,
-                        event_type TEXT NOT NULL,
-                        memory_id TEXT,
-                        namespace TEXT NOT NULL DEFAULT 'default',
-                        payload JSONB DEFAULT '{}',
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                        processed_at TIMESTAMPTZ,
-                        attempts INTEGER DEFAULT 0
+                    cur.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS memory_events (
+                            id BIGSERIAL PRIMARY KEY,
+                            event_type TEXT NOT NULL,
+                            memory_id TEXT,
+                            namespace TEXT NOT NULL DEFAULT 'default',
+                            payload JSONB DEFAULT '{}',
+                            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                            processed_at TIMESTAMPTZ,
+                            attempts INTEGER DEFAULT 0
+                        )
+                        """
                     )
-                    """
-                )
-                cur.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_events_unprocessed
-                    ON memory_events(created_at) WHERE processed_at IS NULL
-                    """
-                )
+                    cur.execute(
+                        """
+                        CREATE INDEX IF NOT EXISTS idx_events_unprocessed
+                        ON memory_events(created_at) WHERE processed_at IS NULL
+                        """
+                    )
+                except self._psycopg2.Error as exc:
+                    logger.warning(
+                        "Postgres layer migrate skipped (insufficient privilege): %s",
+                        exc,
+                    )
+                    conn.rollback()
+                    skipped_ddl = True
+                    return
             conn.commit()
         finally:
             self._put_conn(conn)
+
+        if skipped_ddl:
+            self._pgvector_enabled = self._detect_pgvector()
+            return
 
         if self._pgvector_enabled:
             try:
@@ -348,7 +398,7 @@ class PostgresBackend(Backend):
     ) -> None:
         if self._pgvector_enabled and memory.vector is not None:
             content = self._enc.encrypt(memory.content) if self._enc else memory.content
-            meta = self._enc.encrypt(json.dumps(memory.metadata)) if self._enc else json.dumps(memory.metadata)
+            meta = self._enc.encrypt(json.dumps(memory.metadata_for_persist())) if self._enc else json.dumps(memory.metadata_for_persist())
             emb_model = embedding_model or self._embedding_model
             emb_version = embedding_version or self._embedding_version
             emb_dim = int(memory.vector.shape[0]) if memory.vector is not None else 384
@@ -357,7 +407,7 @@ class PostgresBackend(Backend):
             return
 
         content = self._enc.encrypt(memory.content) if self._enc else memory.content
-        meta = self._enc.encrypt(json.dumps(memory.metadata)) if self._enc else json.dumps(memory.metadata)
+        meta = self._enc.encrypt(json.dumps(memory.metadata_for_persist())) if self._enc else json.dumps(memory.metadata_for_persist())
         self._save_one(memory, content, meta, None, "", "", 384, pgvector=False)
 
     def _save_one(
@@ -493,9 +543,9 @@ class PostgresBackend(Backend):
             for m in memories:
                 content = self._enc.encrypt(m.content) if self._enc else m.content
                 meta = (
-                    self._enc.encrypt(json.dumps(m.metadata))
+                    self._enc.encrypt(json.dumps(m.metadata_for_persist()))
                     if self._enc
-                    else json.dumps(m.metadata)
+                    else json.dumps(m.metadata_for_persist())
                 )
                 if m.vector is None:
                     # Fall back to non-vector insert shape via save()
@@ -617,7 +667,7 @@ class PostgresBackend(Backend):
                 m.last_accessed, m.namespace, m.source,
                 1 if m.active else 0, m.status.value, m.consensus_score,
                 m.logical_hash,
-                self._enc.encrypt(json.dumps(m.metadata)) if self._enc else json.dumps(m.metadata),
+                self._enc.encrypt(json.dumps(m.metadata_for_persist())) if self._enc else json.dumps(m.metadata_for_persist()),
                 m.score,
                 batch_sess.org_id, batch_sess.user_id,
             )
@@ -797,8 +847,12 @@ class PostgresBackend(Backend):
         target_id: str,
         relation_type: str = "related",
         confidence: float = 1.0,
+        edge_id: Optional[str] = None,
+        memory_id: str = "",
+        valid_from: Optional[float] = None,
+        valid_to: Optional[float] = None,
     ) -> str:
-        eid = uuid.uuid4().hex[:32]
+        eid = edge_id or uuid.uuid4().hex[:32]
         conn = self._get_conn()
         try:
             with conn.cursor() as cur:
@@ -806,14 +860,172 @@ class PostgresBackend(Backend):
                 cur.execute(
                     """
                     INSERT INTO memory_edges
-                        (id, namespace, source_id, target_id, relation_type, confidence, active)
-                    VALUES (%s, %s, %s, %s, %s, %s, 1)
-                    ON CONFLICT (id) DO UPDATE SET active = 1, confidence = EXCLUDED.confidence
+                        (id, namespace, source_id, target_id, relation_type, confidence, active, metadata)
+                    VALUES (%s, %s, %s, %s, %s, %s, 1, %s::jsonb)
+                    ON CONFLICT (id) DO UPDATE SET
+                        active = 1,
+                        confidence = EXCLUDED.confidence,
+                        metadata = EXCLUDED.metadata
                     """,
-                    (eid, namespace, source_id, target_id, relation_type, confidence),
+                    (
+                        eid,
+                        namespace,
+                        source_id,
+                        target_id,
+                        relation_type,
+                        confidence,
+                        json.dumps(
+                            {
+                                "memory_id": memory_id or "",
+                                "valid_from": valid_from,
+                                "valid_to": valid_to,
+                            }
+                        ),
+                    ),
                 )
             conn.commit()
             return eid
+        finally:
+            self._put_conn(conn)
+
+    def load_edges(self, namespace: Optional[str] = None) -> List[dict]:
+        conn = self._get_conn()
+        try:
+            with conn.cursor() as cur:
+                if namespace:
+                    self._apply_namespace_session(cur, namespace)
+                    cur.execute(
+                        """
+                        SELECT id, namespace, source_id, target_id, relation_type,
+                               confidence, metadata, active
+                        FROM memory_edges
+                        WHERE active = 1 AND namespace = %s
+                        """,
+                        (namespace,),
+                    )
+                else:
+                    self._apply_read_session(cur)
+                    cur.execute(
+                        """
+                        SELECT id, namespace, source_id, target_id, relation_type,
+                               confidence, metadata, active
+                        FROM memory_edges
+                        WHERE active = 1
+                        """
+                    )
+                rows = cur.fetchall()
+            out = []
+            for row in rows:
+                meta = row["metadata"] if isinstance(row, dict) else (row[6] if len(row) > 6 else {})
+                if isinstance(meta, str):
+                    try:
+                        meta = json.loads(meta)
+                    except Exception:
+                        meta = {}
+                meta = meta or {}
+                if isinstance(row, dict):
+                    rec = {
+                        "id": row["id"],
+                        "namespace": row["namespace"],
+                        "source_id": row["source_id"],
+                        "target_id": row["target_id"],
+                        "relation_type": row["relation_type"],
+                        "confidence": float(row["confidence"] or 1.0),
+                        "memory_id": meta.get("memory_id", ""),
+                        "valid_from": meta.get("valid_from"),
+                        "valid_to": meta.get("valid_to"),
+                        "active": bool(row["active"]),
+                    }
+                else:
+                    rec = {
+                        "id": row[0],
+                        "namespace": row[1],
+                        "source_id": row[2],
+                        "target_id": row[3],
+                        "relation_type": row[4],
+                        "confidence": float(row[5] or 1.0),
+                        "memory_id": meta.get("memory_id", ""),
+                        "valid_from": meta.get("valid_from"),
+                        "valid_to": meta.get("valid_to"),
+                        "active": bool(row[7]) if len(row) > 7 else True,
+                    }
+                out.append(rec)
+            return out
+        finally:
+            self._put_conn(conn)
+
+    def save_provenance_event(self, event: dict) -> None:
+        """Best-effort: store provenance in memory_events payload if table exists."""
+        conn = self._get_conn()
+        try:
+            with conn.cursor() as cur:
+                ns = event.get("namespace") or "default"
+                self._apply_namespace_session(cur, ns)
+                cur.execute(
+                    """
+                    INSERT INTO memory_events (event_type, memory_id, namespace, payload)
+                    VALUES (%s, %s, %s, %s::jsonb)
+                    """,
+                    (
+                        f"provenance.{event.get('operation', 'create')}",
+                        event.get("entity_id"),
+                        ns,
+                        json.dumps(event),
+                    ),
+                )
+            conn.commit()
+        except Exception as exc:
+            logger.debug("postgres save_provenance_event skipped: %s", exc)
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        finally:
+            self._put_conn(conn)
+
+    def load_provenance_events(
+        self,
+        entity_id: Optional[str] = None,
+        namespace: Optional[str] = None,
+        limit: int = 10000,
+    ) -> List[dict]:
+        conn = self._get_conn()
+        try:
+            with conn.cursor() as cur:
+                if namespace:
+                    self._apply_namespace_session(cur, namespace)
+                else:
+                    self._apply_read_session(cur)
+                sql = """
+                    SELECT payload FROM memory_events
+                    WHERE event_type LIKE 'provenance.%%'
+                """
+                params: list = []
+                if entity_id:
+                    sql += " AND memory_id = %s"
+                    params.append(entity_id)
+                if namespace:
+                    sql += " AND namespace = %s"
+                    params.append(namespace)
+                sql += " ORDER BY created_at ASC LIMIT %s"
+                params.append(limit)
+                try:
+                    cur.execute(sql, params)
+                    rows = cur.fetchall()
+                except Exception:
+                    conn.rollback()
+                    return []
+            out = []
+            for row in rows:
+                payload = row["payload"] if isinstance(row, dict) else row[0]
+                if isinstance(payload, str):
+                    try:
+                        payload = json.loads(payload)
+                    except Exception:
+                        continue
+                if isinstance(payload, dict):
+                    out.append(payload)
+            return out
         finally:
             self._put_conn(conn)
 
@@ -853,7 +1065,7 @@ class PostgresBackend(Backend):
         if self._enc:
             content = self._enc.decrypt(content)
             metadata_raw = self._enc.decrypt(metadata_raw) if metadata_raw else metadata_raw
-        return Memory(
+        mem = Memory(
             id=row["id"],
             type=MemoryType(row["type"]),
             content=content,
@@ -872,6 +1084,7 @@ class PostgresBackend(Backend):
             metadata=json.loads(metadata_raw) if metadata_raw else {},
             score=row["score"],
         )
+        return mem.hydrate_runtime_fields()
 
     def close(self) -> None:
         if self._pool:

@@ -19,13 +19,16 @@ class TestCLI:
         for help_flag in ["-h", "--help"]:
             result = self.runner.invoke(cli, [help_flag])
             assert result.exit_code == 0
-            assert "Agent State Infrastructure SDK" in result.output
+            assert "Governed, Auditable Memory" in result.output or "governed" in result.output.lower()
 
     def test_demo(self):
         result = self.runner.invoke(cli, ["demo"])
-        assert result.exit_code == 0
-        assert "OMem" in result.output
-        assert "recall" in result.output.lower() or "simulating" in result.output.lower()
+        assert result.exit_code == 0, result.output
+        assert "Baseline saved" in result.output
+        assert "Memory poisoned" in result.output
+        assert "untrusted_web_scrape" in result.output
+        assert "REMEDIATED" in result.output
+        assert "MongoDB" not in result.output
 
     def test_benchmark(self):
         result = self.runner.invoke(cli, ["benchmark", "--n", "50"])

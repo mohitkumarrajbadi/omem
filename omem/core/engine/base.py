@@ -22,7 +22,7 @@ from ..retrieval.fusion import DEFAULT_WEIGHTS
 from ..retrieval.kv import KVCache
 from ..retrieval.vector import VectorIndex
 from ..utils.cache import LRUCache
-from ..utils.concurrency import RWLock, WriteContext
+from ..utils.concurrency import RWLock, ReadContext, WriteContext
 from ..utils.inspector import inspect_query
 from ..utils.structured_logging import get_logger
 from ..utils.write_buffer import WriteBuffer
@@ -76,6 +76,7 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
         try:
             stored_memories = self.backend.all()
             if not stored_memories:
+                self._restore_graph_edges()
                 return 0
 
             import numpy as np
@@ -89,6 +90,7 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
             if vectors:
                 vectors_array = np.array(vectors, dtype=np.float32)
                 self.vector_index.rebuild(vectors_array)
+            self._restore_graph_edges()
             return len(stored_memories)
         except Exception as exc:
             logger.error(
@@ -96,6 +98,32 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
                 exc,
                 exc_info=True,
             )
+            return 0
+
+    def _restore_graph_edges(self) -> int:
+        """Reload knowledge-graph edges from the durable backend."""
+        backend = self.backend
+        if backend is None or not hasattr(backend, "load_edges"):
+            return 0
+        try:
+            rows = backend.load_edges()
+            n = self.knowledge_graph.restore_edges(rows)
+            if n:
+                logger.info("Restored %d knowledge-graph edges from backend", n)
+            return n
+        except Exception as exc:
+            logger.warning("Failed to restore knowledge-graph edges: %s", exc)
+            return 0
+
+    def persist_graph(self, namespace: str = "default") -> int:
+        """Flush the in-memory knowledge graph to the durable backend."""
+        backend = self.backend
+        if backend is None:
+            return 0
+        try:
+            return self.knowledge_graph.persist_edges(backend, namespace=namespace)
+        except Exception as exc:
+            logger.warning("Failed to persist knowledge-graph edges: %s", exc)
             return 0
 
     def reload_from_backend(self) -> int:
@@ -110,6 +138,7 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
         try:
             stored_memories = self.backend.all()
             if not stored_memories:
+                self._restore_graph_edges()
                 return 0
 
             import numpy as np
@@ -129,6 +158,7 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
                     self.vector_index.rebuild(
                         __import__("numpy").empty((0, self.embedder.dim), dtype="float32")
                     )
+            self._restore_graph_edges()
             return len(stored_memories)
         except Exception as exc:
             logger.error("Failed to reload memories from backend: %s", exc, exc_info=True)
@@ -141,29 +171,38 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
 
     def consolidate(self, llm_fn: Optional[Callable] = None) -> Dict:
         """Deep maintenance: resolve conflicts and hierarchical reflection."""
-        with WriteContext(self._lock):
-            mems = self.kv.all()
+        # Snapshot current memories under the read lock, then release before
+        # calling self.add() / self.reflect() — both internally acquire the
+        # write lock, so holding it here would deadlock.
+        with ReadContext(self._lock):
+            mems = list(self.kv.all())
 
-            # 1. Resolve conflicts using LLM if available
-            resolutions = reflect_on_conflicts(mems, summarizer=llm_fn)
-            for res in resolutions:
-                self.add(
-                    res.content,
-                    mem_type=res.type,
-                    importance=res.importance,
-                    source="consolidator",
-                )
+        # 1. Resolve conflicts using LLM if available (pure computation, no lock)
+        resolutions = reflect_on_conflicts(mems, summarizer=llm_fn)
 
-            # 2. Hierarchical reflection
-            insights = self.reflect(summarizer=llm_fn, namespace=None)
+        # 2. Persist resolutions — each add() acquires the write lock itself
+        for res in resolutions:
+            self.add(
+                res.content,
+                mem_type=res.type,
+                importance=res.importance,
+                source="consolidator",
+            )
 
-            # 3. Optimize vector index
-            self.vector_index.rebuild()
+        # 3. Hierarchical reflection — reflect() also calls add() internally
+        insights = self.reflect(summarizer=llm_fn, namespace=None)
 
-            return {
-                "conflicts_resolved": len(resolutions),
-                "new_insights": len(insights),
-            }
+        # 4. Rebuild vector index from current active vectors (acquires its own lock)
+        with ReadContext(self._lock):
+            active_vecs = [m.vector for m in self.kv.all() if m.vector is not None]
+        if active_vecs:
+            import numpy as np
+            self.vector_index.rebuild(np.stack(active_vecs).astype(np.float32))
+
+        return {
+            "conflicts_resolved": len(resolutions),
+            "new_insights": len(insights),
+        }
 
     def link(self, src_id: str, dst_id: str, weight: float = 1.0, label: str = ""):
         self.graph.add_link(src_id, dst_id, weight=weight, label=label)
@@ -202,9 +241,11 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
         from ..graph.knowledge import EdgeType
 
         edge_type = EdgeType(relation) if relation in EdgeType._value2member_map_ else EdgeType.RELATED_TO
-        return self.knowledge_graph.link_entities(
+        edge_id = self.knowledge_graph.link_entities(
             source, target, edge_type, memory_id=memory_id, confidence=confidence
         )
+        self.persist_graph()
+        return edge_id
 
     def assert_fact(
         self,
@@ -219,9 +260,11 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
         if not memory_id:
             memory_id = self.add(f"{subject} {relation} {obj}", source="assertion")
         edge_type = EdgeType(relation) if relation in EdgeType._value2member_map_ else EdgeType.ASSERTED
-        return self.knowledge_graph.assert_fact(
+        result = self.knowledge_graph.assert_fact(
             subject, edge_type, obj, memory_id, confidence=confidence
         )
+        self.persist_graph()
+        return result
 
     def prefetch(self) -> Dict:
         return self.prefetcher.get_predicted_queries()
@@ -276,7 +319,7 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
     ) -> Dict:
         """Cluster and merge redundant memories."""
         with WriteContext(self._lock):
-            mems = self.kv.all()
+            mems = self.kv.all() 
             if namespace:
                 mems = [m for m in mems if m.namespace == namespace]
             new_mems, deactivated_ids = run_compression(
@@ -346,6 +389,9 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
                     mem.utility_score = max(
                         min(mem.utility_score + adjustment, 1.0), 0.0
                     )
+                    from ..brain.importance import record_cited
+
+                    record_cited(mem)
                     self.kv.put(mid, mem)
                     self.write_buffer.enqueue(mem)
 

@@ -54,6 +54,10 @@ fast = [
 # Local ML embeddings (downloads ~90 MB model on first use)
 # Without this the built-in hash-based embedder is used automatically.
 embeddings = ["sentence-transformers>=2.2.0"]
+# Document ingest (PDF text extraction; markdown/HTML need no extra deps)
+ingest = ["pypdf>=4.0"]
+# LangGraph checkpointer / store extras (adapters work without this installed)
+langgraph = ["langgraph>=0.2.0"]
 # PostgreSQL distributed backend
 postgres = ["psycopg2-binary>=2.9.0"]
 # MCP server for Claude Desktop / Cursor integration
@@ -64,6 +68,8 @@ secure = ["cryptography>=41.0.0"]
 langchain = ["langchain>=0.1.0"]
 # LlamaIndex integration adapter
 llama_index = ["llama-index>=0.6.0"]
+# Mem0 governance adapter — semantic store stays in Mem0; OMem audits it
+mem0 = ["mem0ai>=0.1.0"]
 # OpenAI embeddings provider
 openai = ["openai>=1.0.0"]
 # AI memory benchmark dependencies

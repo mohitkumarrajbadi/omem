@@ -111,15 +111,33 @@ class _RegistryDB:
     """
 
     def __init__(self, db_path: str) -> None:
-        self._db_path = db_path
-        if db_path != ":memory:":
+        self._uri = False
+        if db_path == ":memory:":
+            # A new sqlite3.connect(":memory:") is a *different* empty database.
+            # Shared-cache URI + a keep-alive connection keep the schema visible.
+            self._db_path = f"file:omem_runtime_{id(self)}?mode=memory&cache=shared"
+            self._uri = True
+        else:
+            self._db_path = db_path
             parent = os.path.dirname(db_path)
             if parent:
                 os.makedirs(parent, exist_ok=True)
+        self._keep = sqlite3.connect(
+            self._db_path,
+            timeout=30,
+            check_same_thread=False,
+            uri=self._uri,
+        )
+        self._keep.execute("PRAGMA journal_mode=WAL")
         self._init()
 
     def _conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self._db_path, timeout=30, check_same_thread=False)
+        conn = sqlite3.connect(
+            self._db_path,
+            timeout=30,
+            check_same_thread=False,
+            uri=self._uri,
+        )
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
@@ -299,9 +317,7 @@ class RuntimeOS:
     def _load_from_db(self) -> None:
         """Restore in-memory registry from SQLite on startup."""
         try:
-            # List all agents by querying the DB directly
-            with sqlite3.connect(self._db._db_path) as conn:
-                conn.row_factory = sqlite3.Row
+            with self._db._conn() as conn:
                 rows = conn.execute(
                     "SELECT * FROM agent_registry WHERE status != 'done'"
                 ).fetchall()

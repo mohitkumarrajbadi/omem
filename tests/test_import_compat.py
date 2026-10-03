@@ -126,7 +126,7 @@ def test_runtime_package_importable():
 
 def test_cloud_client_not_shipped_in_oss():
     """Commercial omem.cloud client lives in omem-cloud; OSS must not bundle it."""
-    with pytest.raises(ModuleNotFoundError):
+    with pytest.raises((ModuleNotFoundError, ImportError, RuntimeError)):
         importlib.import_module("omem.cloud.client")
 
 

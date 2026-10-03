@@ -91,5 +91,26 @@ def test_newer_memory_has_higher_importance_wins():
     assert mem2.status == MemoryStatus.ACTIVE
 
 
+def test_dialogue_turns_are_not_superseded():
+    """Chat haystacks must keep both turns — TMS is for beliefs, not dialogue."""
+    from omem.core.brain.tms import is_dialogue_turn
+
+    assert is_dialogue_turn("[user] I've been using the Shell gas station")
+    assert is_dialogue_turn("[assistant] Loyalty programs can save money")
+    assert is_dialogue_turn("Caroline: I moved last June")
+    assert not is_dialogue_turn("User lives in NYC")
+    assert not is_dialogue_turn("My DOB is 15 March")
+
+    m = OMem(backend="memory")
+    id1 = m.add("[user] I've been using the Shell gas station near my office", force=True)
+    id2 = m.add("[assistant] Loyalty programs can be a great way to save money", force=True)
+    a = m.get(id1)
+    b = m.get(id2)
+    assert a is not None and b is not None
+    assert a.active is True
+    assert b.active is True
+    assert a.status != MemoryStatus.DEPRECATED
+
+
 if __name__ == "__main__":
     pytest.main([__file__])

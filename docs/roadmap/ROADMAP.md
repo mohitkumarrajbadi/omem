@@ -13,14 +13,18 @@ OMem v2 turns the current memory library into AI state infrastructure: memory, s
 |---|---|---|
 | Memory core | Shipped | Add, recall, sleep, inspect, compression, forgetting |
 | Graph substrate | Shipped | Entities, relation edges, evidence, confidence, Graph-RAG |
-| Multi-objective retrieval | Shipped | Semantic, keyword, recency, importance, confidence, graph, personalization |
-| Persistence | Shipped | SQLite stable, PostgreSQL beta |
-| MCP integration | Shipped | Claude Desktop and Cursor compatible server |
-| Codebase memory | Alpha | Python AST indexing and graph retrieval |
-| State layer | Planned | Goal, plan, session, tool, workflow snapshots |
-| Observability | Planned | Traces, replay, memory metrics, context efficiency |
-| Governance | Planned | Policy engine, retention, deletion, compliance workflows |
-| Runtime coordination | Planned | Agent registry, scheduler, sync, recovery |
+| Multi-objective retrieval | Shipped | Semantic, keyword, recency, RRF, identifier lexical inject |
+| Persistence | Shipped | SQLite (locked connection) stable, PostgreSQL beta |
+| State layer | Shipped | Goal, plan, checkpoint, resume, fork/merge via AgentState |
+| Context packer | Shipped | Budget pack + truncate; answer-in-budget bakeoff |
+| MCP integration | Shipped | Claude Desktop / Cursor / Claude Code / OpenCode |
+| Provenance | Shipped | Durable events; SQLite serialized under concurrent writers |
+| TMS | Shipped | Belief revision (location/DOB); dialogue turns are not superseded |
+| Governance | Shipped | Retention, audit export, optional AES-256-GCM |
+| Runtime coordination | Shipped | Agent registry (shared in-memory SQLite URI) |
+| Observability | Alpha | Traces, context savings; uncached latency SLO in production_break |
+| Codebase memory | Alpha | Python + TS AST indexing |
+| Cloud HA/DR / SOC2 | Not started | Design-partner tech preview only |
 
 ## Milestone 1: V2 Foundations
 
