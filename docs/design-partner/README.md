@@ -2,26 +2,25 @@
 
 **Status:** tech preview — not GA.
 
-Evaluate one thing: can you **prove / isolate / roll back / erase** agent memory?
-
-## Start here (YC + partner pack)
-
-→ **[docs/yc/](../yc/README.md)** — narrative, 5-min demo, security one-pager, application draft.
+Evaluate: prove / isolate / roll back / erase agent memory.
 
 ## One command
 
 ```bash
-pip install -e ".[dev]"
+pip install omem-os
 OMEM_EMBEDDER=hash omem demo poison-recovery
 ```
 
-## Also
+## Pack
 
-| Doc | When |
-|-----|------|
-| [PITCH.md](./PITCH.md) | Short sponsor one-pager |
+| Doc | Purpose |
+|-----|---------|
+| [DEMO.md](./DEMO.md) | 5-minute evaluation walkthrough |
+| [PITCH.md](./PITCH.md) | One-pager |
+| [SECURITY.md](./SECURITY.md) | Controls and non-claims |
 | [TENANT_HARDENING.md](../guarantees/TENANT_HARDENING.md) | Guarantees / non-guarantees |
-| [GA_HARDENING.md](../../../omem-cloud/docs/deployment/GA_HARDENING.md) | Cloud operator gates |
-| [COFOUNDER_FIRST_HIRE.md](./COFOUNDER_FIRST_HIRE.md) | Fill before interviews ask bus-factor |
+| Cloud GA ops | [GA_HARDENING.md](../../../omem-cloud/docs/deployment/GA_HARDENING.md) |
 
-Do not lead with recall benchmarks or AST index.
+```bash
+omem governance audit --format json --limit 100
+```

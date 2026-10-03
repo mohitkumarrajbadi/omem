@@ -1,20 +1,16 @@
 # OMem — one-pager
 
-**OMem Labs** · Winter 2027 · **Tech preview — not GA**
-
-## Line
-
-Audit & rollback layer for AI agents.
+**Audit & rollback layer for AI agents** · Tech preview — not GA
 
 ## Problem
 
-Vector memory is commoditizing. Regulated agent deploys stall on **prove, isolate, erase, roll back** — a security/platform budget, not “cheaper tokens.”
+Agents remember. Enterprises need to **prove** what they knew, **roll back** bad beliefs, and show **who wrote** the fact.
 
 ## Product
 
 - **omem-os** — governed memory, snapshot/rollback, AES-256-GCM, audit export, MCP  
-- **omem-cloud** — multi-tenant API, Postgres RLS, key rotation, Governance console  
-- **GovernedMem0** — keep Mem0 retrieval; wrap writes/erasure in OMem audit  
+- **omem-cloud** — multi-tenant API, Postgres RLS, key rotation (preview)  
+- **GovernedMem0** — keep Mem0 retrieval; OMem audit/erasure path  
 
 ## Proof
 
@@ -22,12 +18,10 @@ Vector memory is commoditizing. Regulated agent deploys stall on **prove, isolat
 OMEM_EMBEDDER=hash omem demo poison-recovery
 ```
 
-Poison → provenance → rollback + delete → audit. Cloud: fail-closed RLS.
-
 ## Not claiming
 
-SOC2 done · Cloud GA · Better recall than Mem0 as the pitch.
+Cloud GA · completed SOC2 · “better recall than Mem0”
 
-## Ask
+## Contact
 
-1 design partner on audit / tenant / erasure. Full pack: [docs/yc/](../yc/README.md).
+https://github.com/mohitkumarrajbadi/omem
