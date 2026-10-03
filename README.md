@@ -36,7 +36,10 @@ right to erasure, and memory isolation.
 
 OMem is **not** competing as another Mem0 or Zep. Keep your semantic store if
 you already have one. Wrap the agent in OMem when you need to prove what it
-knew, roll it back, and export the trail.
+knew, roll it back, and export the trail. Existing Mem0 users can wrap their
+client with ``GovernedMem0`` (``pip install "omem-os[mem0]"``) so writes,
+access, and erasure flow through OMem's audit ledger without replacing Mem0's
+retrieval path.
 
 > *Prove what the agent knew at time T. Show who wrote that fact.
 > Show that Org A cannot read Org B. Show that erasure reached agent memory,
@@ -97,7 +100,7 @@ Limits: [docs/LIMITATIONS.md](./docs/LIMITATIONS.md)
 | Memory | Stable — local API and lifecycle covered by the OSS test suite |
 | State | Stable — snapshots, rollback, forks, and checkpoints covered |
 | Context | Stable — token budgeting and context assembly covered |
-| Knowledge | Beta — link/query/reasoning covered; Python-only AST index remains Alpha |
+| Knowledge | Beta — link/query/reasoning covered; Python AST code index is **Alpha** (off by default; set `OMEM_ENABLE_EXPERIMENTAL_AST=1`) |
 | Observe | Beta — local traces **Stable**; OTLP JSON export/push covers **in-process** ObserveOS events only (not full auto-instrumentation); HTTP-path OTel is **omem-cloud only** (partial `/v1/remember`); dashboard remains Alpha |
 | Governance | Stable for local audit/retention/encryption; tenant and cloud enforcement remain Beta |
 
@@ -135,7 +138,9 @@ Ready-made configs: `deploy/mcp/claude_code.mcp.json`, `opencode.mcp.json`,
 
 Core tools focus on decisions, provenance, and session continuity
 (`remember`, `recall`, `lineage`, `remember_decision`, `recall_decisions`).
-The Python AST codebase index is Alpha and is not the enterprise pitch.
+The Python AST codebase index is Alpha and is **off by default**. Enable with
+`OMEM_ENABLE_EXPERIMENTAL_AST=1` (or import `omem.experimental.ast_index`). It is
+not part of the enterprise pitch.
 
 ---
 

@@ -103,18 +103,30 @@ CLI_BANNER = (
 # Commands grouped by what you're trying to do, not by internal architecture.
 # Canonical commands come first; thin legacy aliases are kept but de-emphasized
 # at the bottom so the common path stays obvious.
+# "Codebase" (AST index) is Alpha — shown only when OMEM_ENABLE_EXPERIMENTAL_AST=1.
 COMMAND_GROUPS = OrderedDict(
     [
         ("Start here", ["agent", "status", "init", "demo"]),
         ("Memory", ["remember", "recall", "list", "inspect", "stats", "sleep", "clear"]),
         ("State & context", ["state", "context", "knowledge"]),
         ("Enterprise", ["observe", "provenance", "governance", "runtime", "org"]),
-        ("Codebase", ["ingest", "sync", "codebase", "namespaces"]),
+        ("Codebase (experimental)", ["ingest", "sync", "codebase", "namespaces"]),
         ("Connectors", ["ingest-docs", "ingest-url", "ingest-notion", "ingest-drive"]),
         ("Server & tools", ["serve", "dashboard", "bench", "health", "export", "import", "completion", "version"]),
         ("Aliases", ["add", "search", "maintain", "benchmark"]),
     ]
 )
+
+
+def _command_groups_for_help():
+    from .experimental import ast_enabled
+
+    groups = OrderedDict()
+    for category, cmd_list in COMMAND_GROUPS.items():
+        if category.startswith("Codebase") and not ast_enabled():
+            continue
+        groups[category] = cmd_list
+    return groups
 
 
 class OMemGroup(click.Group):
@@ -132,7 +144,7 @@ class OMemGroup(click.Group):
         commands = self.list_commands(ctx)
         mapped_commands = set()
 
-        for category, cmd_list in COMMAND_GROUPS.items():
+        for category, cmd_list in _command_groups_for_help().items():
             available_cmds = [c for c in cmd_list if c in commands]
             if not available_cmds:
                 continue
@@ -953,32 +965,35 @@ def namespaces(ctx: click.Context, output_format: str):
 
 
 @cli.command()
-@click.option("--json", "as_json", is_flag=True, help="Print the lineage report as JSON.")
+@click.argument(
+    "scenario",
+    required=False,
+    default="poison-recovery",
+    type=click.Choice(["poison-recovery"]),
+)
+@click.option("--json", "as_json", is_flag=True, help="Print the remediation report as JSON.")
 @click.pass_context
-def demo(ctx: click.Context, as_json: bool):
-    """Show the first-run story: which memory caused the wrong decision."""
-    from .demo_story import STALE_ID, lineage_report
+def demo(ctx: click.Context, scenario: str, as_json: bool):
+    """Memory poisoning → provenance → audit-verified rollback.
 
-    m = _get_omem(ctx)
-    report = lineage_report(m)
+    Default scenario is ``poison-recovery``. Run:
+
+        omem demo
+        omem demo poison-recovery
+    """
+    from .demo_poison import run_poison_recovery
+
+    del scenario  # only one scenario wired today
+    db_path = (ctx.obj or {}).get("db_path")
+    report = run_poison_recovery(db_path=db_path)
     if as_json:
-        click.echo(json.dumps(report, indent=2, sort_keys=True))
+        click.echo(json.dumps(report, indent=2, sort_keys=True, default=str))
         return
 
-    caused = report["caused_by"]
-    lost = report["lost"]
-    click.echo(_c("OMem lineage", fg="cyan", bold=True))
-    click.echo(f"Wrong decision: {report['decision']['content']}")
-    click.echo(f"Caused by memory {caused['id']}: {caused['content']}")
-    click.echo(f"Why: {caused['why']}")
-    click.echo(f"Lost memory {lost['id']}: {lost['content']}")
-    click.echo(f"Why it lost: {lost['why']}")
-    click.echo(
-        "The agent recalled the stale MongoDB memory and ignored the later "
-        "PostgreSQL decision."
-    )
-    if caused["id"] != STALE_ID:
-        failure("Lineage did not point at the stale memory.")
+    for line in report.get("lines") or []:
+        click.echo(line)
+    if not report.get("ok"):
+        failure(report.get("error") or "poison-recovery demo failed")
         sys.exit(1)
 
 
@@ -1088,7 +1103,14 @@ def health(ctx: click.Context):
 @click.option('--namespace', '-n', default='project', help='Namespace to index into.')
 @click.pass_context
 def ingest(ctx: click.Context, path: str, namespace: str):
-    """Index a codebase into memory."""
+    """Index a codebase into memory (experimental AST — OMEM_ENABLE_EXPERIMENTAL_AST=1)."""
+    from .experimental import require_ast
+
+    try:
+        require_ast("omem ingest")
+    except RuntimeError as exc:
+        failure(str(exc))
+        sys.exit(2)
     m = _get_omem(ctx)
     count = m.ingest_project(path, namespace)
     success(f"Indexed {count} code symbols into '{namespace}'.")
@@ -1170,7 +1192,14 @@ def ingest_drive_cmd(
 @click.option('--namespace', '-n', default='project', help='Namespace to sync.')
 @click.pass_context
 def sync(ctx: click.Context, path: str, namespace: str):
-    """Sync code changes since the last index."""
+    """Sync code changes since the last index (experimental AST)."""
+    from .experimental import require_ast
+
+    try:
+        require_ast("omem sync")
+    except RuntimeError as exc:
+        failure(str(exc))
+        sys.exit(2)
     m = _get_omem(ctx)
     processed = m.sync_project(path, namespace)
     success(f"Synced {processed} changed symbols into '{namespace}'.")
@@ -1183,7 +1212,14 @@ def sync(ctx: click.Context, path: str, namespace: str):
 @click.option('--top-k', default=5, help='Maximum results to return.')
 @click.pass_context
 def codebase(ctx: click.Context, query: str, namespace: str, depth: int, top_k: int):
-    """Search an indexed codebase."""
+    """Search an indexed codebase (experimental AST)."""
+    from .experimental import require_ast
+
+    try:
+        require_ast("omem codebase")
+    except RuntimeError as exc:
+        failure(str(exc))
+        sys.exit(2)
     m = _get_omem(ctx)
     results = m.query_code(query, namespace=namespace, context_depth=depth, top_k=top_k)
     for i, r in enumerate(results, 1):
