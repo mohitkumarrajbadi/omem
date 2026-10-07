@@ -26,7 +26,7 @@ import time
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = Path(__file__).resolve().parent / "data"
@@ -480,7 +480,7 @@ def run_suite(
     lme_r = run_longmemeval(lme, n=subset, k=k, stratified=stratified)
     print(f"  hit@{k}={lme_r['hit_at_k_pct']}%")
 
-    print(f"=== LoCoMo retrieval ===")
+    print("=== LoCoMo retrieval ===")
     loc_r = run_locomo(locomo, n_qa=max(subset, 80), k=k)
     print(f"  hit@{k}={loc_r['hit_at_k_pct']}%  (n={loc_r['n_questions']})")
 

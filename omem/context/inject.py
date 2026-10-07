@@ -19,7 +19,7 @@ memories into earlier user/assistant messages every turn.
 from __future__ import annotations
 
 import re
-from typing import List, Optional, Sequence, Union
+from typing import List, Sequence
 
 OMEM_CONTEXT_START = "<!-- OMEM_CONTEXT_START -->"
 OMEM_CONTEXT_END = "<!-- OMEM_CONTEXT_END -->"

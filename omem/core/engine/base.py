@@ -22,7 +22,7 @@ from ..retrieval.fusion import DEFAULT_WEIGHTS
 from ..retrieval.kv import KVCache
 from ..retrieval.vector import VectorIndex
 from ..utils.cache import LRUCache
-from ..utils.concurrency import RWLock, ReadContext, WriteContext
+from ..utils.concurrency import ReadContext, RWLock, WriteContext
 from ..utils.inspector import inspect_query
 from ..utils.structured_logging import get_logger
 from ..utils.write_buffer import WriteBuffer
@@ -319,7 +319,7 @@ class BrainTrace(AddMixin, RAGMixin, LifecycleMixin):
     ) -> Dict:
         """Cluster and merge redundant memories."""
         with WriteContext(self._lock):
-            mems = self.kv.all() 
+            mems = self.kv.all()
             if namespace:
                 mems = [m for m in mems if m.namespace == namespace]
             new_mems, deactivated_ids = run_compression(

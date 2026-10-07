@@ -6,10 +6,11 @@ import json
 import os
 import sys
 import time
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 from typing import Any, Dict, Optional
 
 import click
-from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
 try:
     __version__ = _pkg_version("omem-os")
@@ -21,13 +22,9 @@ except PackageNotFoundError:
 
 from ..api import OMem
 from ..types import MemoryType
-from .help import CONTEXT_SETTINGS, OMemGroup, _write_command_groups, _show_all_commands
+from .help import CONTEXT_SETTINGS, OMemGroup, _write_command_groups
 from .ui import (
-    GLYPH_ARROW,
-    GLYPH_ERR,
     GLYPH_INFO,
-    GLYPH_OK,
-    GLYPH_WARN,
     _c,
     failure,
     field,
@@ -37,6 +34,7 @@ from .ui import (
     success,
     warn,
 )
+
 
 def _get_omem(ctx: click.Context) -> OMem:
     config = ctx.obj or {}
@@ -1161,11 +1159,11 @@ def serve(
 
     try:
         from ..integrations.mcp_server import (
+            _mcp_backend,
+            _mcp_db_path,
             configure_mcp_server,
             get_project_namespace,
             mcp,
-            _mcp_db_path,
-            _mcp_backend,
         )
 
         configure_mcp_server(

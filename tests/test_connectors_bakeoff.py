@@ -1,9 +1,9 @@
 """Connectors (folder/URL/Notion/Drive) and the no-LLM bakeoff."""
 
 from omem import AgentState
-from omem.memory import MemoryOS
-from omem.ingest.connectors import ingest_drive, ingest_notion, notion_blocks_to_text
+from omem.ingest.connectors import notion_blocks_to_text
 from omem.ingest.http import StaticTransport
+from omem.memory import MemoryOS
 
 
 def test_ingest_folder_markdown(tmp_path, monkeypatch):
@@ -132,7 +132,7 @@ def test_ingest_notion_requires_token():
 
 def test_bakeoff_omem_no_llm(monkeypatch):
     monkeypatch.setenv("OMEM_EMBEDDER", "hash")
-    from benchmarks.bakeoff import run_omem, CASES
+    from benchmarks.bakeoff import CASES, run_omem
 
     report = run_omem(CASES, k=5)
     assert report["no_llm"] is True
