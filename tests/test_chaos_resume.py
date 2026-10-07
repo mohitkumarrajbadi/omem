@@ -14,6 +14,10 @@ from omem.backends.sqlite import CorruptMemoryError, SQLiteBackend
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="chaos_resume kill/reopen loop relies on POSIX process+file semantics",
+)
 def test_sigkill_keeps_flushed_marker(tmp_path, monkeypatch):
     monkeypatch.setenv("OMEM_EMBEDDER", "hash")
     out = tmp_path / "rate.json"

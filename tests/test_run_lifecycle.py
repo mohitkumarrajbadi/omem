@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-import tempfile
 import time
 
 import pytest
@@ -229,31 +227,36 @@ class TestReplayModes:
 
 
 class TestSQLitePersistence:
-    def test_events_survive_new_store_instance(self):
-        with tempfile.TemporaryDirectory() as td:
-            path = os.path.join(td, "state.db")
-            # Use SQLite for both so restart shares file — state also needs sqlite
-            from omem.state.backend import SQLiteStateBackend
+    def test_events_survive_new_store_instance(self, tmp_path):
+        path = str(tmp_path / "state.db")
+        # Use SQLite for both so restart shares file — state also needs sqlite
+        from omem.state.backend import SQLiteStateBackend
 
-            state = StateOS(backend=SQLiteStateBackend(path))
-            store = SQLiteRunStore(path)
-            ros = RunOS(store=store, state=state)
-            sid = "persist-thread"
-            state.save(sid, StatePayload(session_id=sid))
-            active = ros.start_run(sid, goal="persist")
-            active.record("observation", {"n": 1})
-            rid = active.run_id
-            store.close()
+        backend = SQLiteStateBackend(path)
+        state = StateOS(backend=backend)
+        store = SQLiteRunStore(path)
+        ros = RunOS(store=store, state=state)
+        sid = "persist-thread"
+        state.save(sid, StatePayload(session_id=sid))
+        active = ros.start_run(sid, goal="persist")
+        active.record("observation", {"n": 1})
+        rid = active.run_id
+        store.close()
+        backend.close()
 
-            store2 = SQLiteRunStore(path)
-            state2 = StateOS(backend=SQLiteStateBackend(path))
-            ros2 = RunOS(store=store2, state=state2)
+        backend2 = SQLiteStateBackend(path)
+        store2 = SQLiteRunStore(path)
+        state2 = StateOS(backend=backend2)
+        ros2 = RunOS(store=store2, state=state2)
+        try:
             run = ros2.get_run(rid)
             assert run.goal == "persist"
             events = ros2.list_events(rid)
             assert events[0].type == "run_started"
             assert any(e.type == "observation" for e in events)
+        finally:
             store2.close()
+            backend2.close()
 
 
 # ---------------------------------------------------------------------------
@@ -269,26 +272,32 @@ class TestAgentStateFacade:
             backend="sqlite",
             db_path=db,
         )
-        agent.start_run(goal="facade goal")
-        agent.set_plan(["one", "two"])
-        agent.advance()
-        ck = agent.checkpoint()  # dual-write via active run
-        assert ck
-        events = agent.inspect_events()
-        assert any(e.type == "checkpoint" for e in events)
+        try:
+            agent.start_run(goal="facade goal")
+            agent.set_plan(["one", "two"])
+            agent.advance()
+            ck = agent.checkpoint()  # dual-write via active run
+            assert ck
+            events = agent.inspect_events()
+            assert any(e.type == "checkpoint" for e in events)
 
-        # Legacy APIs still work
-        agent.remember("a fact about the incident")
-        hits = agent.recall("incident", k=3)
-        assert hits
+            # Legacy APIs still work
+            agent.remember("a fact about the incident")
+            hits = agent.recall("incident", k=3)
+            assert hits
+        finally:
+            agent.close()
 
     def test_memory_and_run_coexist(self, tmp_path):
         agent = AgentState(
             session_id="coexist",
             backend="memory",
         )
-        agent.start_run(goal="g")
-        agent.record_event("memory_write", {"note": "x"})
-        mid = agent.remember("durable note")
-        assert mid
-        assert agent.inspect_events()
+        try:
+            agent.start_run(goal="g")
+            agent.record_event("memory_write", {"note": "x"})
+            mid = agent.remember("durable note")
+            assert mid
+            assert agent.inspect_events()
+        finally:
+            agent.close()
