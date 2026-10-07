@@ -118,7 +118,7 @@ Changelog = "https://github.com/mohitkumarrajbadi/omem/releases"
 # See docs/guides/VERSIONING.md
 tag_regex = "^v(?P<version>\\d+\\.\\d+\\.\\d+(?:[.-].+)?)$"
 local_scheme = "no-local-version"
-fallback_version = "0.0.3"
+fallback_version = "0.0.4"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
