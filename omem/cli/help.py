@@ -30,6 +30,7 @@ SIMPLE_HELP_GROUPS = OrderedDict(
     [
         ("Get started", ["init", "demo", "agent"]),
         ("Everyday", ["remember", "recall", "status", "serve", "dashboard"]),
+        ("State", ["run", "replay", "fork", "diff"]),
     ]
 )
 
@@ -39,7 +40,7 @@ ALL_COMMAND_GROUPS = OrderedDict(
         ("Get started", ["init", "demo", "agent"]),
         ("Everyday", ["remember", "recall", "status", "serve", "dashboard"]),
         ("Memory", ["list", "inspect", "stats", "sleep", "clear", "namespaces"]),
-        ("State & context", ["state", "context", "knowledge"]),
+        ("State & context", ["run", "replay", "fork", "diff", "state", "context", "knowledge"]),
         ("Governance", ["governance", "provenance", "observe", "runtime", "org"]),
         ("Connectors", ["ingest-docs", "ingest-url", "ingest-notion", "ingest-drive"]),
         ("Server", ["health", "export", "import", "version"]),

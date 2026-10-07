@@ -43,7 +43,16 @@ class TestCLI:
         assert "Memory:" in result.output
 
     def test_demo(self):
+        # Default demo is kill-resume (OMem v1 primary story)
         result = self.runner.invoke(cli, ["demo"])
+        assert result.exit_code == 0, result.output
+        assert "PROCESS KILLED" in result.output or "killed" in result.output.lower()
+        assert "resume" in result.output.lower()
+        assert "Kill-the-Agent demo complete" in result.output
+        assert "MongoDB" not in result.output
+
+    def test_demo_poison_recovery(self):
+        result = self.runner.invoke(cli, ["demo", "poison-recovery"])
         assert result.exit_code == 0, result.output
         assert "Baseline saved" in result.output
         assert "Memory poisoned" in result.output
