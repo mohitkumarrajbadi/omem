@@ -113,8 +113,24 @@ def _run(kwargs: Dict[str, Any], lines: List[str]) -> Dict[str, Any]:
     run_id = run.run_id
     session_id = agent.session_id
     step_before_death = agent.current_state().step
-    del agent
+
+    # Release SQLite handles before the "new process" reopen (required on Windows).
+    def _close_agent(a: AgentState) -> None:
+        for obj in (
+            getattr(getattr(a, "_state", None), "_backend", None),
+            getattr(getattr(a, "_runs", None), "_store", None),
+            getattr(getattr(a, "_omem", None), "backend", None),
+        ):
+            close = getattr(obj, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    pass
+
+    _close_agent(agent)
     del run
+    del agent
 
     # ── Process 2: resume ──────────────────────────────────────────────
     lines.append("")
@@ -226,7 +242,7 @@ def _run(kwargs: Dict[str, Any], lines: List[str]) -> Dict[str, Any]:
         f"events={n_events}  fork={branch.run_id}"
     )
 
-    return {
+    report = {
         "ok": True,
         "lines": lines,
         "run_id": run_id,
@@ -239,3 +255,5 @@ def _run(kwargs: Dict[str, Any], lines: List[str]) -> Dict[str, Any]:
         "db_path": kwargs["db_path"],
         "omem_schema": "omem_v1",
     }
+    _close_agent(agent2)
+    return report
