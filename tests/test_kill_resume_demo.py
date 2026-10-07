@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import threading
 
-import pytest
-
 from omem import AgentState
 from omem.demo.kill_resume import run_kill_resume
 from omem.integrations.custom_loop import DurableLoop

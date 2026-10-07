@@ -18,12 +18,11 @@ import logging
 import threading
 import time
 import uuid
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from ..types import (
     Run,
     RunEvent,
-    StateCheckpoint,
     StatePayload,
     is_valid_run_event_type,
 )

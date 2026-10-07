@@ -232,12 +232,10 @@ class TestSQLitePersistence:
     def test_events_survive_new_store_instance(self):
         with tempfile.TemporaryDirectory() as td:
             path = os.path.join(td, "state.db")
-            state1 = StateOS(backend=InMemoryStateBackend())  # payload in mem
             # Use SQLite for both so restart shares file — state also needs sqlite
             from omem.state.backend import SQLiteStateBackend
 
-            state_be = SQLiteStateBackend(path)
-            state = StateOS(backend=state_be)
+            state = StateOS(backend=SQLiteStateBackend(path))
             store = SQLiteRunStore(path)
             ros = RunOS(store=store, state=state)
             sid = "persist-thread"
@@ -271,7 +269,7 @@ class TestAgentStateFacade:
             backend="sqlite",
             db_path=db,
         )
-        run = agent.start_run(goal="facade goal")
+        agent.start_run(goal="facade goal")
         agent.set_plan(["one", "two"])
         agent.advance()
         ck = agent.checkpoint()  # dual-write via active run

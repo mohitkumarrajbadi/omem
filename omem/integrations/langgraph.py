@@ -12,8 +12,8 @@ import time
 from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple, Union
 
 from ..api import OMem
-from ..state.layer import StateOS
 from ..state.exceptions import SessionNotFoundError
+from ..state.layer import StateOS
 from ..types import StatePayload
 
 
