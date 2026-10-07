@@ -73,8 +73,9 @@ jobs:
           # get a pre-built wheel instead of falling back to the sdist.
           CIBW_ARCHS_MACOS: "x86_64 arm64 universal2"
 
-          # Windows: standard x86_64 + ARM64 (Surface Pro X, Snapdragon laptops)
-          CIBW_ARCHS_WINDOWS: "AMD64 ARM64"
+          # Windows: x86_64 only. ARM64 cross-compile via cibuildwheel is unreliable
+          # on windows-latest (pip wheel exit 1); Snapdragon users fall back to sdist.
+          CIBW_ARCHS_WINDOWS: "AMD64"
 
           # Install Rust inside the manylinux container before building
           CIBW_BEFORE_ALL_LINUX: >
