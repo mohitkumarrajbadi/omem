@@ -67,8 +67,9 @@ def html_to_text(html: str) -> str:
 
 def pdf_to_text(data: bytes) -> str:
     try:
-        from pypdf import PdfReader  # type: ignore
         import io
+
+        from pypdf import PdfReader  # type: ignore
 
         reader = PdfReader(io.BytesIO(data))
         pages = []

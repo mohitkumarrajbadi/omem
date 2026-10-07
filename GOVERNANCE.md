@@ -6,7 +6,7 @@ OMem is a maintainer-led open source project. The project optimizes for local-fi
 
 Maintainers make final calls on API stability, release timing, roadmap scope, and security decisions. Contributors are encouraged to open design discussions before large changes.
 
-For major v2 work, prefer an issue or discussion first when the change:
+For major work, prefer an issue or discussion first when the change:
 
 - Adds or changes public API
 - Introduces a new backend or integration
@@ -29,12 +29,17 @@ A PR should be mergeable when it:
 
 | Branch | Purpose |
 |---|---|
-| `main` | Stable OSS releases |
-| `dev` | Active development |
+| `main` | Stable OSS releases (`v*` tags → PyPI `omem-os`) |
+| `dev` | Active development (default PR target) |
 | `staging` | Pre-release integration testing |
 | `cloud` | Akamai/Linode tech-preview demo (deployable proof) |
 
-Patch releases should be boring. Minor releases may add APIs. Breaking changes require a migration guide.
+Package name is **`omem-os`** (import `omem`). Versioning and release steps:
+[docs/guides/VERSIONING.md](./docs/guides/VERSIONING.md),
+[docs/guides/RELEASING.md](./docs/guides/RELEASING.md).
+
+Patch releases should be boring. Until GA we stay on **`0.0.x`**. Breaking
+changes require a CHANGELOG migration note.
 
 **Cloud proof:** merge `staging` → `cloud`, deploy with `./deploy/scripts/cloud-proof-deploy.sh`. See [docs/guides/CLOUD_PROOF.md](./docs/guides/CLOUD_PROOF.md).
 

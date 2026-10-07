@@ -31,9 +31,9 @@ def main() -> int:
         configure_mcp_server,
         mcp_status,
         recall,
+        recall_decisions,
         remember,
         remember_decision,
-        recall_decisions,
     )
 
     stamp = uuid.uuid4().hex[:8]

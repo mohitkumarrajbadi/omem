@@ -49,7 +49,7 @@ def __getattr__(name: str) -> Any:
     """Lazy Alpha re-exports — only when OMEM_ENABLE_EXPERIMENTAL_AST is set."""
     if name not in _AST_EXPORTS:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    from omem.experimental import ast_enabled, require_ast
+    from omem.experimental import require_ast
 
     require_ast(f"omem.knowledge.{name}")
     from omem.knowledge import codebase as _codebase

@@ -7,7 +7,7 @@ from click.testing import CliRunner
 
 from omem import OMem
 from omem.cli import cli
-from omem.demo_story import (
+from omem.demo.story import (
     ACTION_TEXT,
     LATER_ID,
     STALE_ID,

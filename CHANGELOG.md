@@ -5,49 +5,64 @@ All notable changes to OMem will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-> **Version note:** the latest published release is **0.0.1 on PyPI** and
-> **v0.0.2 on GitHub**. Everything under *Unreleased* below — including the
-> architecture work previously labeled "v3.0" internally — has **not** been
-> released. The next release will be **0.0.3**.
+> **Naming:** PyPI package **`omem-os`**, import **`omem`**, CLI **`omem`**.
+> See [docs/guides/VERSIONING.md](./docs/guides/VERSIONING.md).
 
-## [Unreleased] — targeting 0.0.3
-
-This section consolidates the internal "v2"/"v3.0" architecture milestones
-(June 2026). These version labels were used in commit messages and design docs
-but were never published to PyPI or tagged on GitHub; they ship for the first
-time in the next release.
+## [Unreleased]
 
 ### Added
 
-- **Six-layer product architecture** — `memory`, `state`, `context`, `knowledge`, `observe`, `governance`
-- **`AgentState`** — unified product facade composing all layers
-- Cross-cutting packages: `provenance`, `runtime`
-- Layer extensions: `memory/org/`, `knowledge/codebase/`, `observe/dashboard/`
-- Governance modules consolidated: `governance/audit.py`, `governance/encryption.py`
-- Memory OS charter work: BM25 fusion, per-type retrieval strategies, lifecycle
-  FSM, L0–L4 hierarchy conveyor, batch ingest pipeline, cold archive spill,
-  tenant namespace hardening
-- Architecture docs: `docs/architecture/ARCHITECTURE.md`, ADR-002, ADR-003
-- Eval harness relocated to `benchmarks/eval/`
+- Versioning / branching / release guides (`docs/guides/VERSIONING.md`, `RELEASING.md`)
+
+---
+
+## [0.0.3] - 2026-10-07
+
+Tech-preview Agent State cut. Install: `pip install omem-os==0.0.3`.
+
+### Added
+
+- **Run / RunEvent layer** — durable event history dual-written with live
+  `StatePayload` checkpoints (`omem/state/run_store.py`, `runs.py`)
+- **`AgentState` run APIs** — `start_run`, `resume_run`, `record_event`,
+  `fork_run`, `inspect_events`, lease/crash inference
+- **CLI** — `omem run`, `omem replay`, `omem fork`, `omem diff`,
+  `omem demo kill-resume` (primary demo)
+- LangGraph dual-write helper + `DurableLoop` custom-loop helper
+- Kill-resume demo script and partner-facing pitch notes
+- Six-layer product architecture (`memory`, `state`, `context`, `knowledge`,
+  `observe`, `governance`) and cross-cutting `provenance` / `runtime`
+- CI: public pytest failure annotations; Windows SQLite close hygiene
 
 ### Changed
 
-- **Breaking:** Removed v2 compatibility shims — update imports before upgrading:
+- Default CLI demo is kill-resume (poison-recovery still available)
+- Publish workflow: reliable wheel matrix (Linux x86_64, macOS universal2,
+  Windows AMD64); tag-push triggers PyPI Trusted Publisher
+- **Breaking (import paths):** legacy shims removed — update before upgrading:
   - `omem.org` → `omem.memory.org`
   - `omem.security` → `omem.governance`
   - `omem.codebase` → `omem.knowledge.codebase`
   - `omem.viz` → `omem.observe.dashboard`
   - `omem.classify` → `omem.core.brain.classify`
-- Docker: root `Dockerfile` / `docker-compose.yml` removed; use `deploy/docker/`
-- Design notes moved from `issues/` to `docs/ideas/`
 
 ### Removed
 
-- `omem/org/`, `omem/security/`, `omem/codebase/`, `omem/viz/` packages (directories deleted)
-- Legacy imports now raise `ImportError` with migration hints via guard modules (`org.py`, `security.py`, …)
-- `omem/eval/` (use `benchmarks/eval/` for dev benchmarks)
-- Commercial cloud layer (`omem/cloud/`) detached from the open-source package;
-  it now lives in the separate `omem-cloud` repository
+- Commercial cloud package from this repo (lives in `omem-cloud`)
+- Legacy `omem/org/`, `omem/security/`, `omem/codebase/`, `omem/viz/` packages
+
+### Fixed
+
+- Python 3.9 typing in codebase retriever
+- Windows file-lock failures in persistence / kill-resume tests
+- Ruff / CLI help test drift blocking CI
+
+### Notes
+
+- Package name remains **`omem-os`** (not `omem-oss`)
+- Cloud API previews live in sibling `omem-cloud`; not part of this wheel
+
+[0.0.3]: https://github.com/mohitkumarrajbadi/omem/releases/tag/v0.0.3
 
 ---
 

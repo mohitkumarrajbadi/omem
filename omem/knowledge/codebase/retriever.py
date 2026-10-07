@@ -9,14 +9,17 @@ graph API changes, this module can be swapped out without touching the rest
 of the system.
 """
 
+from __future__ import annotations
+
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from ...api import OMem
 from ...core.retrieval.fusion import fuse_score
 from ...core.retrieval.ranker import weights_for_mode
 
 DEFAULT_WEIGHTS = weights_for_mode("coding").as_dict()
+
 
 class CodeRetriever:
     """Retrieve code symbols for a natural‑language query.
@@ -31,7 +34,12 @@ class CodeRetriever:
         Weighting factors for the ranking formula.
     """
 
-    def __init__(self, omem: OMem, namespace: str = "project", weights: Dict[str, float] | None = None):
+    def __init__(
+        self,
+        omem: OMem,
+        namespace: str = "project",
+        weights: Optional[Dict[str, float]] = None,
+    ):
         self.omem = omem
         self.namespace = namespace
         self.weights = weights if weights is not None else DEFAULT_WEIGHTS

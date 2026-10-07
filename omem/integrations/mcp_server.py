@@ -289,7 +289,7 @@ def lineage(query: str = "which database should production use"):
     MongoDB, the stale memory that caused it, and the later PostgreSQL
     memory that lost on importance versus recency.
     """
-    from ..demo_story import lineage_report
+    from ..demo.story import lineage_report
 
     return lineage_report(omem, query=query)
 

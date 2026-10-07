@@ -6,8 +6,11 @@ Thank you for your interest in contributing. This document covers everything you
 
 ## Start Here
 
-OMem is moving toward v2 as AI state infrastructure. Before starting larger work, read:
+OMem is **Agent State infrastructure** (tech preview). Package on PyPI:
+**`omem-os`**. Import: **`omem`**. Before larger work, read:
 
+- [docs/guides/VERSIONING.md](./docs/guides/VERSIONING.md) — naming, semver, branches
+- [docs/guides/RELEASING.md](./docs/guides/RELEASING.md) — how maintainers cut PyPI releases
 - [docs/architecture/ARCHITECTURE.md](./docs/architecture/ARCHITECTURE.md) for the canonical layout
 - [docs/architecture/PROJECT_STRUCTURE.md](./docs/architecture/PROJECT_STRUCTURE.md) for the contributor map
 - [docs/roadmap/ROADMAP.md](./docs/roadmap/ROADMAP.md) for roadmap lanes
@@ -63,10 +66,14 @@ pytest tests/ -v
 
 | Branch | Purpose |
 |---|---|
-| `dev` | All active development. PRs target `dev`. |
-| `staging` | Pre-release integration testing. |
-| `main` | Stable OSS releases (PyPI tags). |
-| `cloud` | **Akamai/Linode demo** — merge from `staging`, deploy to Linode. |
+| `dev` | All active development. **PRs target `dev`.** |
+| `staging` | Pre-release integration / partner soak. |
+| `main` | Stable OSS line. **`v*` tags are cut from `main`.** |
+| `cloud` | Akamai/Linode demo — merge from `staging`, deploy to Linode. |
+| `feat/*`, `fix/*` | Short-lived contributor branches. |
+
+**Naming:** PyPI `omem-os` · import `omem` · CLI `omem` · tags `v0.0.N`.
+Full rules: [docs/guides/VERSIONING.md](./docs/guides/VERSIONING.md).
 
 **Daily workflow:**
 
@@ -76,7 +83,16 @@ git pull origin dev
 git checkout -b feat/your-feature-name
 # ... make changes ...
 git push origin feat/your-feature-name
-# Open a PR targeting dev
+# Open a PR targeting dev (not main)
+```
+
+**Promote toward release:**
+
+```bash
+# after CI green on dev
+git checkout staging && git merge dev && git push origin staging
+git checkout main && git merge staging && git push origin main
+# then follow docs/guides/RELEASING.md (tag v0.0.N → PyPI)
 ```
 
 **Promote to live demo (`cloud` branch):**
@@ -91,20 +107,20 @@ Full playbook: [docs/guides/CLOUD_PROOF.md](./docs/guides/CLOUD_PROOF.md)
 
 ---
 
-## V2 Contributor Lanes
+## Contributor Lanes
 
 | Lane | Good For | First Files |
 |---|---|---|
 | Memory core | Add, recall, lifecycle, scoring | `omem/core/engine/`, `omem/core/brain/` |
 | Knowledge graph | Entity extraction, relations, reasoning | `omem/core/graph/`, `omem/core/brain/reasoning.py` |
-| State infrastructure | Snapshots, restore, rollback, workflow state | `omem/state/` |
+| Agent State / runs | Checkpoints, run events, resume, fork | `omem/state/`, `omem/agent_state.py` |
 | Observability | Metrics, traces, replay, context savings | `omem/observe/` |
 | Evaluation | Benchmarks, scenarios, quality metrics | `benchmarks/eval/`, `benchmarks/` |
 | Governance | Audit, retention, deletion, RBAC | `omem/governance/` |
 | Integrations | MCP, LangChain, LlamaIndex, CrewAI, agent SDKs | `omem/integrations/`, `examples/` |
 | Docs and examples | Onboarding, recipes, launch materials | `README.md`, `docs/`, `examples/` |
 
-For v2 roadmap tasks, use the `V2 roadmap task` issue template and include acceptance criteria.
+For roadmap tasks, use the roadmap issue template and include acceptance criteria.
 
 ---
 

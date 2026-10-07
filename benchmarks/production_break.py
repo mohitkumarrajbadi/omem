@@ -322,7 +322,6 @@ def case_belief_revision(work: Path) -> Case:
         a.remember("User moved to SF", importance=0.85, force=True)
         a.flush()
         rec = a.recall("where does the user live", k=5)
-        blob = " ".join(m.content.lower() for m in rec)
         top = rec[0].content.lower() if rec else ""
         sf_wins = "sf" in top or "san francisco" in top
         nyc_stale = not ("nyc" in top and "sf" not in top)

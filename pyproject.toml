@@ -111,11 +111,13 @@ Issues = "https://github.com/mohitkumarrajbadi/omem/issues"
 Changelog = "https://github.com/mohitkumarrajbadi/omem/releases"
 
 [tool.setuptools_scm]
-# Used when building from a git checkout without a version tag, or in
-# editable installs.  The real version is always embedded into the wheel /
-# sdist at publish time via SETUPTOOLS_SCM_PRETEND_VERSION in CI.
-# Kept in line with the actual release history: latest published tag is
-# v0.0.2 (GitHub) / 0.0.1 (PyPI); 0.0.3 is the next unreleased version.
+# Dynamic version from git tags (v0.0.N → 0.0.N). Publish CI sets
+# SETUPTOOLS_SCM_PRETEND_VERSION so wheels/sdists match the release tag.
+# fallback_version is only used when git metadata is unavailable (e.g. sdist
+# extract without .git). Keep it equal to the *next* unreleased patch.
+# See docs/guides/VERSIONING.md
+tag_regex = "^v(?P<version>\\d+\\.\\d+\\.\\d+(?:[.-].+)?)$"
+local_scheme = "no-local-version"
 fallback_version = "0.0.3"
 
 [tool.pytest.ini_options]

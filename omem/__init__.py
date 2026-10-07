@@ -1,42 +1,15 @@
+"""OMem — governed memory and state for AI agents.
+
+Partner entry point: ``AgentState``. Layer packages remain importable
+from their submodules (``omem.memory``, ``omem.state``, …).
+"""
+
 from importlib.metadata import PackageNotFoundError, version
 
 from .agent_config import AgentConfig
 from .agent_state import AgentState, ExplanationReport
 from .api import OMem
-from .context import ContextBundle, ContextEngine, ContextRequest
 from .core.engine import DreamResult, ForgetResult
-from .governance import (
-    DeletionPolicy,
-    DeletionReport,
-    GovernanceOS,
-    RetentionPolicy,
-    RetentionReport,
-    Role,
-)
-from .knowledge import EdgeRecord, GraphSubgraph, InferenceResult, KnowledgeOS, KnowledgeStats
-from .memory import (
-    MemoryOS,
-    MemoryQuery,
-    NamespaceInfo,
-    NamespaceResolver,
-    OrgMemoryOS,
-    Profile,
-    ProfileFact,
-    ShareResult,
-)
-from .observe import ObserveOS, TraceEvent
-from .provenance import ProvenanceChain, ProvenanceEvent, ProvenanceOS
-from .runtime import AgentRegistration, RuntimeOS
-from .state import (
-    InMemoryStateBackend,
-    SQLiteStateBackend,
-    StateBackend,
-    StateCheckpoint,
-    StateOS,
-    StatePayload,
-    StateSnapshot,
-    ToolResult,
-)
 from .types import (
     Evidence,
     GraphNode,
@@ -62,43 +35,6 @@ __all__ = [
     "AgentState",
     "ExplanationReport",
     "AgentConfig",
-    "KnowledgeOS",
-    "GraphSubgraph",
-    "EdgeRecord",
-    "InferenceResult",
-    "KnowledgeStats",
-    "ContextEngine",
-    "ContextRequest",
-    "ContextBundle",
-    "MemoryOS",
-    "MemoryQuery",
-    "Profile",
-    "ProfileFact",
-    "StateOS",
-    "StatePayload",
-    "StateSnapshot",
-    "StateCheckpoint",
-    "ToolResult",
-    "StateBackend",
-    "InMemoryStateBackend",
-    "SQLiteStateBackend",
-    "ObserveOS",
-    "TraceEvent",
-    "ProvenanceOS",
-    "ProvenanceEvent",
-    "ProvenanceChain",
-    "GovernanceOS",
-    "RetentionPolicy",
-    "DeletionPolicy",
-    "DeletionReport",
-    "RetentionReport",
-    "Role",
-    "RuntimeOS",
-    "AgentRegistration",
-    "OrgMemoryOS",
-    "NamespaceResolver",
-    "NamespaceInfo",
-    "ShareResult",
     "OMem",
     "MemoryType",
     "MemoryTier",

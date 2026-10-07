@@ -3,7 +3,6 @@
 import time
 
 import numpy as np
-import pytest
 
 from omem import AgentState, OMem
 from omem.core.brain.importance import apply_sleep_importance

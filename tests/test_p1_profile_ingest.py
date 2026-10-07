@@ -4,10 +4,11 @@ import time
 
 import pytest
 
-from omem import AgentState, OMem, Profile
+from omem import AgentState, OMem
 from omem.core.retrieval.fusion import rrf_from_score_maps
 from omem.ingest.chunker import chunk_text, parse_frontmatter
 from omem.integrations.langgraph import OMemCheckpointSaver, OMemStore
+from omem.memory import Profile
 from omem.state import StateOS
 
 
