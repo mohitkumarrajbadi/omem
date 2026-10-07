@@ -101,6 +101,7 @@ class AddMixin:
                     timestamp=now,
                     metadata=metadata or {},
                     importance=imp,
+                    initial_importance=imp,
                     namespace=namespace,
                     source=source,
                     tokens=tokens,
@@ -110,10 +111,15 @@ class AddMixin:
                     base_score=base_score,
                     type_mask=t_mask,
                     confidence_score=conf,
-                    type_confidence=float(type_scores[0][1]) if type_scores else 1.0,
+                    type_confidence=(
+                        1.0
+                        if mem_type is not None
+                        else (float(type_scores[0][1]) if type_scores else 0.35)
+                    ),
                     provenance=source,
                     freshness=now,
                     level="working",
+                    valid_from=now,
                 )
 
                 self.vector_index.add(vector)
@@ -135,6 +141,10 @@ class AddMixin:
             )
             apply_ingest_to_memory(memory, ingest)
             self.kv.set(mem_id, memory)
+
+            persist = getattr(self, "persist_graph", None)
+            if callable(persist):
+                persist(namespace)
 
             self.prefetcher.observe(content)
             self.write_buffer.enqueue(memory)

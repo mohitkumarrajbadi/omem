@@ -17,7 +17,7 @@ from ..brain.importance import (
 )
 from ..engine.utils import _TOKENIZER, _token_hash, fast_intersect
 from ..graph.knowledge import KnowledgeGraph
-from .fusion import DEFAULT_WEIGHTS, FusionWeights, fuse_score
+from .fusion import DEFAULT_WEIGHTS, FusionWeights, fuse_score, minmax_norm, rrf_from_score_maps
 
 # Mode-specific fusion profiles (weights sum ≈ 1.0 including success/goal)
 MODE_WEIGHT_PROFILES: Dict[str, FusionWeights] = {
@@ -331,6 +331,13 @@ def rank_memories(
     )
 
     scored: List[tuple[Memory, float, RetrievalExplanation]] = []
+    vec_map = {m.id: float(vector_scores.get(m.id, 0.0)) for m in memories}
+    kw_map = {
+        memories[i].id: float(kw_scores[i])
+        for i in range(min(len(memories), len(kw_scores)))
+    }
+    rrf_norm = minmax_norm(rrf_from_score_maps(vec_map, kw_map))
+
     for i, mem in enumerate(memories):
         vs = vector_scores.get(mem.id, 0.0)
         exp = explain_candidate(
@@ -344,8 +351,17 @@ def rank_memories(
             weights=w,
             keyword_override=kw_scores[i] if i < len(kw_scores) else None,
         )
-        mem.score = exp.final_score
-        scored.append((mem, exp.final_score, exp))
+        # RRF of vector+BM25 ranks, then mix with multi-objective fusion.
+        mixed = 0.45 * rrf_norm.get(mem.id, 0.0) + 0.55 * exp.final_score
+        # Rare identifiers (SKU / ticket / canary) must beat recency of unrelated logs.
+        content_l = (mem.content or "").lower()
+        ids = [t for t in query_tokens if len(t) >= 10]
+        if ids and any(t in content_l for t in ids):
+            mixed += 0.4
+            exp.retrieval_reason = (exp.retrieval_reason or "") + "; identifier match"
+        mem.score = mixed
+        exp.final_score = mixed
+        scored.append((mem, mixed, exp))
 
     scored.sort(key=lambda x: x[1], reverse=True)
     top = scored[:top_k]

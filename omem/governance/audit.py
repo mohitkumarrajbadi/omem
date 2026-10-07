@@ -22,21 +22,41 @@ class AuditLogger:
     def __init__(self, db_path: Optional[str] = None) -> None:
         if db_path is None:
             db_path = os.path.expanduser("~/.omem/audit.db")
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        # :memory: (and bare filenames) have no parent dir to create.
+        if db_path != ":memory:":
+            parent = os.path.dirname(db_path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
         self._db_path = db_path
+        if db_path == ":memory:":
+            # Bare :memory: is per-connection. Share so worker + queries see one DB.
+            self._db_uri = f"file:omem_audit_{uuid.uuid4().hex}?mode=memory&cache=shared"
+        else:
+            self._db_uri = None
         self._queue: queue.Queue = queue.Queue()
         self._running = True
         # Initialise the DB on the main thread *before* the worker starts so
         # there is no race between _init_db and _worker both trying to acquire
         # an exclusive lock for PRAGMA journal_mode=WAL.
+        self._keep_alive: Optional[sqlite3.Connection] = None
+        if self._db_uri:
+            # Shared in-memory DBs vanish when the last connection closes.
+            self._keep_alive = self._connect()
         self._init_db()
         self._thread = threading.Thread(
             target=self._worker, daemon=True, name="omem-audit"
         )
         self._thread.start()
 
+    def _connect(self) -> sqlite3.Connection:
+        if self._db_uri:
+            return sqlite3.connect(
+                self._db_uri, uri=True, timeout=30, check_same_thread=False
+            )
+        return sqlite3.connect(self._db_path, timeout=30, check_same_thread=False)
+
     def _init_db(self) -> None:
-        conn = sqlite3.connect(self._db_path, timeout=30, check_same_thread=False)
+        conn = self._connect()
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS audit_log (
@@ -79,7 +99,7 @@ class AuditLogger:
         self._queue.put(entry)
 
     def _worker(self) -> None:
-        conn = sqlite3.connect(self._db_path, timeout=30, check_same_thread=False)
+        conn = self._connect()
         # WAL mode was already set by _init_db(); no need to set it again here.
         while self._running:
             batch = []
@@ -144,7 +164,7 @@ class AuditLogger:
         since_ts: Optional[float] = None,
     ) -> List[Dict]:
         """Query the audit log with optional filters."""
-        conn = sqlite3.connect(self._db_path, check_same_thread=False)
+        conn = self._connect()
         conn.row_factory = sqlite3.Row
         try:
             conditions = []

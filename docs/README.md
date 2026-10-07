@@ -1,39 +1,32 @@
 # Documentation
 
-OMem docs are grouped by purpose so contributors can find the right file quickly.
+## Start here (design partners)
 
-**Layer maturity, known limitations, and OMem Cloud:** see [README — Layer maturity](../README.md#layer-maturity).
+- [Design partner pack](./design-partner/README.md) — demo, pitch, security boundaries
+- [LIMITATIONS](./LIMITATIONS.md) — what OMem does not claim
+- [MCP Setup](./guides/MCP_SETUP.md) — Cursor / Claude Code / OpenCode
+- [Personal MCP](./guides/PERSONAL_MCP.md) — shared durable memory across agents
 
-## Architecture
+## Product
 
-- [Project Structure](./architecture/PROJECT_STRUCTURE.md) - repo map, ownership areas, and where to change code
+- [Tenant hardening](./guarantees/TENANT_HARDENING.md)
+- [Developer guide](./guides/DEVELOPER.md)
 
-## Guides
+## Architecture (contributors)
 
-- [Developer Guide](./guides/DEVELOPER.md) - technical usage and extension guide
-- [MCP Setup](./guides/MCP_SETUP.md) - Claude Desktop, Cursor, and MCP configuration
+- [Project structure](./architecture/PROJECT_STRUCTURE.md)
+- [Architecture overview](./architecture/ARCHITECTURE.md)
+- [ADRs](./architecture/adr/)
 
-## Roadmap
+## Release / versioning
 
-- [Full Implementation Plan](./roadmap/FULL_IMPLEMENTATION_PLAN.md) - master plan: OSS phases, cloud phases, framework, timeline
-- [Akamai / Linode Deployment Plan](./roadmap/AKAMAI_LINODE_DEPLOYMENT.md) - tech preview infrastructure on Linode
-- [V2 Roadmap](./roadmap/ROADMAP.md) - public v2 direction and milestone plan
-- [V2 Implementation Plan](./roadmap/IMPLEMENTATION_PLAN.md) - engineering work checklist
-- [V2 Architecture Vision](./roadmap/V2_ARCHITECTURE.md) - long-term package and platform shape
+- [Versioning, naming, branching](./guides/VERSIONING.md)
+- [Releasing to PyPI](./guides/RELEASING.md)
 
-## Community
-
-- [GitHub Growth Checklist](./community/GITHUB_GROWTH.md) - ethical discovery and contributor-growth checklist
-
-## Root-Level Project Docs
-
-These stay at the repository root because GitHub and packaging tools expect them there:
+## Root project docs
 
 - [README](../README.md)
 - [Contributing](../CONTRIBUTING.md)
 - [Changelog](../CHANGELOG.md)
 - [Security](../SECURITY.md)
-- [Code of Conduct](../CODE_OF_CONDUCT.md)
-- [Governance](../GOVERNANCE.md)
-- [Support](../SUPPORT.md)
 - [License](../LICENSE)

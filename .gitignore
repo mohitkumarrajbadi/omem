@@ -37,13 +37,20 @@ omem_rust*.so
 .ruff_cache/
 
 # IDE / local config
-.claude/settings.local.json
+.claude/
+.DS_Store
+**/.DS_Store
+
+# Generated local artifacts (MCP smoke, machine-specific configs)
+artifacts/
 
 # Documentation
 # (Markdown files should be tracked)
 
 # Local notes (not tracked)
 .notes/
+
+
 
 # --- COMMERCIAL CLOUD (never public) ---
 omem/cloud/

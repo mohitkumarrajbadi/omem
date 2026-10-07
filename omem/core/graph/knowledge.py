@@ -735,7 +735,7 @@ class KnowledgeGraph:
         backend,
         namespace: str = "default",
     ) -> int:
-        """Flush graph edges to a durable backend (Postgres ``save_edge``).
+        """Flush graph edges to a durable backend.
 
         Returns number of edges written. No-op if backend lacks ``save_edge``.
         """
@@ -744,19 +744,53 @@ class KnowledgeGraph:
         written = 0
         for edge in self.all_edges():
             try:
+                rel = (
+                    edge.edge_type.value
+                    if hasattr(edge.edge_type, "value")
+                    else str(edge.edge_type)
+                )
                 backend.save_edge(
                     namespace=namespace,
                     source_id=edge.source,
                     target_id=edge.target,
-                    relation_type=edge.edge_type.value
-                    if hasattr(edge.edge_type, "value")
-                    else str(edge.edge_type),
+                    relation_type=rel,
                     confidence=float(edge.confidence),
+                    edge_id=edge.id,
+                    memory_id=edge.memory_id or "",
                 )
                 written += 1
             except Exception as exc:
                 logger.warning("edge persist failed: %s", exc)
         return written
+
+    def restore_edges(self, rows: List[dict]) -> int:
+        """Rebuild in-memory graph from durable ``load_edges()`` rows."""
+        if not rows:
+            return 0
+        restored = 0
+        for row in rows:
+            if row.get("active") is False:
+                continue
+            src = (row.get("source_id") or "").strip()
+            tgt = (row.get("target_id") or "").strip()
+            if not src or not tgt:
+                continue
+            rel = row.get("relation_type") or "related_to"
+            try:
+                et = EdgeType(rel)
+            except ValueError:
+                et = EdgeType.RELATED_TO
+            self.add_entity(Entity(name=src, type=EntityType.CONCEPT))
+            self.add_entity(Entity(name=tgt, type=EntityType.CONCEPT))
+            self.add_edge(
+                src,
+                tgt,
+                et,
+                memory_id=row.get("memory_id") or "",
+                confidence=float(row.get("confidence") or 1.0),
+            )
+            restored += 1
+        return restored
 
     def to_dict(self) -> Dict:
         return {

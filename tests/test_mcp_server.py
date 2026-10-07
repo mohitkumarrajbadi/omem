@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -98,7 +97,7 @@ def test_coding_tools_use_shared_namespace(tmp_path: Path):
 
 
 def test_mcp_package_importable():
-    from omem.integrations.mcp_server import _HAS_MCP, mcp, remember, recall
+    from omem.integrations.mcp_server import _HAS_MCP, mcp, recall, remember
 
     assert callable(remember)
     assert callable(recall)

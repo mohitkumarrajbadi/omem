@@ -2,8 +2,8 @@
 
 Optimized memory layer for Cursor, Claude Code, and any MCP-compatible coding agent.
 Provides persistent context across sessions: architectural decisions, PR history,
-codebase structure, and bug fixes — the exact knowledge that makes an agent behave
-like a senior engineer who has been on the project for months.
+and bug fixes — the knowledge that makes an agent behave like a senior engineer
+who has been on the project for months.
 
 Core tools (coding-agent wedge):
   remember_decision      — Store ADRs, tech choices, tradeoffs
@@ -12,13 +12,14 @@ Core tools (coding-agent wedge):
   recall_pr_context      — Recall PR history for a file or feature
   remember_bug_fix       — Log root cause + fix for recurring issues
   recall_bugs            — Surface past fixes before repeating mistakes
-  query_codebase         — Semantic AST search (preferred over grep)
-  ingest_codebase        — One-time full index of a repository
-  sync_codebase          — Incremental post-commit sync via git diff
+
+Alpha (OMEM_ENABLE_EXPERIMENTAL_AST=1 only):
+  query_codebase / ingest_codebase / sync_codebase / get_codebase_summary
 
 General tools:
   remember, recall, reflect, maintain, resolve_conflict
   remember_action, recall_action
+  lineage — which memory caused the last (or the first-run) decision
 
 Auto-namespace: detects .git root → zero-config project isolation.
 """
@@ -29,6 +30,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 from ..api import OMem
+from ..experimental import ast_enabled
 from ..types import MemoryType
 
 # Setup logger
@@ -280,6 +282,19 @@ def mcp_status():
 
 
 @mcp.tool()
+def lineage(query: str = "which database should production use"):
+    """Show which memory caused a decision.
+
+    On a fresh database this opens the first-run story: the agent chose
+    MongoDB, the stale memory that caused it, and the later PostgreSQL
+    memory that lost on importance versus recency.
+    """
+    from ..demo.story import lineage_report
+
+    return lineage_report(omem, query=query)
+
+
+@mcp.tool()
 def remember(
     content: str,
     importance: Optional[float] = None,
@@ -509,35 +524,11 @@ def recall_action(goal: str, k: int = 3):
     }
 
 
-@mcp.tool()
 def query_codebase(query: str, depth: int = 2, top_k: int = 5):
     """Search the Project Memory (codebase graph) for relevant code symbols.
 
-    This is the PREFERRED way to navigate a codebase. Instead of grepping files
-    or reading large directories, call this tool with a natural-language description
-    of what you are looking for. It returns the exact file paths, line numbers,
-    and architectural context — just like a senior engineer would recall.
-
-    Args:
-        query: Natural-language description of what you need.
-               Examples:
-               - "auth token refresh logic"
-               - "class that parses AST nodes"
-               - "where is the database connection pooling?"
-        depth: Graph traversal depth for related context (default 2).
-               Higher values include more dependency and caller context.
-        top_k: Maximum number of primary results to return (default 5).
-
-    Returns:
-        A dict with a list of ``results``, each containing:
-        - ``symbol_id``: Stable hierarchical identifier (e.g. ``auth.jwt.generate_token``).
-        - ``file_path``: Absolute path to the source file.
-        - ``start_line`` / ``end_line``: Exact line range in the file.
-        - ``type``: Symbol type (module / class / function / method).
-        - ``content``: Compressed signature + docstring.
-        - ``related``: List of dependency / caller symbols with relationship type.
+    Alpha: registered only when OMEM_ENABLE_EXPERIMENTAL_AST=1.
     """
-    # Always use "project" namespace for code symbols for consistent cross-call identity.
     namespace = "project"
     try:
         raw = omem.query_code(
@@ -578,20 +569,8 @@ def query_codebase(query: str, depth: int = 2, top_k: int = 5):
         return {"error": str(e), "query": query, "results": []}
 
 
-@mcp.tool()
 def sync_codebase(path: str = "."):
-    """Incrementally sync the Project Memory after code changes.
-
-    Run this after modifying, adding, or deleting Python files so that OMem
-    stays up to date without a full re-ingest. Uses ``git diff`` under the
-    hood, so only changed files are re-parsed — takes milliseconds.
-
-    Args:
-        path: Root directory of the project to sync (default: current directory).
-
-    Returns:
-        A status dict with the number of symbols updated.
-    """
+    """Incrementally sync the Project Memory after code changes (Alpha AST)."""
     try:
         count = omem.sync_project(path, namespace="project")
         return {
@@ -605,20 +584,8 @@ def sync_codebase(path: str = "."):
         return {"status": "error", "error": str(e)}
 
 
-@mcp.tool()
 def ingest_codebase(path: str = "."):
-    """Perform a full baseline ingest of a Python codebase into Project Memory.
-
-    Use this the first time OMem encounters a new project, or after a major
-    restructure. It walks the entire repository, parses AST symbols, and
-    builds the code graph. For incremental updates use ``sync_codebase`` instead.
-
-    Args:
-        path: Root directory of the project to ingest (default: current directory).
-
-    Returns:
-        A status dict with the number of symbols indexed.
-    """
+    """Full baseline ingest of a Python codebase into Project Memory (Alpha AST)."""
     try:
         count = omem.ingest_project(path, namespace="project")
         return {
@@ -633,6 +600,13 @@ def ingest_codebase(path: str = "."):
         }
     except Exception as e:
         return {"status": "error", "error": str(e)}
+
+
+# Register AST tools only when explicitly enabled (keeps default MCP surface GA-clean).
+if ast_enabled():
+    query_codebase = mcp.tool()(query_codebase)
+    sync_codebase = mcp.tool()(sync_codebase)
+    ingest_codebase = mcp.tool()(ingest_codebase)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1103,52 +1077,55 @@ def get_bug_fixes():
 @mcp.prompt("omem/onboarding")
 def onboarding_prompt():
     """Instruction for Claude / Cursor on how to effectively use OMem for coding."""
-    return (
-        "You have access to OMem — a persistent cognitive memory engine purpose-built for "
-        "coding agents. It gives you the institutional knowledge of a senior engineer who "
-        "has been on this project for months, across every session.\n\n"
+    base = (
+        "You have access to OMem — persistent governed memory for coding agents. "
+        "It stores institutional knowledge across sessions.\n\n"
 
         "═══ SESSION START CHECKLIST ═══\n"
-        "1. Call `get_codebase_summary` to re-orient (ADRs, recent PRs, stats).\n"
-        "2. If first time on this project: call `ingest_codebase` once to index the AST.\n"
-        "3. Before debugging: call `recall_bugs` — the fix may already be known.\n"
-        "4. Before a tech choice: call `recall_decisions` — you may have decided this before.\n\n"
-
-        "═══ CODEBASE NAVIGATION ═══\n"
-        "NEVER use grep or find to navigate code. Use `query_codebase` instead:\n"
-        "  • 'auth token refresh logic'  → returns auth/session.py:142-178 + callers\n"
-        "  • 'database connection pool'  → returns the module + dependency graph\n"
-        "  • 'class that handles retries'→ returns exact class + file + line range\n"
-        "After code changes: call `sync_codebase` to update the index incrementally.\n\n"
-
+        "1. Call `get_codebase_summary` to re-orient (ADRs, recent PRs).\n"
+        "2. Before debugging: call `recall_bugs` — the fix may already be known.\n"
+        "3. Before a tech choice: call `recall_decisions` — you may have decided this before.\n\n"
+    )
+    if ast_enabled():
+        base += (
+            "═══ CODEBASE NAVIGATION (experimental AST) ═══\n"
+            "OMEM_ENABLE_EXPERIMENTAL_AST is on. Prefer `query_codebase` for symbol search.\n"
+            "First-time: `ingest_codebase`. After edits: `sync_codebase`.\n\n"
+        )
+    base += (
         "═══ WHAT TO PERSIST ═══\n"
-        "• Architectural decisions   → `remember_decision`  (why PostgreSQL, why GraphQL, etc.)\n"
-        "• PR context               → `remember_pr_context` (what changed, why, review notes)\n"
-        "• Bug fixes                → `remember_bug_fix`    (root cause + fix, prevent recurrence)\n"
-        "• General facts            → `remember`            (any important project knowledge)\n\n"
+        "• Architectural decisions   → `remember_decision`\n"
+        "• PR context               → `remember_pr_context`\n"
+        "• Bug fixes                → `remember_bug_fix`\n"
+        "• General facts            → `remember`\n\n"
 
         "═══ RULES ═══\n"
         "1. Always recall before solving — check what you already know.\n"
-        "2. Store decisions immediately after making them — don't rely on chat history.\n"
+        "2. Store decisions immediately after making them.\n"
         "3. Tag bug fixes with the error signature for precise future matching.\n"
         "4. Call `maintain` when idle to consolidate and prune stale memories.\n"
         "5. Do NOT store trivial facts — focus on knowledge that would take >5 min to re-derive."
     )
+    return base
 
 
 @mcp.prompt("omem/coding_agent")
 def coding_agent_prompt():
     """Advanced system prompt for coding agents with full OMem integration."""
     project = get_project_namespace()
+    tools = (
+        "  recall_decisions(query)         — past architectural choices\n"
+        "  recall_bugs(query)              — prior bug fixes\n"
+        "  recall_pr_context(query)        — PR history\n"
+        "  recall(query, mode='coding')    — general project knowledge\n"
+    )
+    if ast_enabled():
+        tools = "  query_codebase(query)           — navigate code semantically (Alpha)\n" + tools
     return (
         f"Project: {project}\n\n"
         "You are a coding agent with persistent memory across sessions via OMem.\n\n"
         "MEMORY TOOLS AVAILABLE:\n"
-        "  query_codebase(query)           — navigate code semantically\n"
-        "  recall_decisions(query)         — past architectural choices\n"
-        "  recall_bugs(query)              — prior bug fixes\n"
-        "  recall_pr_context(query)        — PR history\n"
-        "  recall(query, mode='coding')    — general project knowledge\n\n"
+        f"{tools}\n"
         "STORAGE TOOLS:\n"
         "  remember_decision(...)          — store ADR\n"
         "  remember_pr_context(...)        — store PR metadata\n"

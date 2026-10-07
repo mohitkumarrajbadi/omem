@@ -1,0 +1,120 @@
+{
+  "generated_at": "2026-08-31T09:37:24Z",
+  "profile": "quick",
+  "embedder": "st",
+  "semantic": true,
+  "duration_s": 25.9,
+  "rss_mb": 901.5,
+  "passed": true,
+  "failed": [],
+  "cases": {
+    "durable_restart": {
+      "passed": true,
+      "detail": "wrote 2000, relisted 2000, needle_in_top5=True ingest=8.9s",
+      "metrics": {
+        "n": 2000,
+        "relisted": 2000,
+        "needle_hit": true,
+        "ingest_s": 8.85,
+        "writes_per_s": 225.9
+      }
+    },
+    "needle_haystack": {
+      "passed": true,
+      "detail": "hit@5=100.0% (gate 85%) n=2000 needles=20",
+      "metrics": {
+        "n_haystack": 2000,
+        "n_needles": 20,
+        "hit_at_5_pct": 100.0,
+        "p50_ms": 19.07,
+        "p95_ms": 26.81
+      }
+    },
+    "concurrent_sqlite": {
+      "passed": true,
+      "detail": "errors=0 listed=151 write_markers=151 min=84 1.6s",
+      "metrics": {
+        "threads": 4,
+        "ops_per_thread": 60,
+        "errors": 0,
+        "error_sample": [],
+        "listed": 151,
+        "write_markers": 151,
+        "duration_s": 1.58,
+        "add_p50_ms": 26.68,
+        "add_p99_ms": 50.12,
+        "recall_p50_ms": 18.06,
+        "recall_p99_ms": 59.48,
+        "ops_per_s": 151.6
+      }
+    },
+    "belief_revision": {
+      "passed": true,
+      "detail": "top='User moved to SF' sf_wins=True deprecated_nyc=1",
+      "metrics": {
+        "sf_wins": true,
+        "deprecated_nyc": 1
+      }
+    },
+    "namespace_isolation": {
+      "passed": true,
+      "detail": "leak_to_a=False beta_visible_in_b=True",
+      "metrics": {
+        "leak": false,
+        "beta_found": true
+      }
+    },
+    "graph_checkpoint_restart": {
+      "passed": true,
+      "detail": "goal='Ship production-break gates' predicates=['uses'] ckpt=chk_17881690\u2026",
+      "metrics": {
+        "checkpoint_id": "chk_1788169038887_fe20ece1",
+        "goal": "Ship production-break gates",
+        "predicates": [
+          "uses"
+        ]
+      }
+    },
+    "context_budget": {
+      "passed": true,
+      "detail": "tokens=594/800 over=False needle_packed=True",
+      "metrics": {
+        "token_count": 594,
+        "budget": 800,
+        "needle_packed": true
+      }
+    },
+    "latency_slo": {
+      "passed": true,
+      "detail": "p95=24.0ms p99=25.2ms gate=200ms n=400",
+      "metrics": {
+        "n": 400,
+        "n_queries": 40,
+        "p50_ms": 22.63,
+        "p95_ms": 23.97,
+        "p99_ms": 25.15,
+        "gate_p95_ms": 200.0
+      }
+    },
+    "stratified_longmemeval": {
+      "passed": true,
+      "detail": "hit@5=87.5% n=8 types={'temporal-reasoning': 100.0, 'multi-session': 100.0, 'knowledge-update': 0.0, 'single-session-preference': 100.0, 'single-session-assistant': 100.0, 'single-session-user': 100.0}",
+      "metrics": {
+        "n": 8,
+        "hit_at_5_pct": 87.5,
+        "p50_ms": 29.59,
+        "by_question_type": {
+          "temporal-reasoning": 100.0,
+          "multi-session": 100.0,
+          "knowledge-update": 0.0,
+          "single-session-preference": 100.0,
+          "single-session-assistant": 100.0,
+          "single-session-user": 100.0
+        },
+        "note": "Stratified mix, not first-50 temporal-reasoning."
+      }
+    }
+  },
+  "methodology": "Durable SQLite AgentState. Fail on data loss, isolation leak, budget overrun, p95 SLO miss, or TMS/graph restart miss. Not the public STATE-Bench / first-50 LongMemEval smoke.",
+  "workdir": "/var/folders/77/n0y36h654dlf7sff_r3ht4980000gp/T/omem-break-35gt3lp9"
+}

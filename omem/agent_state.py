@@ -60,8 +60,11 @@ from .provenance.layer import ProvenanceOS
 from .runtime.layer import RuntimeOS
 from .state.backend import InMemoryStateBackend, SQLiteStateBackend
 from .state.layer import StateOS
+from .state.run_store import InMemoryRunStore, SQLiteRunStore
+from .state.runs import ActiveRun, RunOS
 from .types import (
     Memory,
+    RunEvent,
     StateCheckpoint,
     StatePayload,
     StateSnapshot,
@@ -80,12 +83,12 @@ def _require_cloud_package() -> Any:
         from omem.cloud.remote import RemoteAgentState  # type: ignore[import]
 
         return RemoteAgentState
-    except ImportError:
+    except (ImportError, RuntimeError) as exc:
         raise ImportError(
             "Cloud routing requires the omem-cloud package.\n"
             "omem-cloud is a commercial product — visit https://omem.dev/cloud to get access.\n"
             "Once you have a license: pip install omem-cloud"
-        ) from None
+        ) from exc
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -316,18 +319,32 @@ class AgentState:
         # Sidecar SQLite paths when memories live in Postgres (cloud Docker / Linode)
         _state_db = _db or ":memory:"
         _audit_db: Optional[str] = os.environ.get("OMEM_AUDIT_DB_PATH") or None
-        _runtime_db: Optional[str] = None
+        _runtime_db: Optional[str] = os.environ.get("OMEM_RUNTIME_DB_PATH") or None
         if _cfg.backend == "postgres":
             _state_db = os.environ.get("OMEM_STATE_DB_PATH", "/data/omem_state.db")
             _audit_db = _audit_db or "/data/omem_audit.db"
-            _runtime_db = os.environ.get("OMEM_RUNTIME_DB_PATH", "/data/omem_runtime.db")
+            _runtime_db = _runtime_db or os.environ.get(
+                "OMEM_RUNTIME_DB_PATH", "/data/omem_runtime.db"
+            )
             for _path in (_state_db, _audit_db, _runtime_db):
                 _dir = os.path.dirname(_path)
                 if _dir and not os.path.exists(_dir):
                     os.makedirs(_dir, exist_ok=True)
         elif isinstance(_cfg.db_path, str) and _cfg.db_path not in (":memory:", None):
             _audit_db = _audit_db or _cfg.db_path.replace(".db", "_audit.db")
-            _runtime_db = _cfg.db_path.replace(".db", "_runtime.db")
+            _runtime_db = _runtime_db or _cfg.db_path.replace(".db", "_runtime.db")
+            for _path in (_audit_db, _runtime_db):
+                if not _path or _path == ":memory:":
+                    continue
+                _dir = os.path.dirname(_path)
+                if _dir and not os.path.exists(_dir):
+                    os.makedirs(_dir, exist_ok=True)
+        else:
+            # In-memory / :memory: backends — never fall back to ~/.omem (breaks CI/tests).
+            if not _audit_db:
+                _audit_db = ":memory:"
+            if not _runtime_db:
+                _runtime_db = ":memory:"
 
         from .governance.audit import AuditLogger
 
@@ -351,9 +368,17 @@ class AgentState:
         # ── State layer (Phase 2) ─────────────────────────────────────
         if _cfg.backend == "memory":
             _state_backend = InMemoryStateBackend()
+            _run_store = InMemoryRunStore()
         else:
             _state_backend = SQLiteStateBackend(_state_db)
+            _run_store = SQLiteRunStore(_state_db)
         self._state = StateOS(backend=_state_backend, namespace=_cfg.namespace)
+        # ── Run / event history (OMem v1) — dual-write with StatePayload ─
+        self._runs = RunOS(
+            store=_run_store,
+            state=self._state,
+            namespace=_cfg.namespace,
+        )
 
         # ── Context layer (Phase 3) ───────────────────────────────────
         self._context = ContextEngine(
@@ -374,8 +399,8 @@ class AgentState:
         )
         self._observe = ObserveOS(otel_endpoint=_otel)
 
-        # ── Provenance (Phase 7) ──────────────────────────────────────
-        self._provenance = ProvenanceOS()
+        # ── Provenance (Phase 7) — durable on the same backend as memories ──
+        self._provenance = ProvenanceOS(backend=getattr(_omem, "_backend", None))
 
         # ── Governance (Phase 8) — wired with omem + state ───────────
         self._governance = GovernanceOS(
@@ -472,7 +497,11 @@ class AgentState:
         exc_val: Optional[BaseException],
         exc_tb: Optional[Any],
     ) -> bool:
-        """On clean exit, write a crash-recovery checkpoint if auto_checkpoint."""
+        """On clean exit, flush writes and optionally checkpoint."""
+        try:
+            self.flush()
+        except Exception as exc:
+            logger.warning("AgentState.__exit__: flush failed — %s", exc)
         if exc_type is None and self.session_id and self._config.auto_checkpoint:
             try:
                 chk_id = self._state.checkpoint(self.session_id)
@@ -494,6 +523,11 @@ class AgentState:
     def state(self) -> StateOS:
         """State layer — StateOS (Phase 2)."""
         return self._state
+
+    @property
+    def runs(self) -> RunOS:
+        """Run / RunEvent history layer (OMem v1)."""
+        return self._runs
 
     @property
     def context(self) -> ContextEngine:
@@ -700,6 +734,80 @@ class AgentState:
         self._emit("recall", dur, query=query[:80], result_count=len(results))
         return results
 
+    def profile(
+        self,
+        user_id: str = "",
+        *,
+        max_facts: int = 20,
+        max_recent: int = 8,
+    ):
+        """Compiled briefing: current facts, recent episodes, and the session goal.
+
+        No generative LLM — facts come from stored triplets and TMS-current rows.
+        """
+        from .memory.profile import profile_from_layers
+
+        return profile_from_layers(
+            self._memory,
+            self._state,
+            namespace=self.namespace,
+            user_id=user_id,
+            session_id=self.session_id,
+            max_facts=max_facts,
+            max_recent=max_recent,
+        )
+
+    def remember_document(
+        self,
+        source: Any,
+        *,
+        namespace: Optional[str] = None,
+        filename: Optional[str] = None,
+        max_chars: int = 1200,
+        overlap: int = 150,
+        importance: float = 0.55,
+        extra_metadata: Optional[Dict[str, Any]] = None,
+    ):
+        """Ingest a document as chunks (+ frontmatter facts). No LLM extract."""
+        t0 = time.time()
+        result = self._memory.remember_document(
+            source,
+            namespace=namespace or self.namespace,
+            filename=filename,
+            max_chars=max_chars,
+            overlap=overlap,
+            importance=importance,
+            extra_metadata=extra_metadata,
+        )
+        dur = (time.time() - t0) * 1000
+        self._emit(
+            "remember_document",
+            dur,
+            source=getattr(result, "source", ""),
+            chunk_count=getattr(result, "chunk_count", 0),
+        )
+        return result
+
+    def ingest_folder(self, path: str, **kwargs: Any):
+        """Ingest a folder of documents. Shorthand for ``agent.memory.ingest_folder``."""
+        kwargs.setdefault("namespace", self.namespace)
+        return self._memory.ingest_folder(path, **kwargs)
+
+    def ingest_url(self, url: str, **kwargs: Any):
+        """Fetch and ingest a URL. Shorthand for ``agent.memory.ingest_url``."""
+        kwargs.setdefault("namespace", self.namespace)
+        return self._memory.ingest_url(url, **kwargs)
+
+    def ingest_notion(self, **kwargs: Any):
+        """Ingest Notion pages (token from arg or OMEM_NOTION_TOKEN)."""
+        kwargs.setdefault("namespace", self.namespace)
+        return self._memory.ingest_notion(**kwargs)
+
+    def ingest_drive(self, **kwargs: Any):
+        """Ingest Google Drive files (token from arg or OMEM_DRIVE_TOKEN)."""
+        kwargs.setdefault("namespace", self.namespace)
+        return self._memory.ingest_drive(**kwargs)
+
     def forget(self, memory_id: Optional[str] = None) -> Any:
         """Trigger memory forgetting (low-importance memories are pruned).
 
@@ -879,8 +987,10 @@ class AgentState:
     def merge_fork(self, fork_session_id: str) -> StatePayload:
         """Merge a forked session back into this session.
 
-        The fork's state is treated as the winning branch. The current
-        session is the base.
+        3-way merge: this session is the target, the fork is the source,
+        the fork snapshot is the ancestor. Field-level union, not overwrite.
+        Conflicts keep this session's value and are recorded on
+        ``workflow_state['_omem_merge']``.
 
         Args:
             fork_session_id: Session ID of the fork to merge.
@@ -932,6 +1042,7 @@ class AgentState:
         inst._omem = self._omem
         inst._memory = self._memory
         inst._state = self._state
+        inst._runs = self._runs
         inst._context = self._context
         inst._knowledge = self._knowledge
         inst._observe = self._observe
@@ -946,13 +1057,140 @@ class AgentState:
     # ------------------------------------------------------------------
 
     def checkpoint(self) -> str:
-        """Write a crash-recovery checkpoint. Returns the checkpoint ID."""
+        """Write a crash-recovery checkpoint. Returns the checkpoint ID.
+
+        When an active run exists, dual-writes a durable ``checkpoint`` RunEvent
+        (history SoT) alongside the StateCheckpoint (live SoT).
+        """
         t0 = time.time()
-        ckpt_id = self._state.checkpoint(self._require_session())
+        session_id = self._require_session()
+        active = self._runs.get_active_run(session_id)
+        if active is not None:
+            ckpt_id = active.checkpoint()
+        else:
+            ckpt_id = self._state.checkpoint(session_id)
         dur = (time.time() - t0) * 1000
         self._emit("checkpoint", dur, checkpoint_id=ckpt_id)
         self._prov(ckpt_id, "checkpoint", "create", source="agent")
         return ckpt_id
+
+    # ------------------------------------------------------------------
+    # Run lifecycle (OMem v1) — additive; session_id remains Thread id
+    # ------------------------------------------------------------------
+
+    def start_run(
+        self,
+        goal: Optional[str] = None,
+        *,
+        agent_id: Optional[str] = None,
+        worker_id: Optional[str] = None,
+        correlation_id: Optional[str] = None,
+        label: Optional[str] = None,
+    ) -> ActiveRun:
+        """Start a durable run on this session (Thread)."""
+        session_id = self._require_session()
+        if goal:
+            try:
+                self._state.get_or_create(session_id, namespace=self.namespace)
+                self._state.set_goal(session_id, goal)
+            except Exception:
+                self._state.save(
+                    session_id,
+                    StatePayload(session_id=session_id, namespace=self.namespace, goal=goal),
+                )
+        return self._runs.start_run(
+            session_id,
+            goal=goal,
+            agent_id=agent_id,
+            worker_id=worker_id,
+            correlation_id=correlation_id,
+            label=label,
+        )
+
+    def resume_run(
+        self,
+        run_id: Optional[str] = None,
+        *,
+        worker_id: Optional[str] = None,
+    ) -> ActiveRun:
+        """Mode A: resume a run after process death (checkpoint-assisted)."""
+        if run_id is None:
+            active = self._runs.get_active_run(self._require_session())
+            if active is None:
+                raise ValueError("No active run to resume; pass run_id explicitly")
+            run_id = active.run_id
+        return self._runs.resume_run(run_id, worker_id=worker_id)
+
+    def record_event(
+        self,
+        event_type: str,
+        payload: Optional[Dict[str, Any]] = None,
+        *,
+        run_id: Optional[str] = None,
+        actor: str = "agent",
+        causation_id: Optional[str] = None,
+        correlation_id: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
+    ) -> RunEvent:
+        """Append a durable RunEvent on the active (or specified) run."""
+        if run_id is None:
+            active = self._runs.get_active_run(self._require_session())
+            if active is None:
+                raise ValueError("No active run; call start_run() first")
+            run_id = active.run_id
+        return self._runs.record_event(
+            run_id,
+            event_type,
+            payload,
+            actor=actor,
+            causation_id=causation_id,
+            correlation_id=correlation_id,
+            idempotency_key=idempotency_key,
+        )
+
+    def inspect_events(
+        self,
+        run_id: Optional[str] = None,
+        *,
+        from_seq: Optional[int] = None,
+        to_seq: Optional[int] = None,
+        limit: Optional[int] = None,
+    ) -> List[RunEvent]:
+        """Mode B timeline — does not re-execute tools/models."""
+        if run_id is None:
+            active = self._runs.get_active_run(self._require_session())
+            if active is None:
+                raise ValueError("No active run; pass run_id")
+            run_id = active.run_id
+        return self._runs.list_events(
+            run_id, from_seq=from_seq, to_seq=to_seq, limit=limit
+        )
+
+    def fork_run(
+        self,
+        checkpoint_id: Optional[str] = None,
+        *,
+        run_id: Optional[str] = None,
+        label: Optional[str] = None,
+    ) -> ActiveRun:
+        """Fork a new run from a checkpoint (new run_id + lineage)."""
+        if run_id is None:
+            active = self._runs.get_active_run(self._require_session())
+            if active is None:
+                raise ValueError("No active run; pass run_id")
+            run_id = active.run_id
+        return self._runs.fork_run(
+            run_id, checkpoint_id=checkpoint_id, label=label
+        )
+
+    def restore_to_seq(self, seq: int, *, run_id: Optional[str] = None) -> StatePayload:
+        """Mode C: restore nearest checkpoint at or before ``seq``."""
+        if run_id is None:
+            active = self._runs.get_active_run(self._require_session())
+            if active is None:
+                raise ValueError("No active run; pass run_id")
+            run_id = active.run_id
+        return self._runs.restore_to_seq(run_id, seq)
 
     def resume(self) -> StatePayload:
         """Restore the latest crash-recovery checkpoint for this session.
@@ -1498,3 +1736,74 @@ class AgentState:
         except Exception:
             pass
         return "\n".join(lines)
+
+    def flush(self) -> None:
+        """Flush memory write buffer and knowledge graph to durable storage."""
+        brain = getattr(self._omem, "brain", None)
+        if brain is None:
+            return
+        if hasattr(brain, "write_buffer"):
+            try:
+                brain.write_buffer.flush()
+            except Exception:
+                pass
+            if hasattr(brain.write_buffer, "stop"):
+                try:
+                    brain.write_buffer.stop()
+                except Exception:
+                    pass
+        if hasattr(brain, "persist_graph"):
+            brain.persist_graph(self.namespace)
+
+    def close(self) -> None:
+        """Flush and release engine resources. Safe to call more than once.
+
+        Closes every SQLite handle owned by this instance (memory, state,
+        run store, audit, runtime). Required before reopening the same DB
+        path in-process on Windows.
+        """
+        try:
+            self.flush()
+        except Exception as exc:
+            logger.warning("AgentState.flush during close failed: %s", exc)
+        brain = getattr(self._omem, "brain", None)
+        if brain is not None and hasattr(brain, "stop_maintenance"):
+            try:
+                brain.stop_maintenance()
+            except Exception:
+                pass
+
+        # Stop audit worker before closing other DBs (may share paths).
+        for audit in (
+            getattr(getattr(self, "_governance", None), "_audit", None),
+            getattr(getattr(self, "_omem", None), "_audit", None),
+        ):
+            stop = getattr(audit, "stop", None)
+            if callable(stop):
+                try:
+                    stop()
+                except Exception:
+                    pass
+            keep = getattr(audit, "_keep_alive", None)
+            if keep is not None:
+                try:
+                    keep.close()
+                except Exception:
+                    pass
+                try:
+                    audit._keep_alive = None
+                except Exception:
+                    pass
+
+        for obj in (
+            getattr(getattr(self, "_state", None), "_backend", None),
+            getattr(getattr(self, "_runs", None), "_store", None),
+            getattr(getattr(getattr(self, "_runtime", None), "_db", None), "_keep", None),
+            getattr(getattr(self, "_omem", None), "_backend", None),
+        ):
+            close = getattr(obj, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    pass

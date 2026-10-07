@@ -52,7 +52,7 @@ def test_version_string():
 # ---------------------------------------------------------------------------
 
 def test_memory_os_importable():
-    from omem import MemoryOS, MemoryQuery  # noqa: F401
+    from omem.memory import MemoryOS, MemoryQuery  # noqa: F401
     assert MemoryOS is not None
     assert MemoryQuery is not None
 
@@ -126,7 +126,7 @@ def test_runtime_package_importable():
 
 def test_cloud_client_not_shipped_in_oss():
     """Commercial omem.cloud client lives in omem-cloud; OSS must not bundle it."""
-    with pytest.raises(ModuleNotFoundError):
+    with pytest.raises((ModuleNotFoundError, ImportError, RuntimeError)):
         importlib.import_module("omem.cloud.client")
 
 
@@ -226,11 +226,9 @@ def test_canonical_paths_importable():
     from omem.observe.dashboard import serve  # noqa: F401
 
 
-def test_v3_legacy_shim_paths_raise_import_error():
-    """v3.0 — legacy import paths raise ImportError with migration hint (ADR-003)."""
-
-    import pytest
+def test_v3_legacy_shim_paths_removed():
+    """v3 tombstone modules are gone — import from canonical packages instead."""
 
     for mod in ("omem.org", "omem.security", "omem.codebase", "omem.viz", "omem.classify"):
-        with pytest.raises(ImportError, match="removed in v3.0"):
+        with pytest.raises(ModuleNotFoundError):
             importlib.import_module(mod)

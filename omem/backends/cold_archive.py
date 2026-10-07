@@ -2,10 +2,16 @@
 
 Postgres (or SQLite) remains the durable index; archived *content* may move
 here to reduce hot-store size. Retrieval restores stubs via ``cold_storage_key``.
+
+Encryption
+----------
+When ``OMEM_ENCRYPTION_KEY`` is set, payloads are AES-256-GCM encrypted before
+storage (both local and S3 paths). The envelope is ``{"enc":"gcm","v":1,"blob":"<b64>"}``.
 """
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
@@ -15,6 +21,46 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def _archive_encryption_key() -> Optional[bytes]:
+    """Return 32-byte AES key from OMEM_ENCRYPTION_KEY/OMEM_SECRET_KEY, or None."""
+    raw = (
+        os.environ.get("OMEM_ENCRYPTION_KEY", "").strip()
+        or os.environ.get("OMEM_SECRET_KEY", "").strip()
+    )
+    if not raw:
+        return None
+    try:
+        if len(raw) == 64:
+            key = bytes.fromhex(raw)
+        else:
+            key = base64.urlsafe_b64decode(raw + "==")
+        if len(key) == 32:
+            return key
+    except Exception:
+        pass
+    return None
+
+
+def _encrypt_payload(plaintext_bytes: bytes, key: bytes) -> bytes:
+    """AES-256-GCM encrypt; return JSON envelope as bytes."""
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    nonce = os.urandom(12)
+    ct = AESGCM(key).encrypt(nonce, plaintext_bytes, None)
+    blob = base64.urlsafe_b64encode(nonce + ct).decode("ascii")
+    return json.dumps({"enc": "gcm", "v": 1, "blob": blob}).encode("utf-8")
+
+
+def _decrypt_payload(raw_bytes: bytes, key: bytes) -> bytes:
+    """Decrypt an AES-256-GCM envelope; returns original plaintext bytes."""
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    envelope = json.loads(raw_bytes.decode("utf-8"))
+    if envelope.get("enc") != "gcm":
+        raise ValueError("Unknown encryption envelope")
+    blob = base64.urlsafe_b64decode(envelope["blob"] + "==")
+    nonce, ct = blob[:12], blob[12:]
+    return AESGCM(key).decrypt(nonce, ct, None)
 
 
 @dataclass
@@ -95,9 +141,12 @@ class ColdArchive:
         namespace: str = "default",
         metadata: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """Store payload; returns cold_storage_key."""
+        """Store payload; returns cold_storage_key.
+
+        Encrypts with AES-256-GCM when OMEM_ENCRYPTION_KEY is set.
+        """
         key = self._key_for(memory_id, namespace)
-        body = json.dumps(
+        plaintext = json.dumps(
             {
                 "memory_id": memory_id,
                 "namespace": namespace,
@@ -107,12 +156,16 @@ class ColdArchive:
             }
         ).encode("utf-8")
 
+        enc_key = _archive_encryption_key()
+        body = _encrypt_payload(plaintext, enc_key) if enc_key else plaintext
+
         if self.config.backend == "s3" and self._s3 is not None:
+            content_type = "application/octet-stream" if enc_key else "application/json"
             self._s3.put_object(
                 Bucket=self.config.bucket,
                 Key=key,
                 Body=body,
-                ContentType="application/json",
+                ContentType=content_type,
             )
         else:
             path = Path(self.config.local_root) / key
@@ -121,7 +174,12 @@ class ColdArchive:
         return key
 
     def get_payload(self, key: str) -> Optional[Dict[str, Any]]:
-        """Load archived payload by key."""
+        """Load archived payload by key.
+
+        Decrypts automatically when OMEM_ENCRYPTION_KEY is set and the payload
+        is an encrypted envelope. Plaintext payloads are accepted transparently
+        (forward compatibility when key is added after archive was written).
+        """
         try:
             if self.config.backend == "s3" and self._s3 is not None:
                 obj = self._s3.get_object(Bucket=self.config.bucket, Key=key)
@@ -136,6 +194,17 @@ class ColdArchive:
                         if not path.is_absolute():
                             path = Path(self.config.local_root) / key
                 raw = path.read_bytes()
+
+            # Attempt decryption when key is configured and payload looks encrypted
+            enc_key = _archive_encryption_key()
+            if enc_key:
+                try:
+                    envelope = json.loads(raw.decode("utf-8"))
+                    if isinstance(envelope, dict) and envelope.get("enc") == "gcm":
+                        raw = _decrypt_payload(raw, enc_key)
+                except (json.JSONDecodeError, ValueError, KeyError):
+                    pass  # Not an encrypted envelope — fall through to plaintext parse
+
             return json.loads(raw.decode("utf-8"))
         except Exception as exc:
             logger.warning("cold archive get failed for %s: %s", key, exc)

@@ -354,6 +354,18 @@ class TestSavings:
         bundle = engine.build(req)
         assert bundle.savings_vs_naive > 0.0
 
+    def test_tiny_budget_truncates_memory_instead_of_dropping(self):
+        long_mems = [
+            _make_memory("alpha-canary-token " + ("word " * 400), score=0.99)
+        ]
+        engine = ContextEngine(
+            memory=StubMemoryOS(long_mems), state=None, cache_ttl=0
+        )
+        req = ContextRequest(task="alpha-canary-token", budget_tokens=80)
+        bundle = engine.build(req)
+        assert "alpha-canary" in bundle.text.lower()
+        assert bundle.token_count < 200
+
     def test_estimate_savings_returns_dict(self):
         engine, _, _ = _make_engine()
         req = ContextRequest(task="auth")

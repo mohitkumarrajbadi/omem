@@ -209,6 +209,8 @@ class OMem:
         explain: bool = False,
         weight_overrides: Optional[Dict] = None,
         include_archive: bool = False,
+        as_of: Optional[float] = None,
+        rerank: Optional[bool] = None,
     ) -> List[Memory]:
         """Advanced retrieval with context-type boosting and temporal filtering.
 
@@ -314,6 +316,8 @@ class OMem:
             weight_overrides=weight_overrides,
             include_archive=include_archive,
             include_inactive=include_archive,
+            as_of=as_of,
+            rerank=rerank,
         )
 
         # Post-filter for namespace if we searched wide
@@ -503,13 +507,19 @@ class OMem:
             llm_fn=llm_fn, threshold=threshold, min_cluster_size=min_cluster_size
         )
 
-    def sleep(self, speed: str = "normal", llm_fn: Optional[Callable] = None) -> Dict:
+    def sleep(
+        self,
+        speed: str = "normal",
+        llm_fn: Optional[Callable] = None,
+        include_dream: bool = True,
+    ) -> Dict:
         """Run a full maintenance cycle (Sleep cycle).
 
         Cleans up dirty data, consolidates memories, and optimizes the index.
         Best run during idle periods or low traffic.
+        Dream/consolidate uses templates unless ``llm_fn`` is provided.
         """
-        return self.brain.sleep(speed=speed, llm_fn=llm_fn)
+        return self.brain.sleep(speed=speed, llm_fn=llm_fn, include_dream=include_dream)
 
     def auto_maintenance(self, enabled: bool = True, interval: float = 3600.0):
         """Enable or disable background auto-maintenance."""
@@ -613,12 +623,17 @@ class OMem:
         )
 
     # ---------------------------------------------------------------------
-    # Project Memory Extension APIs
+    # Project Memory Extension APIs (Alpha — OMEM_ENABLE_EXPERIMENTAL_AST=1)
     # ---------------------------------------------------------------------
     def ingest_project(self, path: str = ".", namespace: str = "project") -> int:
-        """Ingest an entire Python project into the Project Memory.
+        """Ingest a Python / TypeScript / JavaScript project into Project Memory.
+
+        Alpha: requires ``OMEM_ENABLE_EXPERIMENTAL_AST=1``.
         Returns the number of symbols added.
         """
+        from .experimental import require_ast
+
+        require_ast("OMem.ingest_project")
         from .knowledge.codebase.graph import ProjectGraph
         from .knowledge.codebase.ingester import ProjectIngester
 
@@ -630,8 +645,13 @@ class OMem:
 
     def sync_project(self, path: str = ".", namespace: str = "project") -> int:
         """Incrementally sync a project using Git diff.
+
+        Alpha: requires ``OMEM_ENABLE_EXPERIMENTAL_AST=1``.
         Returns the count of symbols processed (added/updated + deletions).
         """
+        from .experimental import require_ast
+
+        require_ast("OMem.sync_project")
         from .knowledge.codebase.sync import ProjectSync
 
         sync = ProjectSync(self, path, namespace)
@@ -646,10 +666,15 @@ class OMem:
         top_k: int = 5,
         namespace: str = "project",
     ) -> List[Dict]:
-        """Hybrid code‑symbol retrieval.
+        """Hybrid code-symbol retrieval.
+
+        Alpha: requires ``OMEM_ENABLE_EXPERIMENTAL_AST=1``.
         Returns enriched dicts with file path, line numbers, type, summary,
         and optionally related symbols.
         """
+        from .experimental import require_ast
+
+        require_ast("OMem.query_code")
         from .knowledge.codebase.retriever import CodeRetriever
 
         retriever = CodeRetriever(self, namespace)

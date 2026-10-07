@@ -16,7 +16,7 @@ from ..retrieval.ranker import (
     weights_for_mode,
 )
 from ..utils.concurrency import ReadContext
-from .utils import _HAS_RUST
+from .utils import _HAS_RUST, _TOKENIZER
 
 try:
     import omem_rust
@@ -62,6 +62,11 @@ def _passes_tier_filter(
     return True
 
 
+def _identifier_tokens(query: str) -> List[str]:
+    """Long tokens (SKU, ticket, canary) that must not depend on ANN recall."""
+    return [t for t in _TOKENIZER.findall((query or "").lower()) if len(t) >= 10]
+
+
 class RAGMixin:
     """Methods for memory retrieval and ranking."""
 
@@ -82,6 +87,8 @@ class RAGMixin:
         tiers: Optional[List[MemoryTier]] = None,
         level: Optional[str] = None,
         include_archive: bool = False,
+        as_of: Optional[float] = None,
+        rerank: Optional[bool] = None,
     ) -> List[Memory]:
         if mode == "strong":
             return self._rag_strong(
@@ -89,24 +96,31 @@ class RAGMixin:
                 top_k=top_k,
                 namespace=namespace,
                 include_inactive=include_inactive,
+                as_of=as_of,
+                rerank=rerank,
             )
 
-        query_key = f"{query}:{namespace}:{mode}:{top_k}:{level}"
+        query_key = f"{query}:{namespace}:{mode}:{top_k}:{level}:{as_of}:{rerank}"
         cached = self.working_memory.get(query_key)
         if cached and not explain:
             return cached
 
         query_vec = self.embedder.encode(query)
+        if self.kv.size == 0:
+            # Cold engine or post-restart pool entry — reload from durable store.
+            # Must happen *before* taking the read lock: reload_from_backend()
+            # acquires the write lock internally, and this RWLock is not
+            # reentrant, so calling it while holding the read lock deadlocks.
+            self.reload_from_backend()
         with ReadContext(self._lock):
-            if self.kv.size == 0:
-                # Cold engine or post-restart pool entry — reload from durable store.
-                self.reload_from_backend()
             if self.kv.size == 0:
                 self._last_explanations = []
                 return []
             f_top_k = min(top_k * 10, self.kv.size, 200)
             scores, indices = self.vector_index.search(query_vec, top_k=f_top_k)
             id_snap = list(self._id_order)
+            id_tokens = _identifier_tokens(query)
+            lexical_pool = self.kv.all() if id_tokens else []
 
         now = time.time()
         weights = fusion_weights or weights_for_mode(
@@ -125,14 +139,54 @@ class RAGMixin:
             if idx < 0 or idx >= len(id_snap):
                 continue
             mem = self.kv.get(id_snap[idx])
-            if mem is None or (not include_inactive and not mem.active):
+            if mem is None:
                 continue
+            if as_of is not None:
+                vf = getattr(mem, "valid_from", None)
+                vt = getattr(mem, "valid_to", None)
+                if vf is not None and vf > as_of:
+                    continue
+                if vt is not None and vt <= as_of:
+                    continue
+            else:
+                if not include_inactive and not mem.active:
+                    continue
+                if not include_inactive and not getattr(mem, "is_current", lambda: True)():
+                    continue
             if not _passes_tier_filter(mem, tiers, level, include_archive):
                 continue
             if namespace and mem.namespace != namespace:
                 continue
             vector_scores[mem.id] = float(vec_score)
             candidate_mems.append(mem)
+
+        if id_tokens:
+            seen = {m.id for m in candidate_mems}
+            for mem in lexical_pool:
+                if mem.id in seen:
+                    continue
+                blob = (mem.content or "").lower()
+                if not any(t in blob for t in id_tokens):
+                    continue
+                if as_of is not None:
+                    vf = getattr(mem, "valid_from", None)
+                    vt = getattr(mem, "valid_to", None)
+                    if vf is not None and vf > as_of:
+                        continue
+                    if vt is not None and vt <= as_of:
+                        continue
+                else:
+                    if not include_inactive and not mem.active:
+                        continue
+                    if not include_inactive and not getattr(mem, "is_current", lambda: True)():
+                        continue
+                if not _passes_tier_filter(mem, tiers, level, include_archive):
+                    continue
+                if namespace and mem.namespace != namespace:
+                    continue
+                vector_scores.setdefault(mem.id, 0.0)
+                candidate_mems.append(mem)
+                seen.add(mem.id)
 
         if _HAS_RUST and candidate_mems and type_boosts:
             results = self._rag_rust_path(
@@ -187,6 +241,11 @@ class RAGMixin:
             weights,
             vector_scores,
         )
+        from ..retrieval.rerank import rerank_cross_encoder, rerank_enabled
+
+        do_rerank = rerank if rerank is not None else rerank_enabled(mode)
+        if do_rerank and final_results:
+            final_results = rerank_cross_encoder(query, final_results, top_k=top_k)
         self.working_memory.put(query_key, final_results)
         return final_results
 
@@ -456,6 +515,8 @@ class RAGMixin:
         top_k: int = 5,
         namespace: Optional[str] = None,
         include_inactive: bool = False,
+        as_of: Optional[float] = None,
+        rerank: Optional[bool] = None,
     ) -> List[Memory]:
         """DB-authoritative recall via pgvector — read-your-writes consistency."""
         backend = getattr(self, "backend", None)
@@ -466,6 +527,8 @@ class RAGMixin:
                 namespace=namespace,
                 include_inactive=include_inactive,
                 mode="default",
+                as_of=as_of,
+                rerank=rerank,
             )
 
         query_vec = self.embedder.encode(query)
@@ -473,7 +536,7 @@ class RAGMixin:
         pairs = backend.vector_search(
             query_vec,
             namespace=namespace,
-            top_k=top_k,
+            top_k=max(top_k * 4, 20) if as_of is not None else top_k,
             embedding_model=model,
         )
         if not pairs:
@@ -483,13 +546,27 @@ class RAGMixin:
                 namespace=namespace,
                 include_inactive=include_inactive,
                 mode="recall",
+                as_of=as_of,
+                rerank=rerank,
             )
         results: List[Memory] = []
         for mem, sim in pairs:
-            if not include_inactive and not mem.active:
+            if as_of is not None:
+                vf = getattr(mem, "valid_from", None)
+                vt = getattr(mem, "valid_to", None)
+                if vf is not None and vf > as_of:
+                    continue
+                if vt is not None and vt <= as_of:
+                    continue
+            elif not include_inactive and not mem.active:
                 continue
             mem.score = float(sim)
             results.append(mem)
             if len(results) >= top_k:
                 break
+        from ..retrieval.rerank import rerank_cross_encoder, rerank_enabled
+
+        do_rerank = rerank if rerank is not None else rerank_enabled("strong")
+        if do_rerank and results:
+            results = rerank_cross_encoder(query, results, top_k=top_k)
         return results

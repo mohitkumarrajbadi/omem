@@ -20,6 +20,15 @@ See: docs/roadmap/FULL_IMPLEMENTATION_PLAN.md — Phase 3
 """
 
 from .engine import ContextBundle, ContextEngine, ContextRequest
+from .inject import (
+    HOST_INSTRUCTIONS,
+    OMEM_CONTEXT_END,
+    OMEM_CONTEXT_START,
+    apply_omem_context,
+    apply_omem_to_messages,
+    injection_metadata,
+    wrap_omem_pack,
+)
 from .tokenizer import TokenCounter
 
 __all__ = [
@@ -27,4 +36,11 @@ __all__ = [
     "ContextRequest",
     "ContextBundle",
     "TokenCounter",
+    "OMEM_CONTEXT_START",
+    "OMEM_CONTEXT_END",
+    "HOST_INSTRUCTIONS",
+    "apply_omem_context",
+    "apply_omem_to_messages",
+    "injection_metadata",
+    "wrap_omem_pack",
 ]

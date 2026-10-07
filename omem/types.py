@@ -283,6 +283,75 @@ class Memory:
     # Cold L4 object-storage pointer (S3-compatible key); content may be stubbed
     cold_storage_key: Optional[str] = None
 
+    # Usage-based utility (issue 0001). Heuristic importance is only the prior.
+    initial_importance: float = 0.5
+    retrieved_count: int = 0
+    packed_count: int = 0
+    cited_count: int = 0
+
+    # Bi-temporal belief window. None valid_to = still current.
+    valid_from: Optional[float] = None
+    valid_to: Optional[float] = None
+
+    _RUNTIME_META_KEY = "_omem_runtime"
+
+    def metadata_for_persist(self) -> Dict[str, Any]:
+        """Metadata blob written to backends, including runtime fields."""
+        meta = dict(self.metadata or {})
+        meta[self._RUNTIME_META_KEY] = {
+            "type_confidence": self.type_confidence,
+            "initial_importance": self.initial_importance,
+            "packed_count": self.packed_count,
+            "cited_count": self.cited_count,
+            "retrieved_count": self.retrieved_count,
+            "valid_from": self.valid_from,
+            "valid_to": self.valid_to,
+            "lifecycle_stage": self.lifecycle_stage,
+            "level": self.level,
+            "superseded_by": self.superseded_by,
+            "tier": self.tier.name if hasattr(self.tier, "name") else str(self.tier),
+            "priority": self.priority.name if hasattr(self.priority, "name") else str(self.priority),
+        }
+        return meta
+
+    def hydrate_runtime_fields(self) -> "Memory":
+        """Restore runtime fields packed into ``metadata`` by backends."""
+        rt = (self.metadata or {}).get(self._RUNTIME_META_KEY) or {}
+        if rt:
+            self.type_confidence = float(rt.get("type_confidence", self.type_confidence))
+            self.initial_importance = float(rt.get("initial_importance", self.importance))
+            self.packed_count = int(rt.get("packed_count", 0))
+            self.cited_count = int(rt.get("cited_count", 0))
+            self.retrieved_count = int(rt.get("retrieved_count", self.access_count))
+            vf = rt.get("valid_from")
+            vt = rt.get("valid_to")
+            self.valid_from = float(vf) if vf is not None else self.timestamp
+            self.valid_to = float(vt) if vt is not None else None
+            if rt.get("lifecycle_stage"):
+                self.lifecycle_stage = rt["lifecycle_stage"]
+            if rt.get("level"):
+                self.level = rt["level"]
+            if rt.get("superseded_by") is not None:
+                self.superseded_by = rt["superseded_by"]
+            # Keep public metadata equal to what the caller stored.
+            self.metadata = dict(self.metadata)
+            self.metadata.pop(self._RUNTIME_META_KEY, None)
+        else:
+            if self.valid_from is None:
+                self.valid_from = self.timestamp
+            if not self.initial_importance:
+                self.initial_importance = self.importance
+        return self
+
+    def is_current(self, now: Optional[float] = None) -> bool:
+        """True when this belief is still valid at ``now``."""
+        t = now if now is not None else time.time()
+        if self.valid_to is not None and self.valid_to <= t:
+            return False
+        if self.valid_from is not None and self.valid_from > t:
+            return False
+        return True
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
@@ -315,6 +384,13 @@ class Memory:
             "freshness": self.freshness,
             "dependencies": self.dependencies,
             "logical_hash": self.logical_hash,
+            "initial_importance": self.initial_importance,
+            "retrieved_count": self.retrieved_count,
+            "packed_count": self.packed_count,
+            "cited_count": self.cited_count,
+            "valid_from": self.valid_from,
+            "valid_to": self.valid_to,
+            "superseded_by": self.superseded_by,
             "metadata": self.metadata,
         }
 
@@ -485,6 +561,173 @@ class StateCheckpoint:
             payload_hash=d["payload_hash"],
             payload=StatePayload.from_dict(d["payload"]),
             created_at=d.get("created_at", time.time()),
+        )
+
+
+# ---------------------------------------------------------------------------
+# OMem v1 — Run / RunEvent (durable history + live cursor dual-write)
+# See: yc-w27-materials/OMEM_V1_ENGINEERING_SPEC.md §0A, §4
+# ---------------------------------------------------------------------------
+
+# Closed core vocabulary. Namespaced ``custom.<name>`` is also accepted by the writer.
+RUN_EVENT_TYPES = frozenset({
+    "run_started",
+    "user_message",
+    "model_decision",
+    "tool_call",
+    "tool_result",
+    "observation",
+    "state_mutation",
+    "memory_write",
+    "checkpoint",
+    "approval_requested",
+    "approval_granted",
+    "run_crashed",
+    "run_resumed",
+    "run_completed",
+    "fork_created",
+})
+
+RUN_STATUSES = frozenset({
+    "running",
+    "paused",
+    "failed",
+    "crashed",
+    "done",
+})
+
+
+def is_valid_run_event_type(event_type: str) -> bool:
+    """True for core types or safe ``custom.<name>`` extensions."""
+    if event_type in RUN_EVENT_TYPES:
+        return True
+    if event_type.startswith("custom.") and len(event_type) > 7:
+        rest = event_type[7:]
+        return rest.replace("_", "").replace("-", "").isalnum()
+    return False
+
+
+@dataclass
+class Run:
+    """One execution within a Thread (``session_id``).
+
+    Live cursor remains ``StatePayload`` / checkpoints (Mode A resume).
+    ``run_events`` are the append-only history / audit SoT.
+    """
+
+    run_id: str
+    session_id: str
+    namespace: str = "default"
+    agent_id: Optional[str] = None
+    status: str = "running"  # running | paused | failed | crashed | done
+    parent_run_id: Optional[str] = None
+    fork_checkpoint_id: Optional[str] = None
+    fork_seq: Optional[int] = None
+    label: Optional[str] = None
+    goal: Optional[str] = None
+    lease_owner: Optional[str] = None
+    lease_until: Optional[float] = None
+    heartbeat_ms: int = 30000
+    needs_reconcile: bool = False
+    last_checkpoint_id: Optional[str] = None
+    last_event_seq: int = 0
+    created_at: float = field(default_factory=time.time)
+    updated_at: float = field(default_factory=time.time)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "run_id": self.run_id,
+            "session_id": self.session_id,
+            "namespace": self.namespace,
+            "agent_id": self.agent_id,
+            "status": self.status,
+            "parent_run_id": self.parent_run_id,
+            "fork_checkpoint_id": self.fork_checkpoint_id,
+            "fork_seq": self.fork_seq,
+            "label": self.label,
+            "goal": self.goal,
+            "lease_owner": self.lease_owner,
+            "lease_until": self.lease_until,
+            "heartbeat_ms": self.heartbeat_ms,
+            "needs_reconcile": self.needs_reconcile,
+            "last_checkpoint_id": self.last_checkpoint_id,
+            "last_event_seq": self.last_event_seq,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "Run":
+        return cls(
+            run_id=d["run_id"],
+            session_id=d["session_id"],
+            namespace=d.get("namespace", "default"),
+            agent_id=d.get("agent_id"),
+            status=d.get("status", "running"),
+            parent_run_id=d.get("parent_run_id"),
+            fork_checkpoint_id=d.get("fork_checkpoint_id"),
+            fork_seq=d.get("fork_seq"),
+            label=d.get("label"),
+            goal=d.get("goal"),
+            lease_owner=d.get("lease_owner"),
+            lease_until=d.get("lease_until"),
+            heartbeat_ms=int(d.get("heartbeat_ms", 30000)),
+            needs_reconcile=bool(d.get("needs_reconcile", False)),
+            last_checkpoint_id=d.get("last_checkpoint_id"),
+            last_event_seq=int(d.get("last_event_seq", 0)),
+            created_at=float(d.get("created_at", time.time())),
+            updated_at=float(d.get("updated_at", time.time())),
+        )
+
+
+@dataclass
+class RunEvent:
+    """Append-only durable execution / audit event (history SoT)."""
+
+    event_id: str
+    run_id: str
+    sequence: int
+    type: str
+    actor: str = "agent"  # user | agent | system | human
+    timestamp: float = field(default_factory=time.time)
+    causation_id: Optional[str] = None
+    correlation_id: Optional[str] = None
+    idempotency_key: Optional[str] = None
+    payload: Dict[str, Any] = field(default_factory=dict)
+    payload_ref: Optional[str] = None
+    schema_version: int = 1
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "event_id": self.event_id,
+            "run_id": self.run_id,
+            "sequence": self.sequence,
+            "type": self.type,
+            "actor": self.actor,
+            "timestamp": self.timestamp,
+            "causation_id": self.causation_id,
+            "correlation_id": self.correlation_id,
+            "idempotency_key": self.idempotency_key,
+            "payload": self.payload,
+            "payload_ref": self.payload_ref,
+            "schema_version": self.schema_version,
+        }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "RunEvent":
+        return cls(
+            event_id=d["event_id"],
+            run_id=d["run_id"],
+            sequence=int(d["sequence"]),
+            type=d["type"],
+            actor=d.get("actor", "agent"),
+            timestamp=float(d.get("timestamp", time.time())),
+            causation_id=d.get("causation_id"),
+            correlation_id=d.get("correlation_id"),
+            idempotency_key=d.get("idempotency_key"),
+            payload=dict(d.get("payload") or {}),
+            payload_ref=d.get("payload_ref"),
+            schema_version=int(d.get("schema_version", 1)),
         )
 
 
