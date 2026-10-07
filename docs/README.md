@@ -18,6 +18,11 @@
 - [Architecture overview](./architecture/ARCHITECTURE.md)
 - [ADRs](./architecture/adr/)
 
+## Release / versioning
+
+- [Versioning, naming, branching](./guides/VERSIONING.md)
+- [Releasing to PyPI](./guides/RELEASING.md)
+
 ## Root project docs
 
 - [README](../README.md)

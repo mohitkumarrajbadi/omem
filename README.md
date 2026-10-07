@@ -77,6 +77,7 @@ cd omem && pip install -e ".[dev]" && pytest tests/ -q
 ## Docs
 
 - [Design partners](./docs/design-partner/README.md)
+- [Versioning / branching](./docs/guides/VERSIONING.md) · [Releasing](./docs/guides/RELEASING.md)
 - [Docs index](./docs/README.md)
 - [Limits](./docs/LIMITATIONS.md)
 
