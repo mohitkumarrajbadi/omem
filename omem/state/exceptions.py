@@ -53,3 +53,27 @@ class MergeError(StateError):
 
 class ForkError(StateError):
     """Raised when a fork operation cannot be completed."""
+
+
+class RunNotFoundError(StateError):
+    """Raised when a run_id does not exist."""
+
+    def __init__(self, run_id: str) -> None:
+        self.run_id = run_id
+        super().__init__(f"Run not found: {run_id!r}")
+
+
+class RunEventError(StateError):
+    """Raised when a run event cannot be appended or validated."""
+
+
+class IdempotencyConflictError(RunEventError):
+    """Raised when the same idempotency key is reused with a different payload."""
+
+    def __init__(self, run_id: str, idempotency_key: str) -> None:
+        self.run_id = run_id
+        self.idempotency_key = idempotency_key
+        super().__init__(
+            f"Idempotency key {idempotency_key!r} already used on run {run_id!r} "
+            f"with a different payload"
+        )

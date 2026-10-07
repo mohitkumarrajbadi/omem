@@ -60,8 +60,12 @@ from .provenance.layer import ProvenanceOS
 from .runtime.layer import RuntimeOS
 from .state.backend import InMemoryStateBackend, SQLiteStateBackend
 from .state.layer import StateOS
+from .state.run_store import InMemoryRunStore, SQLiteRunStore
+from .state.runs import ActiveRun, RunOS
 from .types import (
     Memory,
+    Run,
+    RunEvent,
     StateCheckpoint,
     StatePayload,
     StateSnapshot,
@@ -365,9 +369,17 @@ class AgentState:
         # ── State layer (Phase 2) ─────────────────────────────────────
         if _cfg.backend == "memory":
             _state_backend = InMemoryStateBackend()
+            _run_store = InMemoryRunStore()
         else:
             _state_backend = SQLiteStateBackend(_state_db)
+            _run_store = SQLiteRunStore(_state_db)
         self._state = StateOS(backend=_state_backend, namespace=_cfg.namespace)
+        # ── Run / event history (OMem v1) — dual-write with StatePayload ─
+        self._runs = RunOS(
+            store=_run_store,
+            state=self._state,
+            namespace=_cfg.namespace,
+        )
 
         # ── Context layer (Phase 3) ───────────────────────────────────
         self._context = ContextEngine(
@@ -512,6 +524,11 @@ class AgentState:
     def state(self) -> StateOS:
         """State layer — StateOS (Phase 2)."""
         return self._state
+
+    @property
+    def runs(self) -> RunOS:
+        """Run / RunEvent history layer (OMem v1)."""
+        return self._runs
 
     @property
     def context(self) -> ContextEngine:
@@ -1026,6 +1043,7 @@ class AgentState:
         inst._omem = self._omem
         inst._memory = self._memory
         inst._state = self._state
+        inst._runs = self._runs
         inst._context = self._context
         inst._knowledge = self._knowledge
         inst._observe = self._observe
@@ -1040,13 +1058,140 @@ class AgentState:
     # ------------------------------------------------------------------
 
     def checkpoint(self) -> str:
-        """Write a crash-recovery checkpoint. Returns the checkpoint ID."""
+        """Write a crash-recovery checkpoint. Returns the checkpoint ID.
+
+        When an active run exists, dual-writes a durable ``checkpoint`` RunEvent
+        (history SoT) alongside the StateCheckpoint (live SoT).
+        """
         t0 = time.time()
-        ckpt_id = self._state.checkpoint(self._require_session())
+        session_id = self._require_session()
+        active = self._runs.get_active_run(session_id)
+        if active is not None:
+            ckpt_id = active.checkpoint()
+        else:
+            ckpt_id = self._state.checkpoint(session_id)
         dur = (time.time() - t0) * 1000
         self._emit("checkpoint", dur, checkpoint_id=ckpt_id)
         self._prov(ckpt_id, "checkpoint", "create", source="agent")
         return ckpt_id
+
+    # ------------------------------------------------------------------
+    # Run lifecycle (OMem v1) — additive; session_id remains Thread id
+    # ------------------------------------------------------------------
+
+    def start_run(
+        self,
+        goal: Optional[str] = None,
+        *,
+        agent_id: Optional[str] = None,
+        worker_id: Optional[str] = None,
+        correlation_id: Optional[str] = None,
+        label: Optional[str] = None,
+    ) -> ActiveRun:
+        """Start a durable run on this session (Thread)."""
+        session_id = self._require_session()
+        if goal:
+            try:
+                self._state.get_or_create(session_id, namespace=self.namespace)
+                self._state.set_goal(session_id, goal)
+            except Exception:
+                self._state.save(
+                    session_id,
+                    StatePayload(session_id=session_id, namespace=self.namespace, goal=goal),
+                )
+        return self._runs.start_run(
+            session_id,
+            goal=goal,
+            agent_id=agent_id,
+            worker_id=worker_id,
+            correlation_id=correlation_id,
+            label=label,
+        )
+
+    def resume_run(
+        self,
+        run_id: Optional[str] = None,
+        *,
+        worker_id: Optional[str] = None,
+    ) -> ActiveRun:
+        """Mode A: resume a run after process death (checkpoint-assisted)."""
+        if run_id is None:
+            active = self._runs.get_active_run(self._require_session())
+            if active is None:
+                raise ValueError("No active run to resume; pass run_id explicitly")
+            run_id = active.run_id
+        return self._runs.resume_run(run_id, worker_id=worker_id)
+
+    def record_event(
+        self,
+        event_type: str,
+        payload: Optional[Dict[str, Any]] = None,
+        *,
+        run_id: Optional[str] = None,
+        actor: str = "agent",
+        causation_id: Optional[str] = None,
+        correlation_id: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
+    ) -> RunEvent:
+        """Append a durable RunEvent on the active (or specified) run."""
+        if run_id is None:
+            active = self._runs.get_active_run(self._require_session())
+            if active is None:
+                raise ValueError("No active run; call start_run() first")
+            run_id = active.run_id
+        return self._runs.record_event(
+            run_id,
+            event_type,
+            payload,
+            actor=actor,
+            causation_id=causation_id,
+            correlation_id=correlation_id,
+            idempotency_key=idempotency_key,
+        )
+
+    def inspect_events(
+        self,
+        run_id: Optional[str] = None,
+        *,
+        from_seq: Optional[int] = None,
+        to_seq: Optional[int] = None,
+        limit: Optional[int] = None,
+    ) -> List[RunEvent]:
+        """Mode B timeline — does not re-execute tools/models."""
+        if run_id is None:
+            active = self._runs.get_active_run(self._require_session())
+            if active is None:
+                raise ValueError("No active run; pass run_id")
+            run_id = active.run_id
+        return self._runs.list_events(
+            run_id, from_seq=from_seq, to_seq=to_seq, limit=limit
+        )
+
+    def fork_run(
+        self,
+        checkpoint_id: Optional[str] = None,
+        *,
+        run_id: Optional[str] = None,
+        label: Optional[str] = None,
+    ) -> ActiveRun:
+        """Fork a new run from a checkpoint (new run_id + lineage)."""
+        if run_id is None:
+            active = self._runs.get_active_run(self._require_session())
+            if active is None:
+                raise ValueError("No active run; pass run_id")
+            run_id = active.run_id
+        return self._runs.fork_run(
+            run_id, checkpoint_id=checkpoint_id, label=label
+        )
+
+    def restore_to_seq(self, seq: int, *, run_id: Optional[str] = None) -> StatePayload:
+        """Mode C: restore nearest checkpoint at or before ``seq``."""
+        if run_id is None:
+            active = self._runs.get_active_run(self._require_session())
+            if active is None:
+                raise ValueError("No active run; pass run_id")
+            run_id = active.run_id
+        return self._runs.restore_to_seq(run_id, seq)
 
     def resume(self) -> StatePayload:
         """Restore the latest crash-recovery checkpoint for this session.

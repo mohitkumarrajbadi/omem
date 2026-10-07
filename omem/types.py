@@ -564,6 +564,173 @@ class StateCheckpoint:
         )
 
 
+# ---------------------------------------------------------------------------
+# OMem v1 — Run / RunEvent (durable history + live cursor dual-write)
+# See: yc-w27-materials/OMEM_V1_ENGINEERING_SPEC.md §0A, §4
+# ---------------------------------------------------------------------------
+
+# Closed core vocabulary. Namespaced ``custom.<name>`` is also accepted by the writer.
+RUN_EVENT_TYPES = frozenset({
+    "run_started",
+    "user_message",
+    "model_decision",
+    "tool_call",
+    "tool_result",
+    "observation",
+    "state_mutation",
+    "memory_write",
+    "checkpoint",
+    "approval_requested",
+    "approval_granted",
+    "run_crashed",
+    "run_resumed",
+    "run_completed",
+    "fork_created",
+})
+
+RUN_STATUSES = frozenset({
+    "running",
+    "paused",
+    "failed",
+    "crashed",
+    "done",
+})
+
+
+def is_valid_run_event_type(event_type: str) -> bool:
+    """True for core types or safe ``custom.<name>`` extensions."""
+    if event_type in RUN_EVENT_TYPES:
+        return True
+    if event_type.startswith("custom.") and len(event_type) > 7:
+        rest = event_type[7:]
+        return rest.replace("_", "").replace("-", "").isalnum()
+    return False
+
+
+@dataclass
+class Run:
+    """One execution within a Thread (``session_id``).
+
+    Live cursor remains ``StatePayload`` / checkpoints (Mode A resume).
+    ``run_events`` are the append-only history / audit SoT.
+    """
+
+    run_id: str
+    session_id: str
+    namespace: str = "default"
+    agent_id: Optional[str] = None
+    status: str = "running"  # running | paused | failed | crashed | done
+    parent_run_id: Optional[str] = None
+    fork_checkpoint_id: Optional[str] = None
+    fork_seq: Optional[int] = None
+    label: Optional[str] = None
+    goal: Optional[str] = None
+    lease_owner: Optional[str] = None
+    lease_until: Optional[float] = None
+    heartbeat_ms: int = 30000
+    needs_reconcile: bool = False
+    last_checkpoint_id: Optional[str] = None
+    last_event_seq: int = 0
+    created_at: float = field(default_factory=time.time)
+    updated_at: float = field(default_factory=time.time)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "run_id": self.run_id,
+            "session_id": self.session_id,
+            "namespace": self.namespace,
+            "agent_id": self.agent_id,
+            "status": self.status,
+            "parent_run_id": self.parent_run_id,
+            "fork_checkpoint_id": self.fork_checkpoint_id,
+            "fork_seq": self.fork_seq,
+            "label": self.label,
+            "goal": self.goal,
+            "lease_owner": self.lease_owner,
+            "lease_until": self.lease_until,
+            "heartbeat_ms": self.heartbeat_ms,
+            "needs_reconcile": self.needs_reconcile,
+            "last_checkpoint_id": self.last_checkpoint_id,
+            "last_event_seq": self.last_event_seq,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "Run":
+        return cls(
+            run_id=d["run_id"],
+            session_id=d["session_id"],
+            namespace=d.get("namespace", "default"),
+            agent_id=d.get("agent_id"),
+            status=d.get("status", "running"),
+            parent_run_id=d.get("parent_run_id"),
+            fork_checkpoint_id=d.get("fork_checkpoint_id"),
+            fork_seq=d.get("fork_seq"),
+            label=d.get("label"),
+            goal=d.get("goal"),
+            lease_owner=d.get("lease_owner"),
+            lease_until=d.get("lease_until"),
+            heartbeat_ms=int(d.get("heartbeat_ms", 30000)),
+            needs_reconcile=bool(d.get("needs_reconcile", False)),
+            last_checkpoint_id=d.get("last_checkpoint_id"),
+            last_event_seq=int(d.get("last_event_seq", 0)),
+            created_at=float(d.get("created_at", time.time())),
+            updated_at=float(d.get("updated_at", time.time())),
+        )
+
+
+@dataclass
+class RunEvent:
+    """Append-only durable execution / audit event (history SoT)."""
+
+    event_id: str
+    run_id: str
+    sequence: int
+    type: str
+    actor: str = "agent"  # user | agent | system | human
+    timestamp: float = field(default_factory=time.time)
+    causation_id: Optional[str] = None
+    correlation_id: Optional[str] = None
+    idempotency_key: Optional[str] = None
+    payload: Dict[str, Any] = field(default_factory=dict)
+    payload_ref: Optional[str] = None
+    schema_version: int = 1
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "event_id": self.event_id,
+            "run_id": self.run_id,
+            "sequence": self.sequence,
+            "type": self.type,
+            "actor": self.actor,
+            "timestamp": self.timestamp,
+            "causation_id": self.causation_id,
+            "correlation_id": self.correlation_id,
+            "idempotency_key": self.idempotency_key,
+            "payload": self.payload,
+            "payload_ref": self.payload_ref,
+            "schema_version": self.schema_version,
+        }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "RunEvent":
+        return cls(
+            event_id=d["event_id"],
+            run_id=d["run_id"],
+            sequence=int(d["sequence"]),
+            type=d["type"],
+            actor=d.get("actor", "agent"),
+            timestamp=float(d.get("timestamp", time.time())),
+            causation_id=d.get("causation_id"),
+            correlation_id=d.get("correlation_id"),
+            idempotency_key=d.get("idempotency_key"),
+            payload=dict(d.get("payload") or {}),
+            payload_ref=d.get("payload_ref"),
+            schema_version=int(d.get("schema_version", 1)),
+        )
+
+
 @dataclass
 class RetrievalExplanation:
     """Breakdown of why a memory was retrieved — for observability."""

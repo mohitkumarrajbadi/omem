@@ -1,26 +1,27 @@
 # OMem — one-pager
 
-**Audit & rollback layer for AI agents** · Tech preview — not GA
+**Durable state layer for production AI agents** · Tech preview — not GA
 
 ## Problem
 
-Agents remember. Enterprises need to **prove** what they knew, **roll back** bad beliefs, and show **who wrote** the fact.
+Production agents lose state across workers, waste context, and cannot prove what they knew, decided, or did after a crash.
 
 ## Product
 
-- **omem-os** — governed memory, snapshot/rollback, AES-256-GCM, audit export, MCP  
+- **omem-os** — runs + append-only history, checkpoints, resume, fork, budgeted context, audit  
 - **omem-cloud** — multi-tenant API, Postgres RLS, key rotation (preview)  
-- **GovernedMem0** — keep Mem0 retrieval; OMem audit/erasure path  
+- Memory remains a projection/feature — not the whole product  
 
 ## Proof
 
 ```bash
+OMEM_EMBEDDER=hash omem demo kill-resume
 OMEM_EMBEDDER=hash omem demo poison-recovery
 ```
 
 ## Not claiming
 
-Cloud GA · completed SOC2 · “better recall than Mem0”
+Cloud GA · completed SOC2 · deterministic tool re-execution · exactly-once external side effects · “better recall than Mem0”
 
 ## Contact
 

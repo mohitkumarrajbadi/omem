@@ -9,8 +9,16 @@ import time
 from typing import Any, Dict, Optional
 
 import click
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
-from .. import __version__
+try:
+    __version__ = _pkg_version("omem-os")
+except PackageNotFoundError:
+    try:
+        from .. import __version__ as __version__
+    except ImportError:
+        __version__ = "0.0.0+dev"
+
 from ..api import OMem
 from ..types import MemoryType
 from .help import CONTEXT_SETTINGS, OMemGroup, _write_command_groups, _show_all_commands
@@ -805,26 +813,31 @@ def namespaces(ctx: click.Context, output_format: str):
         click.echo(f"  {GLYPH_INFO} {ns:22s} {stats.get('total', 0):>6d} memories")
 
 
-@cli.command(short_help="See audit & rollback in one run")
+@cli.command(short_help="Kill-resume or poison-recovery demo")
 @click.argument(
     "scenario",
     required=False,
-    default="poison-recovery",
-    type=click.Choice(["poison-recovery"]),
+    default="kill-resume",
+    type=click.Choice(["kill-resume", "poison-recovery"]),
 )
-@click.option("--json", "as_json", is_flag=True, help="Print the remediation report as JSON.")
+@click.option("--json", "as_json", is_flag=True, help="Print the report as JSON.")
 @click.pass_context
 def demo(ctx: click.Context, scenario: str, as_json: bool):
-    """See audit & rollback — poison a memory, then recover it.
+    """Primary demo: kill-resume (durable state). Also: poison-recovery.
 
     \b
-        omem demo
+        omem demo kill-resume
+        omem demo poison-recovery
     """
-    from ..demo.poison import run_poison_recovery
-
-    del scenario  # only one scenario wired today
     db_path = (ctx.obj or {}).get("db_path")
-    report = run_poison_recovery(db_path=db_path)
+    if scenario == "kill-resume":
+        from ..demo.kill_resume import run_kill_resume
+
+        report = run_kill_resume(db_path=db_path)
+    else:
+        from ..demo.poison import run_poison_recovery
+
+        report = run_poison_recovery(db_path=db_path)
     if as_json:
         click.echo(json.dumps(report, indent=2, sort_keys=True, default=str))
         return
@@ -832,7 +845,7 @@ def demo(ctx: click.Context, scenario: str, as_json: bool):
     for line in report.get("lines") or []:
         click.echo(line)
     if not report.get("ok"):
-        failure(report.get("error") or "poison-recovery demo failed")
+        failure(report.get("error") or f"{scenario} demo failed")
         sys.exit(1)
 
 
@@ -1421,6 +1434,226 @@ def state_list(namespace: Optional[str], db: Optional[str]):
 
 
 cli.add_command(state_group)
+
+
+# ---------------------------------------------------------------------------
+# omem run — OMem v1 Run / RunEvent CLI
+# ---------------------------------------------------------------------------
+
+@click.group("run")
+def run_group():
+    """Durable runs — start, record, checkpoint, resume, inspect.
+
+    \b
+    Examples:
+        omem run start --session incident --goal "Investigate outage"
+        omem run record --run run_abc --type tool_call --payload '{"tool":"logs"}'
+        omem run checkpoint --run run_abc
+        omem run resume --run run_abc
+        omem run inspect --run run_abc
+    """
+
+
+def _get_run_agent(session_id: str, db_path: Optional[str] = None) -> Any:
+    from ..agent_state import AgentState
+
+    resolved = db_path or os.path.expanduser("~/.omem/brain.db")
+    return AgentState(session_id=session_id, backend="sqlite", db_path=resolved)
+
+
+@run_group.command("start")
+@click.option("--session", "session_id", required=True, help="Thread / session id.")
+@click.option("--goal", default=None, help="Run goal.")
+@click.option("--label", default=None, help="Optional run label.")
+@click.option("--db", "db_path", default=None, help="SQLite path.")
+@click.pass_context
+def run_start(ctx: click.Context, session_id: str, goal: Optional[str], label: Optional[str], db_path: Optional[str]):
+    """Start a durable run on a session (Thread)."""
+    db = db_path or (ctx.obj or {}).get("db_path")
+    agent = _get_run_agent(session_id, db)
+    active = agent.start_run(goal=goal, label=label)
+    success(f"run_id={active.run_id}  session={session_id}  status={active.run.status}")
+
+
+@run_group.command("record")
+@click.option("--run", "run_id", required=True, help="Run id.")
+@click.option("--session", "session_id", required=True, help="Thread / session id.")
+@click.option("--type", "event_type", required=True, help="Event type.")
+@click.option("--payload", default="{}", help="JSON payload.")
+@click.option("--idempotency-key", default=None, help="L1 idempotency key.")
+@click.option("--db", "db_path", default=None, help="SQLite path.")
+@click.pass_context
+def run_record(
+    ctx: click.Context,
+    run_id: str,
+    session_id: str,
+    event_type: str,
+    payload: str,
+    idempotency_key: Optional[str],
+    db_path: Optional[str],
+):
+    """Append a durable RunEvent (history SoT)."""
+    db = db_path or (ctx.obj or {}).get("db_path")
+    agent = _get_run_agent(session_id, db)
+    try:
+        data = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        raise click.BadParameter(f"Invalid JSON payload: {exc}") from exc
+    ev = agent.record_event(
+        event_type,
+        data,
+        run_id=run_id,
+        idempotency_key=idempotency_key,
+    )
+    success(f"event_id={ev.event_id}  seq={ev.sequence}  type={ev.type}")
+
+
+@run_group.command("checkpoint")
+@click.option("--run", "run_id", required=True, help="Run id.")
+@click.option("--session", "session_id", required=True, help="Thread / session id.")
+@click.option("--db", "db_path", default=None, help="SQLite path.")
+@click.pass_context
+def run_checkpoint(ctx: click.Context, run_id: str, session_id: str, db_path: Optional[str]):
+    """Dual-write StateCheckpoint + checkpoint RunEvent."""
+    db = db_path or (ctx.obj or {}).get("db_path")
+    agent = _get_run_agent(session_id, db)
+    active = agent.runs  # RunOS
+    # Ensure active run pointer
+    from ..state.runs import ActiveRun
+
+    handle = ActiveRun(active, active.get_run(run_id))
+    ck = handle.checkpoint()
+    success(f"checkpoint_id={ck}")
+
+
+@run_group.command("resume")
+@click.option("--run", "run_id", required=True, help="Run id.")
+@click.option("--session", "session_id", required=True, help="Thread / session id.")
+@click.option("--db", "db_path", default=None, help="SQLite path.")
+@click.pass_context
+def run_resume(ctx: click.Context, run_id: str, session_id: str, db_path: Optional[str]):
+    """Mode A: checkpoint-assisted resume (infers crash if lease stale)."""
+    db = db_path or (ctx.obj or {}).get("db_path")
+    agent = _get_run_agent(session_id, db)
+    # Stale lease so resume path matches kill-demo semantics when still 'running'
+    try:
+        r = agent.runs.get_run(run_id)
+        if r.status == "running":
+            r.lease_until = 0.0
+            agent.runs._store.save_run(r)
+    except Exception:
+        pass
+    active = agent.resume_run(run_id)
+    payload = agent.current_state()
+    success(
+        f"resumed run={active.run_id}  status={active.run.status}  "
+        f"step={payload.step}  (not deterministic tool re-exec)"
+    )
+
+
+@run_group.command("inspect")
+@click.option("--run", "run_id", required=True, help="Run id.")
+@click.option("--session", "session_id", required=True, help="Thread / session id.")
+@click.option("--limit", default=50, show_default=True, help="Max events.")
+@click.option("--db", "db_path", default=None, help="SQLite path.")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def run_inspect(
+    ctx: click.Context,
+    run_id: str,
+    session_id: str,
+    limit: int,
+    db_path: Optional[str],
+    as_json: bool,
+):
+    """Mode B timeline — read durable events (does not re-execute tools)."""
+    db = db_path or (ctx.obj or {}).get("db_path")
+    agent = _get_run_agent(session_id, db)
+    events = agent.inspect_events(run_id=run_id, limit=limit)
+    if as_json:
+        click.echo(json.dumps([e.to_dict() for e in events], indent=2, default=str))
+        return
+    click.echo(_c(f"Run {run_id} — {len(events)} events (Mode B)", fg="cyan", bold=True))
+    for e in events:
+        click.echo(f"  {e.sequence:4d}  {e.type:18s}  {e.actor}")
+
+
+@cli.command("replay")
+@click.argument("run_id")
+@click.option("--session", "session_id", required=True, help="Thread / session id.")
+@click.option("--from", "from_seq", default=None, type=int, help="Start sequence.")
+@click.option("--restore", is_flag=True, help="Mode C: restore nearest checkpoint ≤ seq.")
+@click.option("--db", "db_path", default=None, help="SQLite path.")
+@click.pass_context
+def replay_cmd(
+    ctx: click.Context,
+    run_id: str,
+    session_id: str,
+    from_seq: Optional[int],
+    restore: bool,
+    db_path: Optional[str],
+):
+    """Event timeline (Mode B). With --restore: checkpoint-anchored Mode C.
+
+    Does NOT re-execute tools or models.
+    """
+    db = db_path or (ctx.obj or {}).get("db_path")
+    agent = _get_run_agent(session_id, db)
+    events = agent.inspect_events(run_id=run_id, from_seq=from_seq)
+    click.echo(_c("Mode B timeline (not tool re-execution)", fg="cyan", bold=True))
+    for e in events:
+        click.echo(f"  {e.sequence:4d}  {e.type:18s}")
+    if restore:
+        seq = from_seq if from_seq is not None else (events[-1].sequence if events else 1)
+        payload = agent.restore_to_seq(seq, run_id=run_id)
+        success(f"Mode C restore_to_seq={seq}  step={payload.step}  status={payload.status}")
+
+
+@cli.command("fork")
+@click.argument("run_id")
+@click.option("--session", "session_id", required=True, help="Parent thread / session id.")
+@click.option("--checkpoint", "checkpoint_id", required=True, help="Checkpoint id.")
+@click.option("--label", default=None, help="Branch label.")
+@click.option("--db", "db_path", default=None, help="SQLite path.")
+@click.pass_context
+def fork_cmd(
+    ctx: click.Context,
+    run_id: str,
+    session_id: str,
+    checkpoint_id: str,
+    label: Optional[str],
+    db_path: Optional[str],
+):
+    """Fork a new run from a checkpoint (lineage, new run_id)."""
+    db = db_path or (ctx.obj or {}).get("db_path")
+    agent = _get_run_agent(session_id, db)
+    child = agent.fork_run(checkpoint_id=checkpoint_id, run_id=run_id, label=label)
+    success(
+        f"child_run={child.run_id}  parent={run_id}  "
+        f"session={child.session_id}  fork_seq={child.run.fork_seq}"
+    )
+
+
+@cli.command("diff")
+@click.argument("run_a")
+@click.argument("run_b")
+@click.option("--session", "session_id", required=True, help="Session used to open store.")
+@click.option("--db", "db_path", default=None, help="SQLite path.")
+@click.pass_context
+def diff_cmd(ctx: click.Context, run_a: str, run_b: str, session_id: str, db_path: Optional[str]):
+    """Minimal diff: event counts, last seq, status, lineage."""
+    db = db_path or (ctx.obj or {}).get("db_path")
+    agent = _get_run_agent(session_id, db)
+    a = agent.runs.get_run(run_a)
+    b = agent.runs.get_run(run_b)
+    ea = agent.inspect_events(run_id=run_a)
+    eb = agent.inspect_events(run_id=run_b)
+    click.echo(f"run_a {run_a}: status={a.status} events={len(ea)} last_seq={a.last_event_seq}")
+    click.echo(f"run_b {run_b}: status={b.status} events={len(eb)} last_seq={b.last_event_seq}")
+    click.echo(f"parent_a={a.parent_run_id}  parent_b={b.parent_run_id}")
+
+
+cli.add_command(run_group)
 
 
 # ---------------------------------------------------------------------------

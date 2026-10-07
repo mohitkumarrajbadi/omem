@@ -33,15 +33,23 @@ class OMemCheckpointSaver:
 
     Checkpoints are JSON blobs on ``StatePayload.workflow_state['_lg']``.
     Works without installing langgraph (duck-typed ``put`` / ``get`` / ``list``).
+
+    Optional ``run_os`` dual-writes durable ``checkpoint`` RunEvents when
+    ``run_id`` is set (or an active run exists on the thread). This does not
+    change LangGraph's drop-in ``graph.compile(checkpointer=...)`` contract.
     """
 
     def __init__(
         self,
         state: Optional[StateOS] = None,
         namespace: str = "default",
+        run_os: Optional[Any] = None,
+        run_id: Optional[str] = None,
     ) -> None:
         self._state = state or StateOS()
         self.namespace = namespace
+        self._run_os = run_os
+        self.run_id = run_id
 
     def get(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         tup = self.get_tuple(config)
@@ -116,6 +124,7 @@ class OMemCheckpointSaver:
         payload.session_id = thread
         payload.namespace = self.namespace
         self._state.save(thread, payload)
+        self._emit_run_checkpoint(thread, cid)
         return {
             "configurable": {
                 "thread_id": thread,
@@ -123,6 +132,34 @@ class OMemCheckpointSaver:
                 "checkpoint_id": cid,
             }
         }
+
+    def _emit_run_checkpoint(self, thread: str, checkpoint_id: str) -> None:
+        """Best-effort durable RunEvent when a RunOS is bound (OMem v1)."""
+        if self._run_os is None:
+            return
+        rid = self.run_id
+        if not rid:
+            try:
+                active = self._run_os.get_active_run(thread)
+                rid = active.run_id if active else None
+            except Exception:
+                rid = None
+        if not rid:
+            return
+        try:
+            self._run_os.record_event(
+                rid,
+                "checkpoint",
+                {
+                    "checkpoint_id": checkpoint_id,
+                    "source": "langgraph",
+                    "thread_id": thread,
+                },
+                actor="system",
+            )
+        except Exception:
+            # Never break LangGraph put path for audit dual-write failures
+            pass
 
     def put_writes(
         self,

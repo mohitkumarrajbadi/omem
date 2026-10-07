@@ -1,5 +1,6 @@
-"""Partner demos — poison recovery and first-run story."""
+"""Partner demos — kill-resume, poison recovery, and first-run story."""
 
+from .kill_resume import run_kill_resume
 from .poison import run_poison_recovery
 from .story import (
     DEMO_NAMESPACE,
@@ -12,6 +13,7 @@ from .story import (
 )
 
 __all__ = [
+    "run_kill_resume",
     "run_poison_recovery",
     "DEMO_NAMESPACE",
     "lineage_report",

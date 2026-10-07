@@ -23,12 +23,22 @@ Quickstart::
 See: docs/roadmap/FULL_IMPLEMENTATION_PLAN.md — Phase 2
 """
 
-from ..types import StateCheckpoint, StatePayload, StateSnapshot, ToolResult
+from ..types import (
+    Run,
+    RunEvent,
+    StateCheckpoint,
+    StatePayload,
+    StateSnapshot,
+    ToolResult,
+)
 from .backend import InMemoryStateBackend, SQLiteStateBackend, StateBackend
 from .exceptions import (
     CheckpointNotFoundError,
     ForkError,
+    IdempotencyConflictError,
     MergeError,
+    RunEventError,
+    RunNotFoundError,
     SessionNamespaceConflictError,
     SessionNotFoundError,
     SnapshotNotFoundError,
@@ -36,17 +46,26 @@ from .exceptions import (
 )
 from .layer import StateOS
 from .merge import three_way_merge
+from .run_store import InMemoryRunStore, RunStore, SQLiteRunStore
+from .runs import ActiveRun, RunOS
 
 __all__ = [
     "StateOS",
+    "RunOS",
+    "ActiveRun",
     "three_way_merge",
     "StatePayload",
     "StateSnapshot",
     "StateCheckpoint",
     "ToolResult",
+    "Run",
+    "RunEvent",
     "StateBackend",
     "InMemoryStateBackend",
     "SQLiteStateBackend",
+    "RunStore",
+    "InMemoryRunStore",
+    "SQLiteRunStore",
     "StateError",
     "SessionNotFoundError",
     "SessionNamespaceConflictError",
@@ -54,4 +73,7 @@ __all__ = [
     "CheckpointNotFoundError",
     "ForkError",
     "MergeError",
+    "RunNotFoundError",
+    "RunEventError",
+    "IdempotencyConflictError",
 ]

@@ -1,16 +1,37 @@
 # OMem
 
-**Governed memory and state for AI agents** — audit, rollback, encryption, tenant isolation.
+**The durable state layer for production AI agents.**
 
-Not another vector store. Prove what the agent knew, roll it back, export the trail.
+Persist. Recover. Replay. Fork. Context. Audit.
+
+Not a vector DB. Not an agent framework. Not Temporal. Framework-neutral history + checkpoints so agents can die without losing work.
+
+Tech preview — not GA. Not SOC2.
+
+## Quick proof
+
+```bash
+pip install omem-os
+OMEM_EMBEDDER=hash omem demo kill-resume
+```
+
+```python
+from omem import AgentState
+
+agent = AgentState(session_id="incident-agent", backend="memory")
+run = agent.start_run(goal="Investigate outage")
+run.record("tool_call", {"tool": "logs.query"}, idempotency_key="logs:1")
+ck = run.checkpoint()
+# process dies → new process:
+run = agent.resume_run(run.run_id)  # Mode A: checkpoint-assisted resume
+```
 
 ## Design partners
 
 Eval pack: [docs/design-partner/](./docs/design-partner/README.md)
 
 ```bash
-pip install omem-os
-OMEM_EMBEDDER=hash omem demo poison-recovery
+OMEM_EMBEDDER=hash omem demo poison-recovery   # governance / rollback
 ```
 
 ```python
