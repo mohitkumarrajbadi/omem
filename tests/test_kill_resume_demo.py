@@ -37,14 +37,18 @@ class TestCustomLoop:
         r = agent.runs.get_run(rid)
         r.lease_until = 0.0
         agent.runs._store.save_run(r)
+        agent.close()
         del agent
 
         agent2 = AgentState(session_id="loop-1", backend="sqlite", db_path=db)
-        loop2 = DurableLoop.resume(agent2, rid, worker_id="w2")
-        assert agent2.current_state().step == step
-        loop2.step("c", lambda: {"n": 3})
-        loop2.complete()
-        assert loop2.run.refresh().status == "done"
+        try:
+            loop2 = DurableLoop.resume(agent2, rid, worker_id="w2")
+            assert agent2.current_state().step == step
+            loop2.step("c", lambda: {"n": 3})
+            loop2.complete()
+            assert loop2.run.refresh().status == "done"
+        finally:
+            agent2.close()
 
 
 class TestLangGraphEmit:

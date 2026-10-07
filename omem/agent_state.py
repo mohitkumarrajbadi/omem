@@ -1756,7 +1756,12 @@ class AgentState:
             brain.persist_graph(self.namespace)
 
     def close(self) -> None:
-        """Flush and release engine resources. Safe to call more than once."""
+        """Flush and release engine resources. Safe to call more than once.
+
+        Closes every SQLite handle owned by this instance (memory, state,
+        run store, audit, runtime). Required before reopening the same DB
+        path in-process on Windows.
+        """
         try:
             self.flush()
         except Exception as exc:
@@ -1767,9 +1772,38 @@ class AgentState:
                 brain.stop_maintenance()
             except Exception:
                 pass
-        backend = getattr(self._omem, "_backend", None)
-        if backend is not None and hasattr(backend, "close"):
-            try:
-                backend.close()
-            except Exception:
-                pass
+
+        # Stop audit worker before closing other DBs (may share paths).
+        for audit in (
+            getattr(getattr(self, "_governance", None), "_audit", None),
+            getattr(getattr(self, "_omem", None), "_audit", None),
+        ):
+            stop = getattr(audit, "stop", None)
+            if callable(stop):
+                try:
+                    stop()
+                except Exception:
+                    pass
+            keep = getattr(audit, "_keep_alive", None)
+            if keep is not None:
+                try:
+                    keep.close()
+                except Exception:
+                    pass
+                try:
+                    audit._keep_alive = None
+                except Exception:
+                    pass
+
+        for obj in (
+            getattr(getattr(self, "_state", None), "_backend", None),
+            getattr(getattr(self, "_runs", None), "_store", None),
+            getattr(getattr(getattr(self, "_runtime", None), "_db", None), "_keep", None),
+            getattr(getattr(self, "_omem", None), "_backend", None),
+        ):
+            close = getattr(obj, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    pass

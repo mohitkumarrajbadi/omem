@@ -48,7 +48,45 @@ jobs:
         run: ruff check .
 
       - name: Test with pytest
-        run: pytest tests/ -v
+        run: pytest tests/ -v --tb=short --junitxml=pytest-results.xml
+
+      - name: Summarize pytest failures
+        if: failure()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+          path = "pytest-results.xml"
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          lines = ["## Pytest failures", ""]
+          if not os.path.exists(path):
+              lines.append("_No pytest-results.xml (collection/install failure?)._")
+          else:
+              root = ET.parse(path).getroot()
+              failed = []
+              for case in root.iter("testcase"):
+                  bad = case.find("failure")
+                  if bad is None:
+                      bad = case.find("error")
+                  if bad is None:
+                      continue
+                  name = f"{case.get('classname')}::{case.get('name')}"
+                  msg = (bad.get("message") or bad.text or "").strip().splitlines()
+                  failed.append((name, msg[0] if msg else "failed"))
+              if not failed:
+                  lines.append("_JUnit present but no failure/error nodes._")
+              else:
+                  lines.append(f"{len(failed)} failed/errored test(s):")
+                  lines.append("")
+                  for name, msg in failed[:50]:
+                      lines.append(f"- `{name}` — {msg[:240]}")
+          text = "\n".join(lines) + "\n"
+          print(text)
+          if summary:
+              with open(summary, "a", encoding="utf-8") as fh:
+                  fh.write(text)
+          PY
 
   # ──────────────────────────────────────────────────────────────────────────
   # Bare install smoke-test — verifies `pip install omem-os` with ZERO extras
