@@ -1,11 +1,11 @@
 {
   "mcpServers": {
     "omem": {
-      "command": "omem",
+      "command": "/FULL/PATH/TO/omem",
       "args": [
         "serve",
         "--namespace", "personal",
-        "--db-path", "~/.omem/brain.db"
+        "--db-path", "/Users/YOU/.omem/brain.db"
       ]
     }
   }

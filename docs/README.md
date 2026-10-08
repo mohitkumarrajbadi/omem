@@ -1,16 +1,26 @@
 # Documentation
 
-## Start here (design partners)
+## Start here
 
-- [Design partner pack](./design-partner/README.md) — demo, pitch, security boundaries
-- [LIMITATIONS](./LIMITATIONS.md) — what OMem does not claim
-- [MCP Setup](./guides/MCP_SETUP.md) — Cursor / Claude Code / OpenCode
-- [Personal MCP](./guides/PERSONAL_MCP.md) — shared durable memory across agents
+| I want to… | Doc |
+|------------|-----|
+| Install + use the Python API | [Developer guide](./guides/DEVELOPER.md) |
+| Wire Cursor / Claude / OpenCode (local) | [MCP setup](./guides/MCP_SETUP.md) |
+| Share memory across agents on one machine | [Personal MCP](./guides/PERSONAL_MCP.md) |
+| Run design-partner demos | [Design partner pack](./design-partner/README.md) |
+| Know what we do **not** claim | [LIMITATIONS](./LIMITATIONS.md) |
 
 ## Product
 
+- [Design-partner quickstart](./guides/DESIGN_PARTNER_QUICKSTART.md)
 - [Tenant hardening](./guarantees/TENANT_HARDENING.md)
-- [Developer guide](./guides/DEVELOPER.md)
+
+## Cloud (sibling repo)
+
+If you have `omem-cloud` checked out next to this repo:
+
+- [Cloud MCP setup](../../omem-cloud/docs/guides/MCP_SETUP.md)
+- [Cloud docs index](../../omem-cloud/docs/README.md)
 
 ## Architecture (contributors)
 

@@ -9,6 +9,8 @@ Thank you for your interest in contributing. This document covers everything you
 OMem is **Agent State infrastructure** (tech preview). Package on PyPI:
 **`omem-os`**. Import: **`omem`**. Before larger work, read:
 
+- [docs/guides/DEVELOPER.md](./docs/guides/DEVELOPER.md) — install, `AgentState` API, MCP, CLI
+- [docs/guides/MCP_SETUP.md](./docs/guides/MCP_SETUP.md) — Cursor / Claude / OpenCode
 - [docs/guides/VERSIONING.md](./docs/guides/VERSIONING.md) — naming, semver, branches
 - [docs/guides/RELEASING.md](./docs/guides/RELEASING.md) — how maintainers cut PyPI releases
 - [docs/architecture/ARCHITECTURE.md](./docs/architecture/ARCHITECTURE.md) for the canonical layout

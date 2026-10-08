@@ -76,10 +76,12 @@ cd omem && pip install -e ".[dev]" && pytest tests/ -q
 
 ## Docs
 
+- [Developer guide](./docs/guides/DEVELOPER.md) — install, API, CLI
+- [MCP setup](./docs/guides/MCP_SETUP.md) — Cursor / Claude / OpenCode (local)
+- [Personal MCP](./docs/guides/PERSONAL_MCP.md) — shared memory across agents
 - [Design partners](./docs/design-partner/README.md)
-- [Versioning / branching](./docs/guides/VERSIONING.md) · [Releasing](./docs/guides/RELEASING.md)
-- [Docs index](./docs/README.md)
-- [Limits](./docs/LIMITATIONS.md)
+- [Docs index](./docs/README.md) · [Limits](./docs/LIMITATIONS.md)
+- [Versioning](./docs/guides/VERSIONING.md) · [Releasing](./docs/guides/RELEASING.md)
 
 ## License
 
