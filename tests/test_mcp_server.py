@@ -9,7 +9,14 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch):
-    for var in ("OMEM_NAMESPACE", "OMEM_DB_PATH", "OMEM_PROJECT_ROOT", "OMEM_BACKEND"):
+    for var in (
+        "OMEM_NAMESPACE",
+        "OMEM_DB_PATH",
+        "OMEM_PROJECT_ROOT",
+        "OMEM_BACKEND",
+        "OMEM_MCP_MODE",
+        "OMEM_SESSION",
+    ):
         monkeypatch.delenv(var, raising=False)
     yield
 
@@ -104,3 +111,39 @@ def test_mcp_package_importable():
     # mcp extra may or may not be installed in CI — both paths valid
     assert mcp is not None
     assert isinstance(_HAS_MCP, bool)
+
+
+def test_working_mode_manual_auto_all(monkeypatch, tmp_path: Path):
+    from omem.integrations import mcp_server as ms
+
+    mode_file = tmp_path / "mcp_mode"
+    monkeypatch.setattr(ms, "_mode_file_path", lambda: str(mode_file))
+
+    assert ms.get_working_mode() == "auto"
+    out = ms.set_working_mode("manual", persist=True)
+    assert out["mode"] == "manual"
+    assert mode_file.read_text().strip() == "manual"
+    assert ms.get_working_mode() == "manual"
+
+    got = ms.working_mode()
+    assert got["mode"] == "manual"
+    assert "manual" in got["options"]
+
+    ms.working_mode(mode="all")
+    assert ms.get_working_mode() == "all"
+
+    status = ms.mcp_status()
+    assert status["mode"] == "all"
+    assert "mode_policy" in status
+
+    monkeypatch.setenv("OMEM_MCP_MODE", "auto")
+    assert ms.get_working_mode() == "auto"
+
+
+def test_mcp_config_includes_mode(tmp_path: Path):
+    from omem.demo.story import mcp_config
+
+    block = mcp_config(str(tmp_path / "b.db"), namespace="personal", mode="auto")
+    args = block["mcpServers"]["omem"]["args"]
+    assert "--mode" in args
+    assert "auto" in args

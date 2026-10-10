@@ -9,6 +9,8 @@ Thank you for your interest in contributing. This document covers everything you
 OMem is **Agent State infrastructure** (tech preview). Package on PyPI:
 **`omem-os`**. Import: **`omem`**. Before larger work, read:
 
+- [docs/guides/DEVELOPER.md](./docs/guides/DEVELOPER.md) — install, `AgentState` API, MCP, CLI
+- [docs/guides/MCP_SETUP.md](./docs/guides/MCP_SETUP.md) — Cursor / Claude / OpenCode
 - [docs/guides/VERSIONING.md](./docs/guides/VERSIONING.md) — naming, semver, branches
 - [docs/guides/RELEASING.md](./docs/guides/RELEASING.md) — how maintainers cut PyPI releases
 - [docs/architecture/ARCHITECTURE.md](./docs/architecture/ARCHITECTURE.md) for the canonical layout
@@ -35,9 +37,11 @@ Setup in three commands:
 git clone https://github.com/mohitkumarrajbadi/omem
 cd omem
 python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
+OMEM_PURE_PYTHON=1 pip install -e ".[dev]"
 pytest tests/ -v
 ```
+# Or: curl -fsSL https://raw.githubusercontent.com/mohitkumarrajbadi/omem/main/scripts/install.sh | bash
+
 
 Done. The full test suite should pass locally.
 
@@ -66,44 +70,36 @@ pytest tests/ -v
 
 | Branch | Purpose |
 |---|---|
-| `dev` | All active development. **PRs target `dev`.** |
-| `staging` | Pre-release integration / partner soak. |
-| `main` | Stable OSS line. **`v*` tags are cut from `main`.** |
-| `cloud` | Akamai/Linode demo — merge from `staging`, deploy to Linode. |
-| `feat/*`, `fix/*` | Short-lived contributor branches. |
+| `main` | **Default.** All PRs land here. Releasable; `v*` tags cut from here. |
+| `feat/*`, `fix/*`, `docs/*`, `chore/*` | Short-lived contributor branches. |
+| `cloud` | Optional Akamai/Linode demo — merge from `main` when deploying. |
 
 **Naming:** PyPI `omem-os` · import `omem` · CLI `omem` · tags `v0.0.N`.
 Full rules: [docs/guides/VERSIONING.md](./docs/guides/VERSIONING.md).
 
-**Daily workflow:**
+**Daily workflow (fork → branch → PR to `main`):**
 
 ```bash
-git checkout dev
-git pull origin dev
+git clone https://github.com/mohitkumarrajbadi/omem
+cd omem
+git checkout main
+git pull origin main
 git checkout -b feat/your-feature-name
 # ... make changes ...
-git push origin feat/your-feature-name
-# Open a PR targeting dev (not main)
+git push -u origin feat/your-feature-name
+# Open a PR targeting main
 ```
 
-**Promote toward release:**
+**Release:** when `main` is green, follow [docs/guides/RELEASING.md](./docs/guides/RELEASING.md) (tag `v0.0.N` → PyPI).
+
+**Optional demo deploy (`cloud`):**
 
 ```bash
-# after CI green on dev
-git checkout staging && git merge dev && git push origin staging
-git checkout main && git merge staging && git push origin main
-# then follow docs/guides/RELEASING.md (tag v0.0.N → PyPI)
-```
-
-**Promote to live demo (`cloud` branch):**
-
-```bash
-git checkout staging && git merge dev && git push origin staging
-git checkout cloud && git merge staging && git push origin cloud
+git checkout cloud && git merge main && git push origin cloud
 ./deploy/scripts/cloud-proof-deploy.sh --host "$OMEM_LINODE_IP"
 ```
 
-Full playbook: [docs/guides/CLOUD_PROOF.md](./docs/guides/CLOUD_PROOF.md)
+See [deploy/README.md](./deploy/README.md) if present.
 
 ---
 
@@ -240,4 +236,4 @@ See `omem/backends/sqlite.py` as the reference implementation.
 
 ## Questions
 
-Open a discussion at https://github.com/mohitkumarrajbadi/omem/discussions or file an issue. PRs targeting `main` directly will be redirected to `dev`.
+Open a discussion at https://github.com/mohitkumarrajbadi/omem/discussions or file an issue. Open PRs against **`main`**.

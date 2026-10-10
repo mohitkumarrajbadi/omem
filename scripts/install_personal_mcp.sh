@@ -29,6 +29,7 @@ fi
 mkdir -p "$HOME/.omem"
 chmod 700 "$HOME/.omem" 2>/dev/null || true
 
+MODE="${OMEM_MCP_MODE:-auto}"
 block="$(cat <<EOF
 {
   "mcpServers": {
@@ -37,7 +38,8 @@ block="$(cat <<EOF
       "args": [
         "serve",
         "--namespace", "$NAMESPACE",
-        "--db-path", "$DB_PATH"
+        "--db-path", "$DB_PATH",
+        "--mode", "$MODE"
       ]
     }
   }

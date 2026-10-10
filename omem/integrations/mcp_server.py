@@ -136,13 +136,125 @@ def _mcp_backend() -> str:
     return (os.environ.get("OMEM_BACKEND") or "sqlite").strip() or "sqlite"
 
 
+# ── Working mode (manual / auto / all) ──────────────────────────────────────
+# MCP cannot force the host model to call tools — mode is expressed as strong
+# server instructions + tool policy so Cursor/Claude/OpenCode act without
+# waiting for "please remember".
+MCP_MODES = ("manual", "auto", "all")
+DEFAULT_MCP_MODE = "auto"
+
+_MODE_POLICY: Dict[str, str] = {
+    "manual": (
+        "MANUAL mode: call remember / remember_decision / snapshot ONLY when the "
+        "user explicitly asks. You may still recall when useful."
+    ),
+    "auto": (
+        "AUTO mode (default): proactively use OMem without waiting to be asked. "
+        "At session start: mcp_status + recall relevant context. "
+        "After decisions, prefs, bugfixes, or finished tasks: remember_* immediately. "
+        "Before risky edits or clears: snapshot. "
+        "Do NOT store trivial chatter — only durable knowledge (>5 min to re-derive)."
+    ),
+    "all": (
+        "ALL mode: aggressive persistence. Recall before most answers that depend on "
+        "prior context. Remember nearly every durable fact, preference, decision, "
+        "and outcome from the conversation. Snapshot at task start, before destructive "
+        "ops, and after milestones. Prefer over-remembering to silent loss."
+    ),
+}
+
+
+def _mode_file_path() -> str:
+    return os.path.expanduser("~/.omem/mcp_mode")
+
+
+def get_working_mode() -> str:
+    """Resolve MCP working mode: env → sticky file → auto."""
+    raw = (os.environ.get("OMEM_MCP_MODE") or "").strip().lower()
+    if raw in MCP_MODES:
+        return raw
+    path = _mode_file_path()
+    try:
+        if os.path.isfile(path):
+            sticky = open(path, encoding="utf-8").read().strip().lower()
+            if sticky in MCP_MODES:
+                return sticky
+    except OSError:
+        pass
+    return DEFAULT_MCP_MODE
+
+
+def set_working_mode(mode: str, *, persist: bool = True) -> Dict[str, Any]:
+    """Set working mode for this process (and optionally ~/.omem/mcp_mode)."""
+    normalized = (mode or "").strip().lower()
+    if normalized not in MCP_MODES:
+        raise ValueError(f"mode must be one of {MCP_MODES}, got {mode!r}")
+    os.environ["OMEM_MCP_MODE"] = normalized
+    if persist:
+        path = _mode_file_path()
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(normalized + "\n")
+    _apply_server_instructions()
+    return {
+        "ok": True,
+        "mode": normalized,
+        "policy": _MODE_POLICY[normalized],
+        "persisted": persist,
+    }
+
+
+def mode_instructions(mode: Optional[str] = None) -> str:
+    """Server instructions injected into MCP clients (FastMCP instructions=)."""
+    m = (mode or get_working_mode()).strip().lower()
+    if m not in MCP_MODES:
+        m = DEFAULT_MCP_MODE
+    return (
+        "You have OMem — durable agent memory (remember / recall / snapshot).\n\n"
+        f"WORKING MODE: {m.upper()}\n"
+        f"{_MODE_POLICY[m]}\n\n"
+        "Tools: mcp_status, working_mode, remember, recall, remember_decision, "
+        "remember_bug_fix, remember_pr_context, snapshot, list_snapshots, rollback, maintain.\n"
+        "Call working_mode() to see or change mode (manual | auto | all)."
+    )
+
+
+def _apply_server_instructions() -> None:
+    """Refresh FastMCP instructions after a mode change (best-effort)."""
+    text = mode_instructions()
+    try:
+        if hasattr(mcp, "_mcp_server") and getattr(mcp, "_mcp_server", None) is not None:
+            mcp._mcp_server.instructions = text  # type: ignore[attr-defined]
+        elif hasattr(mcp, "instructions"):
+            setattr(mcp, "instructions", text)
+    except Exception as exc:
+        logger.debug("Could not refresh MCP instructions: %s", exc)
+
+
+def _mcp_session_id() -> str:
+    return (os.environ.get("OMEM_SESSION") or "mcp").strip() or "mcp"
+
+
+def _agent_state():
+    from ..agent_state import AgentState
+
+    return AgentState(
+        session_id=_mcp_session_id(),
+        namespace=get_project_namespace(),
+        db_path=_mcp_db_path() or os.path.expanduser("~/.omem/brain.db"),
+        backend=_mcp_backend(),
+    )
+
+
 omem = OMem(backend=_mcp_backend(), db_path=_mcp_db_path())
 
 # MCP instance — real server when mcp is installed, silent stub otherwise.
 # The stub lets this module be imported and its functions called without mcp,
 # which is required for tests and direct Python usage.
 if _HAS_MCP:
-    mcp = FastMCP("OMem Cognitive Engine")
+    mcp = FastMCP("OMem Cognitive Engine", instructions=mode_instructions())
 else:
     mcp = _NoOpMCP()  # type: ignore[assignment]
 
@@ -153,6 +265,7 @@ def configure_mcp_server(
     namespace: Optional[str] = None,
     project_root: Optional[str] = None,
     backend: Optional[str] = None,
+    mode: Optional[str] = None,
 ) -> OMem:
     """Rebind the MCP brain to a durable store + shared namespace.
 
@@ -171,12 +284,17 @@ def configure_mcp_server(
         os.environ["OMEM_DB_PATH"] = os.path.expanduser(db_path)
     if backend:
         os.environ["OMEM_BACKEND"] = backend
+    if mode:
+        set_working_mode(mode, persist=True)
+    else:
+        _apply_server_instructions()
     omem = OMem(backend=_mcp_backend(), db_path=_mcp_db_path())
     logger.info(
-        "MCP configured namespace=%s db=%s backend=%s",
+        "MCP configured namespace=%s db=%s backend=%s mode=%s",
         get_project_namespace(),
         _mcp_db_path() or "~/.omem/brain.db",
         _mcp_backend(),
+        get_working_mode(),
     )
     return omem
 
@@ -256,28 +374,114 @@ def _memory_to_dict(m: Any) -> Dict[str, Any]:
 
 @mcp.tool()
 def mcp_status():
-    """Show OMem MCP runtime status: namespace, db path, memory counts.
+    """Show OMem MCP runtime status: namespace, db path, working mode, memory counts.
 
     Call this first when connecting from Claude Code or OpenCode to confirm
-    both tools share the same durable store.
+    both tools share the same durable store. In auto/all mode, also run a
+    quick recall for the current task without waiting for the user.
     """
     ns = get_project_namespace()
     stats = omem.stats()
     db = _mcp_db_path() or os.path.expanduser("~/.omem/brain.db")
     project_mems = omem.all(namespace=ns)
+    mode = get_working_mode()
     return {
         "ok": True,
         "namespace": ns,
         "db_path": db,
         "backend": _mcp_backend(),
+        "mode": mode,
+        "mode_policy": _MODE_POLICY[mode],
+        "session": _mcp_session_id(),
         "total_memories": stats.get("total", 0),
         "project_memories": len(project_mems),
         "omem_namespace_env": (os.environ.get("OMEM_NAMESPACE") or "") or None,
         "omem_project_root": (os.environ.get("OMEM_PROJECT_ROOT") or "") or None,
         "hint": (
-            "Set the same OMEM_NAMESPACE + OMEM_DB_PATH in Claude Code and OpenCode "
-            "so memory is shared seamlessly."
+            f"mode={mode}. Change with working_mode(mode='auto'|'manual'|'all') "
+            "or omem serve --mode auto. Same OMEM_NAMESPACE + OMEM_DB_PATH in every client."
         ),
+    }
+
+
+@mcp.tool()
+def working_mode(mode: Optional[str] = None):
+    """Get or set OMem MCP working mode.
+
+    Modes:
+      - manual: remember/snapshot only when the user asks
+      - auto:   proactively remember decisions/prefs/fixes + snapshot before risk (default)
+      - all:    aggressive remember + frequent snapshots
+
+    Args:
+        mode: Omit to read current mode. Pass manual|auto|all to change (persists to ~/.omem/mcp_mode).
+    """
+    if mode is None or str(mode).strip() == "":
+        current = get_working_mode()
+        return {
+            "mode": current,
+            "policy": _MODE_POLICY[current],
+            "options": list(MCP_MODES),
+            "hint": "Pass mode='auto' to enable proactive remember/snapshot without asking.",
+        }
+    return set_working_mode(str(mode))
+
+
+@mcp.tool()
+def snapshot(label: Optional[str] = None):
+    """Create a named session snapshot (for later rollback).
+
+    In auto/all mode, call this before risky edits, clears, or refactors —
+    do not wait for the user to ask.
+
+    Args:
+        label: Optional human label (e.g. before-clear, before-refactor).
+    """
+    agent = _agent_state()
+    snap = agent.snapshot(label=label)
+    return {
+        "ok": True,
+        "snapshot_id": snap.id,
+        "label": getattr(snap, "label", label),
+        "session": _mcp_session_id(),
+        "namespace": get_project_namespace(),
+        "hint": f"Rollback with rollback(snapshot_id='{snap.id}')",
+    }
+
+
+@mcp.tool()
+def list_snapshots():
+    """List snapshots for the current MCP session (OMEM_SESSION or 'mcp')."""
+    agent = _agent_state()
+    snaps = agent.list_snapshots()
+    rows = []
+    for s in snaps:
+        rows.append(
+            {
+                "id": getattr(s, "id", None),
+                "label": getattr(s, "label", None),
+                "created_at": getattr(s, "created_at", None),
+            }
+        )
+    return {"session": _mcp_session_id(), "count": len(rows), "snapshots": rows}
+
+
+@mcp.tool()
+def rollback(snapshot_id: str):
+    """Restore the MCP session to a prior snapshot (non-destructive lineage).
+
+    Args:
+        snapshot_id: Id from list_snapshots or snapshot().
+    """
+    if not (snapshot_id or "").strip():
+        return {"ok": False, "error": "snapshot_id required"}
+    agent = _agent_state()
+    payload = agent.rollback(snapshot_id.strip())
+    return {
+        "ok": True,
+        "snapshot_id": snapshot_id.strip(),
+        "session": _mcp_session_id(),
+        "payload_keys": list(payload.keys()) if isinstance(payload, dict) else None,
     }
 
 
@@ -1077,14 +1281,19 @@ def get_bug_fixes():
 @mcp.prompt("omem/onboarding")
 def onboarding_prompt():
     """Instruction for Claude / Cursor on how to effectively use OMem for coding."""
+    mode = get_working_mode()
     base = (
         "You have access to OMem — persistent governed memory for coding agents. "
         "It stores institutional knowledge across sessions.\n\n"
+        f"═══ WORKING MODE: {mode.upper()} ═══\n"
+        f"{_MODE_POLICY[mode]}\n"
+        "Change anytime: `working_mode(mode='manual'|'auto'|'all')`.\n\n"
 
         "═══ SESSION START CHECKLIST ═══\n"
-        "1. Call `get_codebase_summary` to re-orient (ADRs, recent PRs).\n"
-        "2. Before debugging: call `recall_bugs` — the fix may already be known.\n"
-        "3. Before a tech choice: call `recall_decisions` — you may have decided this before.\n\n"
+        "1. Call `mcp_status` (confirms mode + db).\n"
+        "2. Call `get_codebase_summary` to re-orient (ADRs, recent PRs).\n"
+        "3. Before debugging: call `recall_bugs` — the fix may already be known.\n"
+        "4. Before a tech choice: call `recall_decisions` — you may have decided this before.\n\n"
     )
     if ast_enabled():
         base += (
@@ -1097,11 +1306,12 @@ def onboarding_prompt():
         "• Architectural decisions   → `remember_decision`\n"
         "• PR context               → `remember_pr_context`\n"
         "• Bug fixes                → `remember_bug_fix`\n"
-        "• General facts            → `remember`\n\n"
+        "• General facts            → `remember`\n"
+        "• Safety checkpoint        → `snapshot` (before risky work)\n\n"
 
         "═══ RULES ═══\n"
         "1. Always recall before solving — check what you already know.\n"
-        "2. Store decisions immediately after making them.\n"
+        "2. In auto/all: store decisions immediately — do NOT wait for the user to say remember.\n"
         "3. Tag bug fixes with the error signature for precise future matching.\n"
         "4. Call `maintain` when idle to consolidate and prune stale memories.\n"
         "5. Do NOT store trivial facts — focus on knowledge that would take >5 min to re-derive."
@@ -1113,16 +1323,20 @@ def onboarding_prompt():
 def coding_agent_prompt():
     """Advanced system prompt for coding agents with full OMem integration."""
     project = get_project_namespace()
+    mode = get_working_mode()
     tools = (
         "  recall_decisions(query)         — past architectural choices\n"
         "  recall_bugs(query)              — prior bug fixes\n"
         "  recall_pr_context(query)        — PR history\n"
         "  recall(query, mode='coding')    — general project knowledge\n"
+        "  working_mode() / working_mode(mode=…) — manual|auto|all\n"
+        "  snapshot / list_snapshots / rollback\n"
     )
     if ast_enabled():
         tools = "  query_codebase(query)           — navigate code semantically (Alpha)\n" + tools
     return (
-        f"Project: {project}\n\n"
+        f"Project: {project}\n"
+        f"Working mode: {mode} — {_MODE_POLICY[mode]}\n\n"
         "You are a coding agent with persistent memory across sessions via OMem.\n\n"
         "MEMORY TOOLS AVAILABLE:\n"
         f"{tools}\n"
@@ -1130,14 +1344,12 @@ def coding_agent_prompt():
         "  remember_decision(...)          — store ADR\n"
         "  remember_pr_context(...)        — store PR metadata\n"
         "  remember_bug_fix(...)           — store root cause + fix\n"
-        "  remember(content)               — store general knowledge\n\n"
-        "RESOURCES (read-only snapshots):\n"
-        "  omem://decisions                — all ADRs\n"
-        "  omem://pr_history               — PR context\n"
-        "  omem://bug_fixes                — known bug fixes\n"
-        "  omem://recent                   — recent memories\n\n"
+        "  remember(content)               — store general knowledge\n"
+        "  snapshot(label)                 — checkpoint before risk\n\n"
+        "RESOURCES (read-only):\n"
+        "  omem://decisions · omem://pr_history · omem://bug_fixes · omem://recent\n\n"
         "Start every task by checking what OMem already knows. "
-        "End every task by persisting new knowledge."
+        "In auto/all mode, end every task by persisting new knowledge without being asked."
     )
 
 

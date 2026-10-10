@@ -303,12 +303,16 @@ def init(ctx: click.Context, db_path: Optional[str], cursor: bool):
     if seeded:
         field("story", "demo namespace — agent chose MongoDB")
     click.echo("")
-    note("Paste this one line into your agent MCP config:")
-    click.echo(json.dumps(mcp_config(db_path), separators=(",", ":")))
+    ns = os.environ.get("OMEM_NAMESPACE", "personal").strip() or "personal"
+    mode = os.environ.get("OMEM_MCP_MODE", "auto").strip() or "auto"
+    block = mcp_config(db_path, namespace=ns, mode=mode)
+    note("Paste this into your agent MCP config:")
+    click.echo(json.dumps(block, separators=(",", ":")))
     if cursor:
-        written = merge_cursor_mcp(mcp_config(db_path))
-        success(f"Merged OMem into {written}")
+        written = merge_cursor_mcp(block)
+        success(f"Merged OMem into {written} (namespace={ns}, mode={mode})")
     click.echo("")
+    hint("curl install: https://raw.githubusercontent.com/mohitkumarrajbadi/omem/main/scripts/install.sh")
     hint("omem demo")
 
 
@@ -1125,6 +1129,17 @@ def codebase(ctx: click.Context, query: str, namespace: str, depth: int, top_k: 
     type=click.Choice(["sqlite", "postgres"]),
     help="Storage backend (sqlite recommended for personal use).",
 )
+@click.option(
+    "--mode",
+    "mcp_mode",
+    default=None,
+    envvar="OMEM_MCP_MODE",
+    type=click.Choice(["manual", "auto", "all"]),
+    help=(
+        "MCP working mode: manual (only when asked), auto (proactive remember/snapshot), "
+        "all (aggressive). Default: auto (or ~/.omem/mcp_mode)."
+    ),
+)
 @click.pass_context
 def serve(
     ctx: click.Context,
@@ -1133,15 +1148,17 @@ def serve(
     db_path: Optional[str],
     project_root: Optional[str],
     backend: Optional[str],
+    mcp_mode: Optional[str],
 ):
     """Start the MCP server (Claude Code, OpenCode, Cursor, Claude Desktop).
 
     \b
     Personal multi-tool setup (same memory in Claude Code + OpenCode):
 
-        omem serve --namespace personal --db-path ~/.omem/brain.db
+        omem serve --namespace personal --db-path ~/.omem/brain.db --mode auto
 
     Put the same flags (or env vars) in every client's MCP config.
+    Modes: manual | auto | all — change live with the working_mode MCP tool.
     """
     # Apply env before importing/configuring the MCP module brain.
     # Default durable SQLite path so personal MCP never silently uses a transient store.
@@ -1156,6 +1173,8 @@ def serve(
         os.environ["OMEM_BACKEND"] = backend
     else:
         os.environ.setdefault("OMEM_BACKEND", "sqlite")
+    if mcp_mode:
+        os.environ["OMEM_MCP_MODE"] = mcp_mode
 
     try:
         from ..integrations.mcp_server import (
@@ -1163,6 +1182,7 @@ def serve(
             _mcp_db_path,
             configure_mcp_server,
             get_project_namespace,
+            get_working_mode,
             mcp,
         )
 
@@ -1171,6 +1191,7 @@ def serve(
             namespace=namespace,
             project_root=project_root,
             backend=backend or "sqlite",
+            mode=mcp_mode,
         )
         # stdio MCP: never write banners to stdout (corrupts the protocol)
         click.echo(
@@ -1183,6 +1204,7 @@ def serve(
             err=True,
         )
         click.echo(f"  backend     {_mcp_backend()}", err=True)
+        click.echo(f"  mode        {get_working_mode()}  (manual|auto|all)", err=True)
         click.echo(
             "Ready for Claude Code, OpenCode, Cursor, or Claude Desktop.",
             err=True,
