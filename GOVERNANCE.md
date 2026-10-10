@@ -29,10 +29,8 @@ A PR should be mergeable when it:
 
 | Branch | Purpose |
 |---|---|
-| `main` | Stable OSS releases (`v*` tags → PyPI `omem-os`) |
-| `dev` | Active development (default PR target) |
-| `staging` | Pre-release integration testing |
-| `cloud` | Akamai/Linode tech-preview demo (deployable proof) |
+| `main` | Default branch · PRs · OSS releases (`v*` tags → PyPI `omem-os`) |
+| `cloud` | Optional Akamai/Linode tech-preview demo |
 
 Package name is **`omem-os`** (import `omem`). Versioning and release steps:
 [docs/guides/VERSIONING.md](./docs/guides/VERSIONING.md),
@@ -41,7 +39,8 @@ Package name is **`omem-os`** (import `omem`). Versioning and release steps:
 Patch releases should be boring. Until GA we stay on **`0.0.x`**. Breaking
 changes require a CHANGELOG migration note.
 
-**Cloud proof:** merge `staging` → `cloud`, deploy with `./deploy/scripts/cloud-proof-deploy.sh`. See [docs/guides/CLOUD_PROOF.md](./docs/guides/CLOUD_PROOF.md).
+**Cloud proof:** merge `main` → `cloud`, deploy with
+`./deploy/scripts/cloud-proof-deploy.sh` when that script is present.
 
 ## Security
 

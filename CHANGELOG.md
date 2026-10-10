@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Branching** — open-source workflow is now `feat/*` → PR → **`main`**
+  (tags from `main`). Legacy `dev` / `staging` are not PR targets.
+
 ### Added
 
 - **One-line installers** — `scripts/install.sh` (Mac/Linux) and

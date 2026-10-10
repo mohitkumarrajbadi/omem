@@ -1,3 +1,5 @@
+<!-- Target branch: main (default). Do not open PRs against legacy dev/staging. -->
+
 ## Summary
 
 What changed and why?

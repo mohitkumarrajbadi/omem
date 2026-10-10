@@ -224,7 +224,7 @@ pip install -e ".[dev]"
 pytest tests/ -q
 ```
 
-- PRs target **`dev`**
+- PRs target **`main`**
 - Rust is **not** required for most work (only `rust/` / SIMD)
 - Releases: [RELEASING.md](./RELEASING.md) · versioning: [VERSIONING.md](./VERSIONING.md)
 

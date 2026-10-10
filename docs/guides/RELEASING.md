@@ -4,7 +4,7 @@ Cut a public version only when CI is green on `main`.
 
 ## Preconditions
 
-- [ ] `dev` → `staging` → `main` promoted (or the release commit is already on `main`)
+- [ ] Release commit is on **`main`** (default branch; CI green)
 - [ ] CI green on the release commit ([Actions](https://github.com/mohitkumarrajbadi/omem/actions))
 - [ ] `CHANGELOG.md` has a dated section for the new version (move items out of Unreleased)
 - [ ] Version follows [VERSIONING.md](./VERSIONING.md) (`0.0.N` until GA)
@@ -51,9 +51,8 @@ OMEM_EMBEDDER=hash omem demo kill-resume
 ## After publish
 
 1. Bump `fallback_version` in `pyproject.toml` to the **next** unreleased patch
-   (e.g. after `0.0.3` ships → `0.0.4`).
-2. Open a PR to `dev` if those doc/fallback edits were made on `main`.
-3. Announce to design partners with the install pin above.
+   (e.g. after `0.0.3` ships → `0.0.4`) on a PR to `main`.
+2. Announce to design partners with the install pin above.
 
 ## Hotfix
 

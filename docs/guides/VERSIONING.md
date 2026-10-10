@@ -62,27 +62,30 @@ python -c "import omem; print(omem.__version__)"
 
 ## Branching
 
+Simple open-source model (tech preview):
+
 ```
-feature/*  ──PR──►  dev  ──promote──►  staging  ──promote──►  main
-                                              │
-                                              └──merge──►  cloud  (demo deploy)
+feat/* / fix/*  ──PR──►  main  ──tag v0.0.N──►  PyPI
+                           │
+                           └──optional──►  cloud  (demo deploy)
 ```
 
 | Branch | Purpose | Who merges |
 |---|---|---|
-| `dev` | Default integration branch. All PRs land here. | Maintainers |
-| `staging` | Pre-release soak / partner builds | Maintainers |
-| `main` | Release branch. Tags (`v*`) are cut from here. | Maintainers |
-| `cloud` | Linode/Akamai demo track (from `staging`) | Maintainers |
-| `feat/*`, `fix/*` | Short-lived work branches | Contributors |
+| `main` | **Default branch.** All PRs land here. Always releasable. Tags (`v*`) cut from here. | Maintainers |
+| `feat/*`, `fix/*`, `docs/*`, `chore/*` | Short-lived work branches | Contributors |
+| `cloud` | Optional Linode/Akamai demo deploy track (merge from `main` when needed) | Maintainers |
+
+**Legacy (do not use for new work):** `dev` and `staging` may still exist on the remote from an older ladder. They are not PR targets. Prefer deleting local copies; do not open new PRs against them.
 
 Rules:
 
-1. **PRs target `dev`**, never `main` (redirect if needed).
-2. **Promote** `dev → staging → main` with merge commits (or PRs), not force-push.
+1. **PRs target `main`** (the GitHub default branch).
+2. Prefer squash or merge commits; **do not force-push** `main`.
 3. **Release tags** only on commits that are on `main` (see [RELEASING.md](./RELEASING.md)).
 4. Tag push or a published GitHub Release triggers `.github/workflows/publish.yml`.
 5. Do not reuse or move a tag that already shipped to PyPI.
+6. Protect `main`: require PR + green CI before merge (GitHub branch protection).
 
 ## Related
 
