@@ -6,16 +6,24 @@ from setuptools import setup
 # Suppress PyO3 python version compatibility check on Python 3.13+
 os.environ["PYO3_USE_ABI3_FORWARD_COMPATIBILITY"] = "1"
 
-# Only add the Rust extension when rustc is actually present on PATH.
-# This lets `pip install omem-os` succeed from the sdist on machines without
-# the Rust toolchain — the package falls back to its pure-Python paths.
-# Pre-built wheels on PyPI already contain the compiled extension, so most
-# users never reach this sdist build path at all.
+# Only add the Rust extension when rustc is present AND the user did not
+# opt into a pure-Python install. Pre-built wheels on PyPI already ship the
+# extension; sdist installs should not fail because a half-configured Rust
+# toolchain is on PATH (common pip error on Mac/Windows/Linux).
+#
+# Force pure Python:
+#   OMEM_PURE_PYTHON=1 pip install omem-os
+#   (also: OMEM_SKIP_RUST=1)
 rust_extensions = []
+_pure = os.environ.get("OMEM_PURE_PYTHON", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+} or os.environ.get("OMEM_SKIP_RUST", "").strip().lower() in {"1", "true", "yes"}
 try:
     from setuptools_rust import Binding, RustExtension
 
-    if shutil.which("rustc") is not None:
+    if not _pure and shutil.which("rustc") is not None:
         rust_extensions = [
             RustExtension(
                 "omem_rust",

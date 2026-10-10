@@ -286,12 +286,21 @@ tr:hover td { background: var(--accent-soft); cursor: pointer; }
         <label class="field"><span>DB path</span>
           <input type="text" id="mcp-db" style="width:100%" />
         </label>
+        <label class="field"><span>Working mode</span>
+          <select id="mcp-mode" style="width:100%">
+            <option value="manual">manual — only when asked</option>
+            <option value="auto" selected>auto — proactive remember + snapshot (recommended)</option>
+            <option value="all">all — aggressive remember + frequent snapshots</option>
+          </select>
+        </label>
+        <p class="hint" id="mcp-mode-hint" style="margin-bottom:0.45rem">auto: agent remembers decisions/prefs without you asking; snapshots before risk.</p>
         <div class="toolbar">
           <button type="button" class="secondary" id="btn-mcp-refresh">Preview config</button>
           <button type="button" class="secondary" id="btn-mcp-copy">Copy JSON</button>
           <button type="button" id="btn-mcp-cursor">Write ~/.cursor/mcp.json</button>
+          <button type="button" class="secondary" id="btn-mcp-mode-save">Save mode locally</button>
         </div>
-        <p class="hint">Install needs writes enabled. Restart the client after writing.</p>
+        <p class="hint">Install needs writes enabled. Restart Cursor/Claude after writing mcp.json.</p>
         <div id="mcp-log" class="mono muted" style="margin-top:0.4rem"></div>
       </div>
       <div class="panel">
@@ -631,11 +640,23 @@ async function loadGraph() {
   });
 }
 
+const MCP_MODE_HINTS = {
+  manual: 'manual: remember/snapshot only when you explicitly ask.',
+  auto: 'auto: agent remembers decisions/prefs without asking; snapshots before risk.',
+  all: 'all: aggressive remember + frequent snapshots.',
+};
+function syncMcpModeHint() {
+  const mode = document.getElementById('mcp-mode').value || 'auto';
+  const el = document.getElementById('mcp-mode-hint');
+  if (el) el.textContent = MCP_MODE_HINTS[mode] || MCP_MODE_HINTS.auto;
+}
 async function loadMcp() {
   try {
     const s = await fetchJSON('/api/mcp');
     document.getElementById('mcp-ns').value = s.namespace || cfg.namespace;
     document.getElementById('mcp-db').value = s.db_path || cfg.db_path || '';
+    if (s.mode) document.getElementById('mcp-mode').value = s.mode;
+    syncMcpModeHint();
     document.getElementById('mcp-json').textContent = JSON.stringify(s.cursor || s.config, null, 2);
     document.getElementById('mcp-opencode').textContent = JSON.stringify(s.opencode || {}, null, 2);
   } catch (e) { document.getElementById('mcp-json').textContent = e.message; }
@@ -745,17 +766,31 @@ document.getElementById('btn-clear-ns').addEventListener('click', async () => {
   } catch (e) { document.getElementById('health-out').textContent = e.message; }
 });
 
+document.getElementById('mcp-mode').addEventListener('change', syncMcpModeHint);
 document.getElementById('btn-mcp-refresh').addEventListener('click', async () => {
   cfg.namespace = document.getElementById('mcp-ns').value.trim() || cfg.namespace;
   const db = document.getElementById('mcp-db').value.trim();
-  const s = await fetchJSON('/api/mcp?db_path=' + encodeURIComponent(db) + '&mcp_namespace=' + encodeURIComponent(document.getElementById('mcp-ns').value.trim() || cfg.namespace));
+  const mode = document.getElementById('mcp-mode').value || 'auto';
+  const s = await fetchJSON(
+    '/api/mcp?db_path=' + encodeURIComponent(db)
+    + '&mcp_namespace=' + encodeURIComponent(document.getElementById('mcp-ns').value.trim() || cfg.namespace)
+    + '&mode=' + encodeURIComponent(mode)
+  );
   document.getElementById('mcp-json').textContent = JSON.stringify(s.cursor || s.config, null, 2);
   document.getElementById('mcp-opencode').textContent = JSON.stringify(s.opencode || {}, null, 2);
+  syncMcpModeHint();
 });
 document.getElementById('btn-mcp-copy').addEventListener('click', async () => {
   const text = document.getElementById('mcp-json').textContent;
   try { await navigator.clipboard.writeText(text); document.getElementById('mcp-log').textContent = 'Copied.'; }
   catch { document.getElementById('mcp-log').textContent = 'Copy failed — select manually.'; }
+});
+document.getElementById('btn-mcp-mode-save').addEventListener('click', async () => {
+  const log = document.getElementById('mcp-log');
+  try {
+    const r = await postJSON('/api/mcp/mode', { mode: document.getElementById('mcp-mode').value || 'auto' });
+    log.textContent = 'Mode saved: ' + (r.mode || '') + ' → ~/.omem/mcp_mode (restart MCP clients).';
+  } catch (e) { log.textContent = e.message; }
 });
 document.getElementById('btn-mcp-cursor').addEventListener('click', async () => {
   const log = document.getElementById('mcp-log');
@@ -763,8 +798,9 @@ document.getElementById('btn-mcp-cursor').addEventListener('click', async () => 
     const r = await postJSON('/api/mcp/install-cursor', {
       namespace: document.getElementById('mcp-ns').value.trim() || cfg.namespace,
       db_path: document.getElementById('mcp-db').value.trim() || cfg.db_path,
+      mode: document.getElementById('mcp-mode').value || 'auto',
     });
-    log.textContent = 'Wrote ' + (r.path || '~/.cursor/mcp.json') + ' — restart Cursor.';
+    log.textContent = 'Wrote ' + (r.path || '~/.cursor/mcp.json') + ' mode=' + (r.mode || 'auto') + ' — restart Cursor.';
   } catch (e) { log.textContent = e.message; }
 });
 
@@ -997,6 +1033,17 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
             self._send(self._settings_payload())
             return
 
+        # MCP working mode — local preference, no mutate gate
+        if path == "/api/mcp/mode":
+            try:
+                from ...integrations.mcp_server import set_working_mode
+
+                mode = str(body.get("mode") or "auto").strip().lower()
+                self._send(set_working_mode(mode, persist=True))
+            except Exception as exc:  # noqa: BLE001
+                self._send({"error": str(exc)}, code=400)
+            return
+
         if not self._mutate_allowed():
             token = os.environ.get("OMEM_OBSERVE_TOKEN", "").strip()
             if token and self.headers.get("Authorization", "") != f"Bearer {token}":
@@ -1075,11 +1122,23 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
                 self._send({"ok": True, "cleared_namespace": ns})
             elif path == "/api/mcp/install-cursor":
                 from ...demo.story import mcp_config, merge_cursor_mcp
-                db = str(body.get("db_path") or getattr(omem, "db_path", None) or os.path.expanduser("~/.omem/brain.db"))
+                from ...integrations.mcp_server import set_working_mode
+
+                db = str(
+                    body.get("db_path")
+                    or getattr(omem, "db_path", None)
+                    or os.path.expanduser("~/.omem/brain.db")
+                )
                 mcp_ns = str(body.get("namespace") or ns or "personal")
-                block = mcp_config(db, namespace=mcp_ns)
+                mode = str(body.get("mode") or "auto").strip().lower() or "auto"
+                try:
+                    set_working_mode(mode, persist=True)
+                except ValueError:
+                    mode = "auto"
+                    set_working_mode(mode, persist=True)
+                block = mcp_config(db, namespace=mcp_ns, mode=mode)
                 path_written = merge_cursor_mcp(block)
-                self._send({"ok": True, "path": path_written, "config": block})
+                self._send({"ok": True, "path": path_written, "config": block, "mode": mode})
             else:
                 self._send({"error": "not found"}, code=404)
         except Exception as exc:  # noqa: BLE001
@@ -1321,12 +1380,16 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
 
     def _api_mcp(self, params: Dict[str, List[str]]) -> Dict[str, Any]:
         from ...demo.story import mcp_config, resolve_omem_bin
+        from ...integrations.mcp_server import get_working_mode
 
         omem = self.omem
         assert omem is not None
         db = params.get("db_path", [None])[0] or getattr(omem, "db_path", None) or os.path.expanduser("~/.omem/brain.db")
         mcp_ns = params.get("mcp_namespace", [None])[0] or self.namespace or "personal"
-        block = mcp_config(str(db), namespace=str(mcp_ns))
+        mode = (params.get("mode", [None])[0] or get_working_mode() or "auto").strip().lower()
+        if mode not in {"manual", "auto", "all"}:
+            mode = "auto"
+        block = mcp_config(str(db), namespace=str(mcp_ns), mode=mode)
         server = block["mcpServers"]["omem"]
         opencode = {
             "$schema": "https://opencode.ai/config.json",
@@ -1341,11 +1404,12 @@ class DashboardHandler(http.server.BaseHTTPRequestHandler):
         return {
             "namespace": mcp_ns,
             "db_path": db,
+            "mode": mode,
             "omem_bin": resolve_omem_bin(),
             "config": block,
             "cursor": block,
             "opencode": opencode,
-            "hint": "Paste into Claude Code / Cursor mcp.json, or OpenCode opencode.jsonc",
+            "hint": "Paste into Claude Code / Cursor mcp.json, or OpenCode opencode.jsonc. Restart client after mode change.",
         }
 
     def _api_graph(self) -> Dict[str, Any]:

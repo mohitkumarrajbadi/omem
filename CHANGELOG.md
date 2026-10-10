@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **One-line installers** — `scripts/install.sh` (Mac/Linux) and
+  `scripts/install.ps1` (Windows); `OMEM_PURE_PYTHON=1` skips flaky Rust
+  sdist builds. Docs: `docs/guides/INSTALL.md`.
+- **MCP working mode** — `manual` | `auto` | `all` via `omem serve --mode`,
+  `working_mode` tool, `OMEM_MCP_MODE`, and Console → MCP. Default `auto`
+  instructs agents to remember/snapshot without waiting to be asked.
+  Also: MCP `snapshot` / `list_snapshots` / `rollback` tools.
 - Versioning / branching / release guides (`docs/guides/VERSIONING.md`, `RELEASING.md`)
 
 ---

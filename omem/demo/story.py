@@ -125,20 +125,22 @@ def lineage_report(omem: Any, query: str = STORY_QUERY) -> Dict[str, Any]:
     }
 
 
-def mcp_config(db_path: str, *, namespace: str = DEMO_NAMESPACE) -> Dict[str, Any]:
+def mcp_config(
+    db_path: str,
+    *,
+    namespace: Optional[str] = DEMO_NAMESPACE,
+    mode: str = "auto",
+) -> Dict[str, Any]:
     """One MCP server object. ``command`` is the resolved ``omem`` binary."""
     path = os.path.expanduser(db_path)
+    args = ["serve", "--db-path", path, "--mode", mode or "auto"]
+    if namespace not in (None, "", "auto"):
+        args.extend(["--namespace", str(namespace)])
     return {
         "mcpServers": {
             "omem": {
                 "command": resolve_omem_bin(),
-                "args": [
-                    "serve",
-                    "--namespace",
-                    namespace,
-                    "--db-path",
-                    path,
-                ],
+                "args": args,
             }
         }
     }

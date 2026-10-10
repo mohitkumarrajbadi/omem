@@ -13,11 +13,13 @@ Connect any MCP client to **local** OMem so agents share durable memory on your 
 ## 60-second path (Cursor)
 
 ```bash
-pip install "omem-os[mcp]"
-mkdir -p ~/.omem && chmod 700 ~/.omem
+# Mac / Linux (recommended — avoids system-pip errors)
+curl -fsSL https://raw.githubusercontent.com/mohitkumarrajbadi/omem/main/scripts/install.sh | bash -s -- --cursor
 
-omem init --cursor
+# or: uv tool install 'omem-os[mcp]' && omem init --cursor
 ```
+
+Windows: see [INSTALL.md](./INSTALL.md).
 
 1. **Restart Cursor** completely.
 2. Open the MCP panel — you should see tools under `omem`.
@@ -105,12 +107,34 @@ Replace `/FULL/PATH/TO/omem` with `$(which omem)` or `.venv/bin/omem`, and expan
       "args": [
         "serve",
         "--namespace", "personal",
-        "--db-path", "/Users/YOU/.omem/brain.db"
+        "--db-path", "/Users/YOU/.omem/brain.db",
+        "--mode", "auto"
       ]
     }
   }
 }
 ```
+
+### Working mode (`manual` | `auto` | `all`)
+
+MCP cannot force the model to call tools — **mode** tells the agent how aggressive to be:
+
+| Mode | Behavior |
+|------|----------|
+| `manual` | Remember / snapshot **only when you ask** |
+| `auto` (default) | Proactively remember decisions, prefs, fixes; snapshot before risk |
+| `all` | Aggressive remember + frequent snapshots |
+
+Set via:
+
+```bash
+omem serve --mode auto
+# or in chat:
+# Call working_mode with mode="auto"
+# or Console → MCP → Working mode → Save / Write mcp.json
+```
+
+Persists to `~/.omem/mcp_mode`. Restart the MCP client after changing.
 
 ### Claude Desktop — macOS
 
@@ -124,7 +148,8 @@ Replace `/FULL/PATH/TO/omem` with `$(which omem)` or `.venv/bin/omem`, and expan
       "args": [
         "serve",
         "--namespace", "personal",
-        "--db-path", "/Users/YOU/.omem/brain.db"
+        "--db-path", "/Users/YOU/.omem/brain.db",
+        "--mode", "auto"
       ]
     }
   }
@@ -178,7 +203,9 @@ Daily habit: [PERSONAL_MCP.md](./PERSONAL_MCP.md#daily-habit-makes-it-seamless).
 
 | Tool | What it does |
 |------|----------------|
-| `mcp_status` | Confirm namespace + db path (**call first**) |
+| `mcp_status` | Confirm namespace + db path + **mode** (**call first**) |
+| `working_mode` | Get/set `manual` \| `auto` \| `all` |
+| `snapshot` / `list_snapshots` / `rollback` | Session checkpoints |
 | `lineage` | Demo story: which memory caused a decision |
 | `remember` / `recall` | Store and search durable memory |
 | `remember_decision` / `recall_decisions` | Architectural decisions |

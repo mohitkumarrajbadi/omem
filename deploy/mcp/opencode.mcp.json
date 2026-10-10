@@ -5,7 +5,8 @@
       "args": [
         "serve",
         "--namespace", "personal",
-        "--db-path", "/Users/YOU/.omem/brain.db"
+        "--db-path", "/Users/YOU/.omem/brain.db",
+        "--mode", "auto"
       ]
     }
   }

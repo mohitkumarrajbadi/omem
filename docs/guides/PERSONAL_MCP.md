@@ -91,12 +91,28 @@ Expect `✔ PASS — shared MCP memory works`.
 
 In each client, call **`mcp_status`** — `namespace` and `db_path` must match.
 
+## Working mode (so you don’t have to ask every time)
+
+| Mode | Behavior |
+|------|----------|
+| `manual` | Remember / snapshot only when you ask |
+| `auto` (recommended) | Agent proactively remembers decisions/prefs/fixes; snapshots before risk |
+| `all` | Aggressive remember + frequent snapshots |
+
+```bash
+omem serve --namespace personal --db-path ~/.omem/brain.db --mode auto
+# or in chat: Call working_mode with mode="auto"
+```
+
+`mcp_status` reports the current mode. Change anytime with the `working_mode` tool.
+
 ## Daily habit (makes it seamless)
 
 | When | Do |
 |------|-----|
 | Starting a task | `recall` / `recall_decisions` / `recall_bugs` |
-| Making a choice | `remember_decision` |
+| Making a choice | `remember_decision` (auto/all: agent should do this without asking) |
+| Before risky edits | `snapshot` |
 | Fixing a bug | `remember_bug_fix` |
 | Ending a session | `remember` what’s done + what’s next |
 
